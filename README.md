@@ -131,10 +131,16 @@ Contracts **must** be deployed in the following strict order:
 
 ```mermaid
 graph TD
-    A[1. Deploy ZenithCircuitBreaker] --> C[3. Deploy ZenithRouter]
-    B[2. Deploy ZenithFeeManager] --> C
-    C --> D[4. Verify Contracts on Block Explorer]
-    D --> E[5. Transfer Governance to 4-of-7 Safe Multisig]
+    A[1. Deploy ZenithTreasury] --> B[2. Deploy ZenithFeeController]
+    B --> C[3. Deploy ZenithV1 Suite]
+    B --> D[4. Deploy ZenithV2 Suite]
+    B --> E[5. Deploy ZenithV3 Suite]
+    C --> F[6. Deploy ZenithRouter Unified]
+    D --> F
+    E --> F
+    B --> G[7. Deploy ZenithCrossChainRouter]
+    F --> H[8. Transfer Governance to Safe Multisig]
+    G --> H
 ```
 
 ### Step-by-Step Foundry Deployment

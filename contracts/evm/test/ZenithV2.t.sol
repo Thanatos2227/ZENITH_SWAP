@@ -1,20 +1,15 @@
 pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
-import "../src/router/ZenithRouter.sol";
+import "../src/v2/ZenithV2Factory.sol";
+import "../src/v2/ZenithV2Pool.sol";
+import "../src/v2/ZenithV2Router.sol";
 import "../src/treasury/ZenithTreasury.sol";
 import "../src/treasury/ZenithFeeController.sol";
-import "../src/v1/ZenithV1Factory.sol";
-import "../src/v1/ZenithV1Router.sol";
-import "../src/v2/ZenithV2Factory.sol";
-import "../src/v2/ZenithV2Router.sol";
-import "../src/v3/ZenithV3Factory.sol";
-import "../src/v3/ZenithV3PositionManager.sol";
-import "../src/v3/ZenithV3Router.sol";
 import "../src/interfaces/IERC20.sol";
 import "../src/interfaces/IWETH9.sol";
 
-contract MockERC20Router is IERC20 {
+contract MockERC20V2 is IERC20 {
     string public name;
     string public symbol;
     uint8 public decimals;
@@ -61,8 +56,8 @@ contract MockERC20Router is IERC20 {
     }
 }
 
-contract MockWETHRouter is IWETH9, MockERC20Router {
-    constructor() MockERC20Router("Wrapped Ether", "WETH", 18) {}
+contract MockWETHV2 is IWETH9, MockERC20V2 {
+    constructor() MockERC20V2("Wrapped Ether", "WETH", 18) {}
 
     function deposit() external payable override {
         totalSupply += msg.value;
@@ -80,69 +75,59 @@ contract MockWETHRouter is IWETH9, MockERC20Router {
     }
 }
 
-contract ZenithRouterTest is Test {
+contract ZenithV2Test is Test {
     ZenithTreasury public treasury;
     ZenithFeeController public feeController;
-    ZenithV1Factory public v1Factory;
-    ZenithV1Router public v1Router;
-    ZenithV2Factory public v2Factory;
-    ZenithV2Router public v2Router;
-    ZenithV3Factory public v3Factory;
-    ZenithV3Router public v3Router;
-    ZenithV3PositionManager public v3PositionManager;
-    ZenithRouter public unifiedRouter;
-
-    MockWETHRouter public weth;
-    MockERC20Router public tokenA;
-    MockERC20Router public tokenB;
+    ZenithV2Factory public factory;
+    ZenithV2Router public router;
+    MockWETHV2 public weth;
+    MockERC20V2 public tokenA;
+    MockERC20V2 public tokenB;
 
     address public governance = address(0x1000);
     address public alice = address(0x2000);
     address public bob = address(0x3000);
 
     function setUp() public {
-        weth = new MockWETHRouter();
         treasury = new ZenithTreasury(governance);
         feeController = new ZenithFeeController(governance, address(treasury));
+        factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
+        weth = new MockWETHV2();
+        router = new ZenithV2Router(address(factory), address(weth));
 
-        v1Factory = new ZenithV1Factory(governance, address(treasury));
-        v1Router = new ZenithV1Router(address(v1Factory), address(weth));
-
-        v2Factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
-        v2Router = new ZenithV2Router(address(v2Factory), address(weth));
-
-        v3Factory = new ZenithV3Factory(governance, address(feeController));
-        v3Router = new ZenithV3Router(address(v3Factory), address(weth));
-        v3PositionManager = new ZenithV3PositionManager(address(v3Factory), address(weth));
-
-        unifiedRouter = new ZenithRouter(
-            governance,
-            address(weth),
-            address(treasury),
-            address(feeController),
-            address(v1Router),
-            address(v2Router),
-            address(v3Router)
-        );
-
-        vm.prank(governance);
-        treasury.setAuthorizedCollector(address(unifiedRouter), true);
-
-        tokenA = new MockERC20Router("Token A", "TKNA", 18);
-        tokenB = new MockERC20Router("Token B", "TKNB", 18);
+        tokenA = new MockERC20V2("Token A", "TKNA", 18);
+        tokenB = new MockERC20V2("Token B", "TKNB", 18);
 
         tokenA.mint(alice, 1_000_000 ether);
         tokenB.mint(alice, 1_000_000 ether);
         tokenA.mint(bob, 10_000 ether);
     }
 
-    function test_UnifiedRouterSwapV1() public {
+    function test_CreatePoolWithTiers() public {
+        address pool5 = factory.createPool(address(tokenA), address(tokenB), 5);
+        address pool30 = factory.createPool(address(tokenA), address(tokenB), 30);
+        address pool100 = factory.createPool(address(tokenA), address(tokenB), 100);
+
+        assertTrue(pool5 != address(0));
+        assertTrue(pool30 != address(0));
+        assertTrue(pool100 != address(0));
+        assertTrue(pool5 != pool30 && pool30 != pool100);
+
+        assertEq(ZenithV2Pool(pool5).fee(), 5);
+        assertEq(ZenithV2Pool(pool30).fee(), 30);
+        assertEq(ZenithV2Pool(pool100).fee(), 100);
+    }
+
+    function test_V2SwapExecution() public {
+        factory.createPool(address(tokenA), address(tokenB), 30);
+
         vm.startPrank(alice);
-        tokenA.approve(address(v1Router), type(uint256).max);
-        tokenB.approve(address(v1Router), type(uint256).max);
-        v1Router.addLiquidity(
+        tokenA.approve(address(router), type(uint256).max);
+        tokenB.approve(address(router), type(uint256).max);
+        router.addLiquidity(
             address(tokenA),
             address(tokenB),
+            30,
             100_000 ether,
             100_000 ether,
             0,
@@ -153,28 +138,26 @@ contract ZenithRouterTest is Test {
         vm.stopPrank();
 
         vm.startPrank(bob);
-        tokenA.approve(address(unifiedRouter), type(uint256).max);
+        tokenA.approve(address(router), type(uint256).max);
+        address[] memory path = new address[](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        uint24[] memory feePath = new uint24[](1);
+        feePath[0] = 30;
 
         uint256 bobBBefore = tokenB.balanceOf(bob);
-        uint256 amountOut = unifiedRouter.swap(
-            ZenithRouter.SwapParams({
-                protocol: ZenithRouter.ProtocolTier.ZENITH_V1,
-                tokenIn: address(tokenA),
-                tokenOut: address(tokenB),
-                feeTier: 0,
-                amountIn: 1_000 ether,
-                amountOutMinimum: 0,
-                recipient: bob,
-                deadline: block.timestamp + 1 hours
-            })
+        uint256[] memory amounts = router.swapExactTokensForTokens(
+            1_000 ether,
+            0,
+            path,
+            feePath,
+            bob,
+            block.timestamp + 1 hours
         );
         vm.stopPrank();
 
         uint256 bobBAfter = tokenB.balanceOf(bob);
-        assertEq(bobBAfter - bobBBefore, amountOut);
-        assertTrue(amountOut > 0);
-
-        uint256 treasuryFeeBalance = tokenA.balanceOf(address(treasury));
-        assertTrue(treasuryFeeBalance > 0);
+        assertEq(bobBAfter - bobBBefore, amounts[1]);
+        assertTrue(amounts[1] > 0);
     }
 }

@@ -1,0 +1,36 @@
+name: ZENITH Protocol CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify:
+    name: Protocol Quality & Security Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Anti-Mock & Secret Audit Gate
+        run: npm run audit:anti-mock
+
+      - name: TypeScript Type-Check Gate
+        run: npm run type-check
+
+      - name: Protocol Test Suite (All Disciplines)
+        run: npm test
+
+      - name: Production Web Application Build Gate
+        run: npm run build

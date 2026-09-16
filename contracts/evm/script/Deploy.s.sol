@@ -9,6 +9,7 @@ import {ZenithV2Factory} from "../src/v2/ZenithV2Factory.sol";
 import {ZenithV2Router} from "../src/v2/ZenithV2Router.sol";
 import {ZenithV3Factory} from "../src/v3/ZenithV3Factory.sol";
 import {ZenithV3Router} from "../src/v3/ZenithV3Router.sol";
+import {ZenithV3PositionManager} from "../src/v3/ZenithV3PositionManager.sol";
 import {ZenithRouter} from "../src/router/ZenithRouter.sol";
 import {ZenithCrossChainRouter} from "../src/ZenithCrossChainRouter.sol";
 import {ZenithCircuitBreaker} from "../src/ZenithCircuitBreaker.sol";
@@ -23,6 +24,7 @@ contract DeployZenith is Script {
         address v2RouterAddr,
         address v3FactoryAddr,
         address v3RouterAddr,
+        address v3PositionManagerAddr,
         address unifiedRouterAddr,
         address crossChainRouterAddr
     ) {
@@ -41,32 +43,35 @@ contract DeployZenith is Script {
 
         ZenithTreasury treasury = new ZenithTreasury(governance);
         treasuryAddr = address(treasury);
-        console.log("1. ZenithTreasury:        ", treasuryAddr);
+        console.log("1. ZenithTreasury:          ", treasuryAddr);
 
         ZenithFeeController feeController = new ZenithFeeController(governance, treasuryAddr);
         feeControllerAddr = address(feeController);
-        console.log("2. ZenithFeeController:    ", feeControllerAddr);
+        console.log("2. ZenithFeeController:      ", feeControllerAddr);
 
         ZenithV1Factory v1Factory = new ZenithV1Factory(governance, treasuryAddr);
         v1FactoryAddr = address(v1Factory);
         ZenithV1Router v1Router = new ZenithV1Router(v1FactoryAddr, wethAddress);
         v1RouterAddr = address(v1Router);
-        console.log("3. ZenithV1Factory:        ", v1FactoryAddr);
-        console.log("4. ZenithV1Router:         ", v1RouterAddr);
+        console.log("3. ZenithV1Factory:          ", v1FactoryAddr);
+        console.log("4. ZenithV1Router:           ", v1RouterAddr);
 
         ZenithV2Factory v2Factory = new ZenithV2Factory(governance, feeControllerAddr, treasuryAddr);
         v2FactoryAddr = address(v2Factory);
         ZenithV2Router v2Router = new ZenithV2Router(v2FactoryAddr, wethAddress);
         v2RouterAddr = address(v2Router);
-        console.log("5. ZenithV2Factory:        ", v2FactoryAddr);
-        console.log("6. ZenithV2Router:         ", v2RouterAddr);
+        console.log("5. ZenithV2Factory:          ", v2FactoryAddr);
+        console.log("6. ZenithV2Router:           ", v2RouterAddr);
 
         ZenithV3Factory v3Factory = new ZenithV3Factory(governance, feeControllerAddr);
         v3FactoryAddr = address(v3Factory);
         ZenithV3Router v3Router = new ZenithV3Router(v3FactoryAddr, wethAddress);
         v3RouterAddr = address(v3Router);
-        console.log("7. ZenithV3Factory:        ", v3FactoryAddr);
-        console.log("8. ZenithV3Router:         ", v3RouterAddr);
+        ZenithV3PositionManager v3PositionManager = new ZenithV3PositionManager(v3FactoryAddr, wethAddress);
+        v3PositionManagerAddr = address(v3PositionManager);
+        console.log("7. ZenithV3Factory:          ", v3FactoryAddr);
+        console.log("8. ZenithV3Router:           ", v3RouterAddr);
+        console.log("9. ZenithV3PositionManager:  ", v3PositionManagerAddr);
 
         ZenithRouter unifiedRouter = new ZenithRouter(
             governance,
@@ -78,7 +83,7 @@ contract DeployZenith is Script {
             v3RouterAddr
         );
         unifiedRouterAddr = address(unifiedRouter);
-        console.log("9. ZenithUnifiedRouter:    ", unifiedRouterAddr);
+        console.log("10. ZenithUnifiedRouter:     ", unifiedRouterAddr);
 
         ZenithCircuitBreaker circuitBreaker = new ZenithCircuitBreaker(governance, emergencyGuardian);
         ZenithCrossChainRouter crossChainRouter = new ZenithCrossChainRouter(
@@ -88,7 +93,7 @@ contract DeployZenith is Script {
             permit2Address
         );
         crossChainRouterAddr = address(crossChainRouter);
-        console.log("10. ZenithCrossChainRouter:", crossChainRouterAddr);
+        console.log("11. ZenithCrossChainRouter:  ", crossChainRouterAddr);
 
         vm.stopBroadcast();
 
