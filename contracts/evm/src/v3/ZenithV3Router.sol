@@ -6,6 +6,8 @@ import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH9.sol";
 
 contract ZenithV3Router is IZenithV3SwapCallback {
+    error V3TooLittleReceived();
+
     address public immutable factory;
     address public immutable WETH9;
 
@@ -97,7 +99,9 @@ contract ZenithV3Router is IZenithV3SwapCallback {
         );
 
         amountOut = uint256(-(zeroForOne ? amount1 : amount0));
-        require(amountOut >= params.amountOutMinimum, "ZenithV3Router: SLIPPAGE");
+        if (amountOut < params.amountOutMinimum) {
+            revert V3TooLittleReceived();
+        }
     }
 
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results) {

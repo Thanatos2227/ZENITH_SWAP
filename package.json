@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "npm run dev --workspace=@zenith/web",
     "build": "npm run build --workspaces --if-present",
-    "test": "npx tsx --test tests/zenith_polygon_root_cause_repair.test.ts tests/zenith_swap_execution_repair.test.ts tests/anti_mock_audit.test.ts tests/zenith_v1_v2_v3_amm.test.ts tests/zenith_v3_tickmath_fuzz.test.ts tests/zenith_treasury.test.ts tests/zenith_sdk.test.ts tests/zenith_decimal_regression.test.ts tests/zenith_crosschain_production.test.ts tests/zenith_crosschain_router.test.ts tests/zenith_crosschain_surgical_repair.test.ts tests/zenith_real_local_e2e.test.ts tests/zenith_transfer_failed_repair.test.ts tests/zenith.test.ts tests/zenith_master_matrix.test.ts tests/zenith_24_disciplines.test.ts",
+    "test": "npx tsx --test tests/zenith_polygon_root_cause_repair.test.ts tests/zenith_swap_execution_repair.test.ts tests/anti_mock_audit.test.ts tests/zenith_v1_v2_v3_amm.test.ts tests/zenith_v3_tickmath_fuzz.test.ts tests/zenith_treasury.test.ts tests/zenith_sdk.test.ts tests/zenith_decimal_regression.test.ts tests/zenith_crosschain_production.test.ts tests/zenith_crosschain_router.test.ts tests/zenith_crosschain_surgical_repair.test.ts tests/zenith_real_local_e2e.test.ts tests/zenith_transfer_failed_repair.test.ts tests/zenith_v3_too_little_received.test.ts tests/zenith.test.ts tests/zenith_master_matrix.test.ts tests/zenith_24_disciplines.test.ts",
     "audit:anti-mock": "npx tsx scripts/audit-anti-mock.ts",
     "type-check": "npm run type-check --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"

@@ -126,7 +126,7 @@ export class DEXAggregator {
     const activeMode = mode || this.mode;
     if (activeMode === 'ZENITH_ONLY' && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
       throw new Error(
-        `DEXAggregator is operating in sovereign ZENITH_ONLY mode. External protocol execution (${quote.provider}) is disabled.`
+        `ZENITH_EXTERNAL_EXECUTION_DETECTED: DEXAggregator is operating in sovereign ZENITH_ONLY mode. External protocol execution (${quote.provider}) is strictly prohibited.`
       );
     }
 

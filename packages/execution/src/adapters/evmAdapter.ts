@@ -42,6 +42,25 @@ const ERC20_ABI = [
   'function symbol() view returns (string)'
 ];
 
+export const KNOWN_REVERT_ERRORS: Record<string, string> = {
+  '0x39d35496': 'V3_TOO_LITTLE_RECEIVED: Simulated output was less than amountOutMinimum (slippage limit exceeded)',
+  '0x739dbe52': 'V3_TOO_MUCH_REQUESTED: Input amount exceeded maximum allowed',
+  '0xc9f52c71': 'TOO_LITTLE_RECEIVED: Quoted amount received was below minimum threshold',
+  '0xd4e0248e': 'V3_INVALID_AMOUNT_OUT: Output amount was invalid or zero',
+  '0x316cf0eb': 'V3_INVALID_SWAP: Swap parameters or path invalid',
+  '0x32b13d91': 'V3_INVALID_CALLER: Unauthorized callback sender'
+};
+
+export function decodeRevertReason(rawReason: string): string {
+  if (!rawReason) return 'UNKNOWN_REVERT';
+  for (const [selector, decoded] of Object.entries(KNOWN_REVERT_ERRORS)) {
+    if (rawReason.toLowerCase().includes(selector.toLowerCase())) {
+      return decoded;
+    }
+  }
+  return rawReason;
+}
+
 export class EVMExecutionAdapter {
   public async checkAllowance(params: {
     tokenAddress: string;
@@ -261,13 +280,14 @@ export class EVMExecutionAdapter {
           value: authoritativeTx.value
         });
       } catch (callErr: any) {
-        const revertReason = callErr?.reason || callErr?.data || callErr?.message || String(callErr);
+        const rawReason = callErr?.data || callErr?.reason || callErr?.message || String(callErr);
+        const revertReason = decodeRevertReason(rawReason);
         console.error('[ZENITH EVMAdapter] Pre-flight eth_call reverted:', {
           ...diagTrace,
           revertReason
         });
         throw new ZenithSimulationFailedError(
-          `On-chain simulation (eth_call) reverted. Target rejected execution.`,
+          `On-chain simulation (eth_call) reverted. Target rejected execution. (${revertReason})`,
           revertReason
         );
       }
@@ -287,13 +307,14 @@ export class EVMExecutionAdapter {
         estimatedGas = 200000n;
       }
     } catch (gasErr: any) {
-      const revertReason = gasErr?.reason || gasErr?.data || gasErr?.message || String(gasErr);
+      const rawReason = gasErr?.data || gasErr?.reason || gasErr?.message || String(gasErr);
+      const revertReason = decodeRevertReason(rawReason);
       console.error('[ZENITH EVMAdapter] Pre-flight estimateGas failed:', {
         ...diagTrace,
         revertReason
       });
       throw new ZenithSimulationFailedError(
-        `Gas estimation (eth_estimateGas) failed. Transaction is predicted to revert on-chain.`,
+        `Gas estimation (eth_estimateGas) failed. Transaction is predicted to revert on-chain. (${revertReason})`,
         revertReason
       );
     }

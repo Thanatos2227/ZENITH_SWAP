@@ -27,6 +27,7 @@ export const ZENITH_V3_POOL_ABI = [
 ];
 
 export const ZENITH_V3_ROUTER_ABI = [
+  'error V3TooLittleReceived()',
   'function factory() external view returns (address)',
   'function WETH9() external view returns (address)',
   'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',

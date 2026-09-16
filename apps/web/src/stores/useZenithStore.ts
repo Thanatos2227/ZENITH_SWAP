@@ -1303,6 +1303,10 @@ export const useZenithStore = create<ZenithState>((set, get) => {
           rawMsg.includes('ZENITH_SIMULATION_FAILED') ||
           rawMsg.includes('TRANSFER_FAILED') ||
           rawMsg.includes('TFROM_FAILED') ||
+          rawMsg.includes('0x39d35496') ||
+          rawMsg.includes('V3_TOO_LITTLE_RECEIVED') ||
+          rawMsg.includes('V3TooLittleReceived') ||
+          rawMsg.includes('TOO_LITTLE_RECEIVED') ||
           rawMsg.includes('ZENITH_APPROVAL_TARGET_MISMATCH') ||
           rawMsg.includes('SIMULATION_REVERT');
 
@@ -1333,12 +1337,16 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         ) {
           errMsg = `SafeTransferFrom failed (STF): Insufficient ${quote.request.tokenIn.symbol} balance or token allowance in your connected wallet.`;
         } else if (
+          rawMsg.includes('0x39d35496') ||
+          rawMsg.includes('V3_TOO_LITTLE_RECEIVED') ||
+          rawMsg.includes('V3TooLittleReceived') ||
           rawMsg.includes('Too little received') ||
           rawMsg.includes('TOO_LITTLE_RECEIVED') ||
           rawMsg.includes('Slippage limit exceeded') ||
+          rawMsg.includes('ZenithV3Router: SLIPPAGE') ||
           err?.revert?.args?.[0] === 'Too little received'
         ) {
-          errMsg = `Slippage Limit Exceeded (Too little received): On-chain pool output was below your minimum requested pay to user of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please increase your slippage tolerance (e.g. 1.0% or 2.0%) or refresh the quote.`;
+          errMsg = `V3 Too Little Received (Slippage Limit Exceeded): On-chain pool output was below your minimum requested pay of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please refresh the quote or adjust slippage tolerance (e.g. 0.5% or 1.0%).`;
         } else if (
           rawMsg.includes('require(false)') ||
           rawMsg.includes('execution reverted') ||
