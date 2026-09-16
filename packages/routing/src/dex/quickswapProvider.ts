@@ -2,8 +2,6 @@ import { DEXProtocol, Token } from '@zenith/types';
 import { Interface } from 'ethers';
 import {
   QUICKSWAP_V3_ROUTER_ABI,
-  QUICKSWAP_V2_ROUTER_ABI,
-  QUICKSWAP_V2_ROUTER,
   CANONICAL_NATIVE_ADDRESS,
   getQuickSwapRouter
 } from '@zenith/contracts';
@@ -88,48 +86,6 @@ export class QuickSwapProvider implements DEXProvider {
     const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
 
     const isNativeIn = isNativeToken(quote.tokenIn.address) || Boolean(quote.tokenIn.isNative);
-    const isNativeOut = isNativeToken(quote.tokenOut.address) || Boolean(quote.tokenOut.isNative);
-
-    if (isNativeIn) {
-      const v2Iface = new Interface(QUICKSWAP_V2_ROUTER_ABI);
-      const calldata = v2Iface.encodeFunctionData('swapExactETHForTokens', [
-        quote.minimumAmountOut,
-        [tokenInAddr, tokenOutAddr],
-        recipient,
-        swapDeadline
-      ]);
-      return {
-        to: QUICKSWAP_V2_ROUTER,
-        data: calldata,
-        value: quote.amountIn.toString(),
-        chainId: chainIdNum,
-        gasLimit: quote.gasEstimate.toString(),
-        gasEstimateUnits: quote.gasEstimate,
-        approvalTarget: CANONICAL_NATIVE_ADDRESS,
-        approvalAmount: '0',
-        requiredAllowanceRaw: '0'
-      };
-    } else if (isNativeOut) {
-      const v2Iface = new Interface(QUICKSWAP_V2_ROUTER_ABI);
-      const calldata = v2Iface.encodeFunctionData('swapExactTokensForETH', [
-        quote.amountIn,
-        quote.minimumAmountOut,
-        [tokenInAddr, tokenOutAddr],
-        recipient,
-        swapDeadline
-      ]);
-      return {
-        to: QUICKSWAP_V2_ROUTER,
-        data: calldata,
-        value: '0',
-        chainId: chainIdNum,
-        gasLimit: quote.gasEstimate.toString(),
-        gasEstimateUnits: quote.gasEstimate,
-        approvalTarget: QUICKSWAP_V2_ROUTER,
-        approvalAmount: quote.amountIn.toString(),
-        requiredAllowanceRaw: quote.amountIn.toString()
-      };
-    }
 
     const iface = new Interface(QUICKSWAP_V3_ROUTER_ABI);
     const calldata = iface.encodeFunctionData('exactInputSingle', [
@@ -147,13 +103,13 @@ export class QuickSwapProvider implements DEXProvider {
     return {
       to: routerAddress,
       data: calldata,
-      value: '0',
+      value: isNativeIn ? quote.amountIn.toString() : '0',
       chainId: chainIdNum,
       gasLimit: quote.gasEstimate.toString(),
       gasEstimateUnits: quote.gasEstimate,
-      approvalTarget: routerAddress,
-      approvalAmount: quote.amountIn.toString(),
-      requiredAllowanceRaw: quote.amountIn.toString()
+      approvalTarget: isNativeIn ? CANONICAL_NATIVE_ADDRESS : routerAddress,
+      approvalAmount: isNativeIn ? '0' : quote.amountIn.toString(),
+      requiredAllowanceRaw: isNativeIn ? '0' : quote.amountIn.toString()
     };
   }
 }

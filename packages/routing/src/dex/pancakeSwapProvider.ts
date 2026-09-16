@@ -7,7 +7,7 @@ import {
   getPancakeSwapRouter
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
-import { calculateDEXLiquidityOutput, isNativeToken } from './dexMath';
+import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
 
 export class PancakeSwapProvider implements DEXProvider {
   public readonly id: DEXProtocol = 'PANCAKESWAP';
@@ -83,10 +83,13 @@ export class PancakeSwapProvider implements DEXProvider {
     const iface = new Interface(PANCAKESWAP_V3_ROUTER_ABI);
     const recipient = recipientAddress || userAddress;
 
+    const tokenInAddr = resolvePoolTokenAddress(quote.tokenIn, chainIdNum);
+    const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
+
     const calldata = iface.encodeFunctionData('exactInputSingle', [
       [
-        quote.tokenIn.address,
-        quote.tokenOut.address,
+        tokenInAddr,
+        tokenOutAddr,
         quote.feeTierBps * 100,
         recipient,
         quote.amountIn,

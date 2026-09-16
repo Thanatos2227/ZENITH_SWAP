@@ -45,17 +45,19 @@ export class EVMExecutionAdapter {
     ownerAddress: string;
     spenderAddress: string;
     signer?: JsonRpcSigner | null;
+    provider?: BrowserProvider | null;
   }): Promise<bigint> {
     if (isNativeToken(params.tokenAddress)) {
       return BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
     }
 
-    if (params.signer) {
+    const runner = params.signer || params.provider;
+    if (runner) {
       try {
-        const tokenContract = new Contract(params.tokenAddress, ERC20_ABI, params.signer);
+        const tokenContract = new Contract(params.tokenAddress, ERC20_ABI, runner);
         return await tokenContract.allowance(params.ownerAddress, params.spenderAddress);
       } catch (err) {
-        console.warn('[EVMAdapter] checkAllowance error:', err);
+        console.warn('[ZENITH EVMAdapter] checkAllowance error:', err);
       }
     }
 
@@ -63,7 +65,7 @@ export class EVMExecutionAdapter {
   }
 
   public async executeSwap(params: EVMExecutionParams): Promise<EVMExecutionResult> {
-    const { quote, userAddress, signer } = params;
+    const { quote, userAddress, signer, provider } = params;
 
     if (!signer) {
       throw new SignerRequiredError('Wallet signer is required to sign and broadcast transaction on-chain.');
@@ -88,11 +90,11 @@ export class EVMExecutionAdapter {
 
       let ccExecution: CrossChainExecution | undefined = quote.bestRoute.execution as CrossChainExecution | undefined;
       if (!ccExecution || !ccExecution.data || ccExecution.data === '0x') {
-        const provider = defaultCrossChainAggregator.getProvider(ccQuote.provider);
-        if (!provider) {
+        const providerAdapter = defaultCrossChainAggregator.getProvider(ccQuote.provider);
+        if (!providerAdapter) {
           throw new Error(`Bridge provider ${ccQuote.provider} not found`);
         }
-        ccExecution = await provider.buildExecution(ccQuote, validatedUser, quote.request.recipientAddress);
+        ccExecution = await providerAdapter.buildExecution(ccQuote, validatedUser, quote.request.recipientAddress);
       }
 
       if (!ccExecution || !ccExecution.data || ccExecution.data === '0x') {
@@ -143,7 +145,7 @@ export class EVMExecutionAdapter {
         }
       } catch (nativeErr: any) {
         if (nativeErr.message?.includes('Insufficient')) throw nativeErr;
-        console.warn('[EVMAdapter] Native balance verification note:', nativeErr);
+        console.warn('[ZENITH EVMAdapter] Native balance verification note:', nativeErr);
       }
     }
 
@@ -163,22 +165,45 @@ export class EVMExecutionAdapter {
         }
       } catch (balErr: any) {
         if (balErr.message?.includes('Insufficient')) throw balErr;
-        console.warn('[EVMAdapter] Pre-flight balance check warning:', balErr);
+        console.warn('[ZENITH EVMAdapter] Pre-flight balance check warning:', balErr);
       }
 
       const currentAllowance = await this.checkAllowance({
         tokenAddress: validatedTokenIn,
         ownerAddress: validatedUser,
         spenderAddress: approvalTarget,
-        signer
+        signer,
+        provider
       });
 
       if (currentAllowance < requiredAllowance) {
+        console.log(`[ZENITH EVMAdapter] Insufficient allowance (${currentAllowance.toString()} < ${requiredAllowance.toString()}). Requesting wallet approval...`);
         params.onStatusChange?.('APPROVING');
-        const approveTx = await tokenContract.approve(approvalTarget, requiredAllowance);
+        const approveTx = await tokenContract.approve(approvalTarget, requiredAllowance, {
+          gasLimit: 100000n
+        });
+        console.log('[ZENITH EVMAdapter] Approval transaction broadcasted:', approveTx.hash);
         if (typeof approveTx?.wait === 'function') {
-          await approveTx.wait(1);
+          const approveReceipt = await approveTx.wait(1);
+          if (!approveReceipt || approveReceipt.status === 0) {
+            throw new Error(`Token approval transaction reverted on-chain: ${approveTx.hash}`);
+          }
         }
+
+        const verifiedAllowance = await this.checkAllowance({
+          tokenAddress: validatedTokenIn,
+          ownerAddress: validatedUser,
+          spenderAddress: approvalTarget,
+          signer,
+          provider
+        });
+
+        if (verifiedAllowance < requiredAllowance) {
+          throw new Error(
+            `Token approval confirmation did not update allowance sufficiently (${verifiedAllowance.toString()} < ${requiredAllowance.toString()}).`
+          );
+        }
+        console.log('[ZENITH EVMAdapter] Token allowance successfully verified on-chain:', verifiedAllowance.toString());
         params.onStatusChange?.('APPROVED');
       }
     }
@@ -200,13 +225,27 @@ export class EVMExecutionAdapter {
         });
       }
     } catch (simErr: any) {
-      console.warn('[EVMAdapter] Pre-flight gas estimation note:', simErr?.message || simErr);
+      console.warn('[ZENITH EVMAdapter] Pre-flight gas estimation note:', simErr?.message || simErr);
     }
 
-    const submissionTx = {
+    let gasLimit: bigint | undefined;
+    if (quote.bestRoute?.execution?.gasLimit) {
+      gasLimit = BigInt(quote.bestRoute.execution.gasLimit);
+    } else if (quote.bestRoute?.estimatedGasUnits) {
+      gasLimit = BigInt(quote.bestRoute.estimatedGasUnits);
+    } else if (quote.dexQuote?.gasEstimate) {
+      gasLimit = BigInt(quote.dexQuote.gasEstimate);
+    }
+
+    const finalGasLimit = gasLimit && gasLimit > 0n
+      ? (gasLimit * 120n) / 100n
+      : 350000n;
+
+    const submissionTx: any = {
       to: executionTo,
       data: executionData,
-      value: executionValue
+      value: executionValue,
+      gasLimit: finalGasLimit
     };
 
     if (
@@ -217,12 +256,25 @@ export class EVMExecutionAdapter {
       throw new Error('Transaction inconsistency detected between simulation payload and submission payload');
     }
 
+    console.log('[ZENITH EVMAdapter] Preparing transaction dispatch:', {
+      to: executionTo,
+      value: executionValue.toString(),
+      gasLimit: finalGasLimit.toString(),
+      dataLength: executionData.length,
+      user: validatedUser,
+      isCrossChain,
+      isNativeIn
+    });
+
     params.onStatusChange?.('SIGNING');
 
     let tx;
     try {
+      console.log('[ZENITH EVMAdapter] Calling signer.sendTransaction()... Waiting for wallet popup/approval...');
       tx = await signer.sendTransaction(submissionTx);
+      console.log('[ZENITH EVMAdapter] Transaction broadcasted successfully! TxHash:', tx.hash);
     } catch (sendErr: any) {
+      console.error('[ZENITH EVMAdapter] signer.sendTransaction error:', sendErr);
       const rawMsg = sendErr?.reason || sendErr?.message || String(sendErr);
       if (
         rawMsg.includes('STF') ||
@@ -241,6 +293,15 @@ export class EVMExecutionAdapter {
       ) {
         throw new Error(
           `Slippage Limit Exceeded (Too little received): On-chain pool output was below your minimum requested pay to user of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please increase your slippage tolerance (e.g. 1.0% or 2.0%) or refresh the quote.`
+        );
+      }
+      if (
+        rawMsg.includes('require(false)') ||
+        rawMsg.includes('execution reverted') ||
+        rawMsg.includes('CALL_EXCEPTION')
+      ) {
+        throw new Error(
+          `On-Chain Execution Reverted (require(false)): The smart contract rejected this swap on ${quote.request.sourceChainId}. Possible reasons: 1) Insufficient pool liquidity, 2) Token transfer fee/tax mismatch, 3) Token approval missing, or 4) Slippage exceeded. Try increasing slippage tolerance or choosing a smaller amount.`
         );
       }
       throw sendErr;

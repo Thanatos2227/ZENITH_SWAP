@@ -1,0 +1,150 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  # Zenith V1 Factory
+  - kind: ethereum
+    name: ZenithV1Factory
+    network: mainnet
+    source:
+      address: "0x3333333333333333333333333333333333333333"
+      abi: ZenithV1Factory
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Pool
+        - Token
+      abis:
+        - name: ZenithV1Factory
+          file: ../../contracts/evm/out/ZenithV1Factory.sol/ZenithV1Factory.json
+        - name: IERC20
+          file: ../../contracts/evm/out/IERC20.sol/IERC20.json
+      eventHandlers:
+        - event: PairCreated(indexed address,indexed address,address,uint256)
+          handler: handleV1PairCreated
+      file: ./src/mappings/factory.ts
+
+  # Zenith V2 Factory
+  - kind: ethereum
+    name: ZenithV2Factory
+    network: mainnet
+    source:
+      address: "0x4444444444444444444444444444444444444444"
+      abi: ZenithV2Factory
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Pool
+        - Token
+      abis:
+        - name: ZenithV2Factory
+          file: ../../contracts/evm/out/ZenithV2Factory.sol/ZenithV2Factory.json
+        - name: IERC20
+          file: ../../contracts/evm/out/IERC20.sol/IERC20.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,indexed uint256,address,uint256)
+          handler: handleV2PoolCreated
+      file: ./src/mappings/factory.ts
+
+  # Zenith V3 Factory
+  - kind: ethereum
+    name: ZenithV3Factory
+    network: mainnet
+    source:
+      address: "0x5555555555555555555555555555555555555555"
+      abi: ZenithV3Factory
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Pool
+        - Token
+      abis:
+        - name: ZenithV3Factory
+          file: ../../contracts/evm/out/ZenithV3Factory.sol/ZenithV3Factory.json
+        - name: IERC20
+          file: ../../contracts/evm/out/IERC20.sol/IERC20.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,indexed uint24,int24,address)
+          handler: handleV3PoolCreated
+      file: ./src/mappings/factory.ts
+
+  # Zenith Sovereign Treasury
+  - kind: ethereum
+    name: ZenithTreasury
+    network: mainnet
+    source:
+      address: "0x1111111111111111111111111111111111111111"
+      abi: ZenithTreasury
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TreasuryFeeEvent
+        - ZenithProtocol
+      abis:
+        - name: ZenithTreasury
+          file: ../../contracts/evm/out/ZenithTreasury.sol/ZenithTreasury.json
+      eventHandlers:
+        - event: FeeReceived(indexed address,indexed address,uint256)
+          handler: handleFeeReceived
+      file: ./src/mappings/treasury.ts
+
+templates:
+  # Zenith V1 Pair Template
+  - kind: ethereum
+    name: ZenithV1Pair
+    network: mainnet
+    source:
+      abi: ZenithV1Pair
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Swap
+        - Mint
+        - Burn
+        - Pool
+      abis:
+        - name: ZenithV1Pair
+          file: ../../contracts/evm/out/ZenithV1Pair.sol/ZenithV1Pair.json
+      eventHandlers:
+        - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
+          handler: handleV1Swap
+        - event: Sync(uint112,uint112)
+          handler: handleV1Sync
+      file: ./src/mappings/pool.ts
+
+  # Zenith V3 Pool Template
+  - kind: ethereum
+    name: ZenithV3Pool
+    network: mainnet
+    source:
+      abi: ZenithV3Pool
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Swap
+        - Mint
+        - Burn
+        - Pool
+      abis:
+        - name: ZenithV3Pool
+          file: ../../contracts/evm/out/ZenithV3Pool.sol/ZenithV3Pool.json
+      eventHandlers:
+        - event: Swap(indexed address,indexed address,int256,int256,uint160,uint128,int24)
+          handler: handleV3Swap
+      file: ./src/mappings/pool.ts

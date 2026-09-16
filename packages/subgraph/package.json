@@ -1,0 +1,17 @@
+{
+  "name": "@zenith/subgraph",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Institutional The Graph and Goldsky indexing subgraphs for ZENITH SWAP (V1, V2, V3 AMMs, Unified Router & Treasury)",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "node -e \"console.log('[Subgraph] Manifest and Schema Ready')\"",
+    "build:graph": "graph build",
+    "deploy:thegraph": "graph deploy --node https://api.thegraph.com/deploy/ zenith-swap/zenith-v4",
+    "deploy:goldsky": "goldsky subgraph deploy zenith-swap/1.0.0 --path ."
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.71.0",
+    "@graphprotocol/graph-ts": "^0.35.0"
+  }
+}

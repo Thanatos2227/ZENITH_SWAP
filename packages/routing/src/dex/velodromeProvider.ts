@@ -6,7 +6,7 @@ import {
   getVelodromeRouter
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
-import { calculateDEXLiquidityOutput, isNativeToken } from './dexMath';
+import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
 
 export const VELODROME_V2_FACTORY = '0x25CbdDb98b35ab1FF77413456B31EC81A6B6B746';
 
@@ -85,10 +85,13 @@ export class VelodromeProvider implements DEXProvider {
     const recipient = recipientAddress || userAddress;
     const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200;
 
+    const tokenInAddr = resolvePoolTokenAddress(quote.tokenIn, chainIdNum);
+    const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
+
     const routes = [
       {
-        from: quote.tokenIn.address,
-        to: quote.tokenOut.address,
+        from: tokenInAddr,
+        to: tokenOutAddr,
         stable: false,
         factory: VELODROME_V2_FACTORY
       }

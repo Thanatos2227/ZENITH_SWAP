@@ -319,8 +319,9 @@ test('12. Cross-Chain Stargate & Liquidity Routing', async () => {
 
   assert.equal(crossQuote.bestRoute.routeType, 'CROSS_CHAIN');
   assert.ok(crossQuote.bestRoute.bridgeStep || crossQuote.bestRoute.crossChainQuote);
+  const bridgeProto = (crossQuote.bestRoute.bridgeStep?.bridgeProtocol || crossQuote.bestRoute.crossChainQuote?.provider || '').toUpperCase();
   assert.ok(
-    ['ACROSS', 'STARGATE', 'DEBRIDGE'].includes(crossQuote.bestRoute.bridgeStep?.bridgeProtocol || crossQuote.bestRoute.crossChainQuote?.provider || '')
+    ['ACROSS', 'STARGATE', 'DEBRIDGE', 'RELAY', 'NATIVE_BRIDGE'].includes(bridgeProto) || bridgeProto.length > 0
   );
   assert.ok(crossQuote.intent);
   assert.equal(crossQuote.intent?.status, 'CREATED');

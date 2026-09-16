@@ -1,0 +1,26 @@
+{
+  "version": "1",
+  "name": "zenith-swap",
+  "deployments": [
+    {
+      "network": "ethereum",
+      "subgraph": "subgraph.yaml",
+      "status": "active"
+    },
+    {
+      "network": "arbitrum",
+      "subgraph": "subgraph.yaml",
+      "status": "active"
+    },
+    {
+      "network": "base",
+      "subgraph": "subgraph.yaml",
+      "status": "active"
+    },
+    {
+      "network": "polygon",
+      "subgraph": "subgraph.yaml",
+      "status": "active"
+    }
+  ]
+}

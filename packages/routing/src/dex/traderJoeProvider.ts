@@ -7,7 +7,7 @@ import {
   getTraderJoeRouter
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
-import { calculateDEXLiquidityOutput, isNativeToken } from './dexMath';
+import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
 
 export class TraderJoeProvider implements DEXProvider {
   public readonly id: DEXProtocol = 'TRADER_JOE';
@@ -60,8 +60,8 @@ export class TraderJoeProvider implements DEXProvider {
         priceImpactPercent: calculated.priceImpactPercent,
         executionTarget: routerAddress,
         approvalTarget: routerAddress,
-        gasEstimate: 170000n,
-        gasEstimateUnits: 170000n,
+        gasEstimate: 165000n,
+        gasEstimateUnits: 165000n,
         gasCostUSD: 0.04,
         quoteTimestamp,
         expiration: quoteTimestamp + 15000,
@@ -84,10 +84,13 @@ export class TraderJoeProvider implements DEXProvider {
     const recipient = recipientAddress || userAddress;
     const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200;
 
+    const tokenInAddr = resolvePoolTokenAddress(quote.tokenIn, chainIdNum);
+    const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
+
     const path = {
       pairBinSteps: [20],
       versions: [2],
-      tokenPath: [quote.tokenIn.address, quote.tokenOut.address]
+      tokenPath: [tokenInAddr, tokenOutAddr]
     };
 
     const isNativeIn = isNativeToken(quote.tokenIn.address) || Boolean(quote.tokenIn.isNative);

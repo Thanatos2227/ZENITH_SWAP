@@ -26,12 +26,13 @@ export const ConfirmSheet: React.FC = () => {
     executionMode,
     executionStatus,
     executionSteps,
+    isExecutingTrade,
     executeTrade
   } = useZenithStore();
 
   if (!isConfirmSheetOpen || !quote) return null;
 
-  const isExecuting = executionStatus !== 'IDLE' && executionStatus !== 'COMPLETED' && executionStatus !== 'FAILED';
+  const isExecuting = isExecutingTrade || (executionStatus !== 'IDLE' && executionStatus !== 'COMPLETED' && executionStatus !== 'FAILED');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">

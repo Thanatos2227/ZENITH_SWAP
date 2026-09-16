@@ -131,6 +131,7 @@ export interface ZenithState {
 
   executionStatus: TransactionStatus;
   executionSteps: ExecutionStep[];
+  isExecutingTrade: boolean;
   lastReceipt: ReceiptView | null;
 
   transactionHistory: ReceiptView[];
@@ -372,6 +373,7 @@ export const useZenithStore = create<ZenithState>((set, get) => {
 
     executionStatus: 'IDLE',
     executionSteps: [],
+    isExecutingTrade: false,
     lastReceipt: null,
 
     transactionHistory: [],
@@ -1154,10 +1156,34 @@ export const useZenithStore = create<ZenithState>((set, get) => {
     },
 
     executeTrade: async () => {
+      if (get().isExecutingTrade) {
+        console.warn('[ZENITH UI] executeTrade already in progress. Blocking duplicate invocation.');
+        return;
+      }
+
+      set({ isExecutingTrade: true });
+
       const { quote, walletAddress, isWalletConnected, openWalletModal, signer, provider, sourceChain, chainId, isWrongNetwork, walletBalances } = get();
-      if (!quote) return;
+      console.log('[ZENITH UI] executeTrade invoked:', {
+        isWalletConnected,
+        walletAddress,
+        hasSigner: Boolean(signer),
+        hasProvider: Boolean(provider),
+        sourceChain: sourceChain?.id,
+        connectedChainId: chainId,
+        quoteTokenIn: quote?.request?.tokenIn?.symbol,
+        quoteAmount: quote?.amountInFormatted
+      });
+
+      if (!quote) {
+        console.warn('[ZENITH UI] executeTrade aborted: No active quote found.');
+        set({ isExecutingTrade: false });
+        return;
+      }
 
       if (!isWalletConnected || !walletAddress) {
+        console.warn('[ZENITH UI] executeTrade: Wallet not connected. Opening WalletModal...');
+        set({ isExecutingTrade: false });
         openWalletModal();
         return;
       }
@@ -1171,20 +1197,39 @@ export const useZenithStore = create<ZenithState>((set, get) => {
             message: `Please switch your wallet to ${sourceChain.canonicalName} (Chain ID: ${sourceChain.chainId}) to execute this swap.`,
             type: 'WARNING'
           });
+          set({ isExecutingTrade: false });
           return;
         }
       }
 
-      const userBalanceStr = resolveTokenBalance(sourceChain.id, quote.request.tokenIn, walletBalances);
-      const userBalanceNum = parseFloat(userBalanceStr);
-      const amountInNum = parseFloat(quote.amountInFormatted.replace(/,/g, ''));
+      let activeSigner = signer;
+      if (!activeSigner && provider && typeof provider.getSigner === 'function') {
+        try {
+          activeSigner = await provider.getSigner();
+          set({ signer: activeSigner });
+        } catch {
+          activeSigner = null;
+        }
+      }
 
-      if (!isNaN(userBalanceNum) && userBalanceNum > 0 && userBalanceNum < amountInNum && isWalletConnected && signer) {
+      if (!activeSigner && typeof window !== 'undefined' && (window as any).ethereum) {
+        try {
+          const bp = new BrowserProvider((window as any).ethereum, 'any');
+          activeSigner = await bp.getSigner();
+          set({ provider: bp, signer: activeSigner });
+        } catch (e) {
+          console.warn('[ZENITH UI] Fallback BrowserProvider signer creation note:', e);
+        }
+      }
+
+      if (!activeSigner && sourceChain.executionEnvironment === 'EVM') {
         get().addNotification({
-          title: 'Insufficient Balance',
-          message: `Your wallet holds ${userBalanceStr} ${quote.request.tokenIn.symbol}, but this trade requires ${quote.amountInFormatted} ${quote.request.tokenIn.symbol}.`,
-          type: 'ERROR'
+          title: 'Wallet Signer Missing',
+          message: 'Please reconnect your wallet to authorize transaction signing.',
+          type: 'WARNING'
         });
+        set({ isExecutingTrade: false });
+        openWalletModal();
         return;
       }
 
@@ -1194,7 +1239,7 @@ export const useZenithStore = create<ZenithState>((set, get) => {
           quote,
           userAddress: walletAddress,
           stateMachine: executionSM,
-          signer,
+          signer: activeSigner,
           provider
         });
 
@@ -1253,6 +1298,12 @@ export const useZenithStore = create<ZenithState>((set, get) => {
           err?.revert?.args?.[0] === 'Too little received'
         ) {
           errMsg = `Slippage Limit Exceeded (Too little received): On-chain pool output was below your minimum requested pay to user of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please increase your slippage tolerance (e.g. 1.0% or 2.0%) or refresh the quote.`;
+        } else if (
+          errMsg.includes('require(false)') ||
+          errMsg.includes('execution reverted') ||
+          errMsg.includes('CALL_EXCEPTION')
+        ) {
+          errMsg = `On-Chain Execution Reverted (require(false)): The contract rejected execution. This typically occurs when swapping on a network without active pool liquidity, unapproved token allowance, or severe price movement.`;
         }
 
         const isUserRejected =
@@ -1275,6 +1326,8 @@ export const useZenithStore = create<ZenithState>((set, get) => {
             type: 'ERROR'
           });
         }
+      } finally {
+        set({ isExecutingTrade: false });
       }
     },
 

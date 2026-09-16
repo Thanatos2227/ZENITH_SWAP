@@ -6,7 +6,7 @@ import {
   getCamelotRouter
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
-import { calculateDEXLiquidityOutput, isNativeToken } from './dexMath';
+import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
 
 export class CamelotProvider implements DEXProvider {
   public readonly id: DEXProtocol = 'CAMELOT';
@@ -83,10 +83,13 @@ export class CamelotProvider implements DEXProvider {
     const recipient = recipientAddress || userAddress;
     const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200;
 
+    const tokenInAddr = resolvePoolTokenAddress(quote.tokenIn, chainIdNum);
+    const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
+
     const calldata = iface.encodeFunctionData('exactInputSingle', [
       [
-        quote.tokenIn.address,
-        quote.tokenOut.address,
+        tokenInAddr,
+        tokenOutAddr,
         recipient,
         swapDeadline,
         quote.amountIn,

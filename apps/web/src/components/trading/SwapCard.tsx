@@ -57,7 +57,8 @@ export const SwapCard: React.FC = () => {
     limitPrice,
     setLimitPrice,
     slippageTolerancePercent,
-    slippagePreset
+    slippagePreset,
+    isExecutingTrade
   } = useZenithStore();
 
   const [refreshTimer, setRefreshTimer] = useState<number>(10);
@@ -598,6 +599,14 @@ export const SwapCard: React.FC = () => {
           >
             <RefreshCw className="w-5 h-5 animate-spin text-cyan-400" />
             Fetching Best Route...
+          </button>
+        ) : isExecutingTrade ? (
+          <button
+            disabled
+            className="w-full py-4 rounded-xl bg-slate-800 text-cyan-400 font-display font-bold text-base cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-5 h-5 animate-spin text-cyan-400" />
+            Executing Transaction...
           </button>
         ) : quote && isAmountValid && quote.validation?.isValid !== false ? (
           <button

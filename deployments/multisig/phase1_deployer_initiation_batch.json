@@ -1,0 +1,124 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1789555048637,
+  "meta": {
+    "name": "ZENITH — Phase 1: Deployer Governance Handover Initiation",
+    "description": "Batch transactions executed by the deployer to transfer protocol roles to the 4-of-7 Safe Multisig.",
+    "txBuilderVersion": "1.16.5",
+    "createdAt": 1789555048637,
+    "createdFromSafeAddress": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    "createdFromOwnerAddress": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x1111111111111111111111111111111111111111",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "transferGovernance",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_newGovernance",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_newGovernance": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    },
+    {
+      "to": "0x2222222222222222222222222222222222222222",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "transferGovernance",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_newGovernance",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_newGovernance": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    },
+    {
+      "to": "0x3333333333333333333333333333333333333333",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "setFeeToSetter",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_feeToSetter",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_feeToSetter": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    },
+    {
+      "to": "0x4444444444444444444444444444444444444444",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "setFeeToSetter",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_feeToSetter",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_feeToSetter": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    },
+    {
+      "to": "0x5555555555555555555555555555555555555555",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "setOwner",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_owner",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_owner": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    },
+    {
+      "to": "0x6666666666666666666666666666666666666666",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "transferGovernance",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "_newGovernance",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "_newGovernance": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
+      }
+    }
+  ]
+}

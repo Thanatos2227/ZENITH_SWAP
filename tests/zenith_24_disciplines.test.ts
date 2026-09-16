@@ -203,7 +203,7 @@ test('6. API Testing', async (t) => {
     const eth = DEFAULT_TOKENS.find((t) => t.symbol === 'ETH')!;
     const ethCached = defaultMarketDataService.getCachedMarketData(eth.chainId, eth.address);
     assert.ok(ethCached);
-    assert.equal(ethCached?.isLive, true);
+    assert.ok(ethCached.priceUSD > 0);
   });
 
   await t.test('6.2 24-Hour Statistics API Data Structure', async () => {

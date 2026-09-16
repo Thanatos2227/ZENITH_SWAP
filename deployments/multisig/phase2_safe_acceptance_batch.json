@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1789555048637,
+  "meta": {
+    "name": "ZENITH — Phase 2: 4-of-7 Safe Multisig Governance Acceptance Batch",
+    "description": "Batch transaction to be signed and executed by the 4-of-7 Safe Multisig signers to finalize protocol ownership.",
+    "txBuilderVersion": "1.16.5",
+    "createdAt": 1789555048637,
+    "createdFromSafeAddress": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    "createdFromOwnerAddress": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x1111111111111111111111111111111111111111",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "acceptGovernance",
+        "payable": false,
+        "inputs": []
+      },
+      "contractInputsValues": {}
+    },
+    {
+      "to": "0x2222222222222222222222222222222222222222",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "acceptGovernance",
+        "payable": false,
+        "inputs": []
+      },
+      "contractInputsValues": {}
+    },
+    {
+      "to": "0x6666666666666666666666666666666666666666",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "acceptGovernance",
+        "payable": false,
+        "inputs": []
+      },
+      "contractInputsValues": {}
+    },
+    {
+      "to": "0x7777777777777777777777777777777777777777",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "name": "updateGuardian",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "newGuardian",
+            "type": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "newGuardian": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+      }
+    }
+  ]
+}

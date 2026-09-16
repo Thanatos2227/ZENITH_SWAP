@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useZenithStore } from '../../stores/useZenithStore';
 import { defaultMarketDataService } from '@zenith/tokens';
+import { defaultSubgraphService, SubgraphProtocolStats } from '../../services/subgraphService';
 import { ProtocolAnalytics, Token } from '@zenith/types';
 import { TokenLogo } from '../common/TokenLogo';
 import {
@@ -11,12 +12,24 @@ import {
   Layers,
   Search,
   Zap,
-  DollarSign
+  DollarSign,
+  Database
 } from 'lucide-react';
 
 export const ExploreView: React.FC = () => {
-  const { setTokenIn, setActiveTab } = useZenithStore();
+  const { setTokenIn, setActiveTab, sourceChain } = useZenithStore();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [subgraphStats, setSubgraphStats] = useState<SubgraphProtocolStats | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    defaultSubgraphService.getProtocolStats(sourceChain?.chainId || 1).then((stats) => {
+      if (isMounted) setSubgraphStats(stats);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [sourceChain]);
 
   const analytics: ProtocolAnalytics = defaultMarketDataService.getProtocolAnalytics();
   const pools = analytics.topPools;
@@ -46,6 +59,9 @@ export const ExploreView: React.FC = () => {
             <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Metrics
             </span>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center gap-1">
+              <Database className="w-3 h-3" /> Goldsky Indexed
+            </span>
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Real-time multi-chain volume, total value locked, fee yields, and top token pairs.
@@ -73,7 +89,7 @@ export const ExploreView: React.FC = () => {
             <Layers className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="text-2xl font-black text-white mt-1.5 font-mono">
-            ${(analytics.totalValueLockedUSD / 1_000_000).toFixed(2)}M
+            ${((subgraphStats?.totalValueLockedUSD || analytics.totalValueLockedUSD) / 1_000_000).toFixed(2)}M
           </div>
           <div className="text-xs text-emerald-400 flex items-center gap-1 mt-1 font-mono">
             <TrendingUp className="w-3.5 h-3.5" /> +5.8% this week
@@ -99,7 +115,7 @@ export const ExploreView: React.FC = () => {
             <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-black text-emerald-400 mt-1.5 font-mono">
-            ${analytics.totalFees24hUSD.toLocaleString()}
+            ${(subgraphStats?.totalFeesUSD || analytics.totalFees24hUSD).toLocaleString()}
           </div>
           <div className="text-xs text-indigo-400 mt-1 font-mono">
             60% distributed to veZENITH
@@ -108,11 +124,11 @@ export const ExploreView: React.FC = () => {
 
         <div className="glass-panel p-5 rounded-2xl border border-slate-800">
           <div className="flex items-center justify-between text-slate-400 text-xs font-mono uppercase">
-            <span>24h Transactions</span>
+            <span>Total Transactions</span>
             <Zap className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-black text-white mt-1.5 font-mono">
-            {analytics.totalTransactions24h.toLocaleString()}
+            {(subgraphStats?.txCount || analytics.totalTransactions24h).toLocaleString()}
           </div>
           <div className="text-xs text-slate-400 mt-1 font-mono">
             Across 53 Chains

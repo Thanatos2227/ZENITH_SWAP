@@ -1,0 +1,180 @@
+"""
+ZENITH SWAP Institutional Multi-Chain Analytics & Subgraph Schema
+Tracks Protocol Global Stats, Tokens, Pools (V1, V2, V3), Swaps, Positions, and Time-Series Metrics
+"""
+
+type ZenithProtocol @entity {
+  id: ID! # Canonical Protocol Identifier (e.g. 'zenith-v4-ethereum')
+  totalValueLockedUSD: BigDecimal!
+  totalVolumeUSD: BigDecimal!
+  untrackedVolumeUSD: BigDecimal!
+  totalFeesUSD: BigDecimal!
+  totalTreasuryFeesUSD: BigDecimal!
+  txCount: BigInt!
+  poolCount: BigInt!
+  tokenCount: BigInt!
+}
+
+type Token @entity {
+  id: ID! # Token Smart Contract Address
+  symbol: String!
+  name: String!
+  decimals: BigInt!
+  totalSupply: BigInt!
+  tradeVolumeUSD: BigDecimal!
+  totalValueLockedUSD: BigDecimal!
+  derivedETH: BigDecimal!
+  txCount: BigInt!
+}
+
+enum AMMVersion {
+  V1
+  V2
+  V3
+}
+
+type Pool @entity {
+  id: ID! # Pool Contract Address
+  version: AMMVersion!
+  createdAtTimestamp: BigInt!
+  createdAtBlockNumber: BigInt!
+  token0: Token!
+  token1: Token!
+  feeTier: BigInt! # Fee in BPS or PIPS (e.g. 5, 30, 100 for V2; 500, 3000, 10000 for V3)
+  liquidity: BigInt!
+  sqrtPriceX96: BigInt!
+  tick: BigInt
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  volumeToken0: BigDecimal!
+  volumeToken1: BigDecimal!
+  volumeUSD: BigDecimal!
+  totalValueLockedToken0: BigDecimal!
+  totalValueLockedToken1: BigDecimal!
+  totalValueLockedUSD: BigDecimal!
+  txCount: BigInt!
+  swaps: [Swap!]! @derivedFrom(field: "pool")
+  mints: [Mint!]! @derivedFrom(field: "pool")
+  burns: [Burn!]! @derivedFrom(field: "pool")
+  poolDayData: [PoolDayData!]! @derivedFrom(field: "pool")
+  poolHourData: [PoolHourData!]! @derivedFrom(field: "pool")
+}
+
+type Position @entity {
+  id: ID! # V3 Non-Fungible Position Manager NFT ID
+  owner: Bytes!
+  pool: Pool!
+  token0: Token!
+  token1: Token!
+  tickLower: BigInt!
+  tickUpper: BigInt!
+  liquidity: BigInt!
+  depositedToken0: BigDecimal!
+  depositedToken1: BigDecimal!
+  withdrawnToken0: BigDecimal!
+  withdrawnToken1: BigDecimal!
+  collectedFeesToken0: BigDecimal!
+  collectedFeesToken1: BigDecimal!
+}
+
+type Swap @entity {
+  id: ID! # Transaction Hash + Log Index
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  pool: Pool!
+  token0: Token!
+  token1: Token!
+  sender: Bytes!
+  recipient: Bytes!
+  origin: Bytes!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+  sqrtPriceX96: BigInt!
+  tick: BigInt
+  logIndex: BigInt!
+}
+
+type Mint @entity {
+  id: ID!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  pool: Pool!
+  token0: Token!
+  token1: Token!
+  owner: Bytes!
+  sender: Bytes!
+  origin: Bytes!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+  tickLower: BigInt
+  tickUpper: BigInt
+  logIndex: BigInt!
+}
+
+type Burn @entity {
+  id: ID!
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  pool: Pool!
+  token0: Token!
+  token1: Token!
+  owner: Bytes!
+  origin: Bytes!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUSD: BigDecimal!
+  tickLower: BigInt
+  tickUpper: BigInt
+  logIndex: BigInt!
+}
+
+type PoolDayData @entity {
+  id: ID! # Pool address - Day ID
+  date: Int!
+  pool: Pool!
+  liquidity: BigInt!
+  sqrtPriceX96: BigInt!
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  tvlUSD: BigDecimal!
+  volumeToken0: BigDecimal!
+  volumeToken1: BigDecimal!
+  volumeUSD: BigDecimal!
+  feesUSD: BigDecimal!
+  txCount: BigInt!
+}
+
+type PoolHourData @entity {
+  id: ID! # Pool address - Hour ID
+  periodStartUnix: Int!
+  pool: Pool!
+  liquidity: BigInt!
+  sqrtPriceX96: BigInt!
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  tvlUSD: BigDecimal!
+  volumeUSD: BigDecimal!
+  txCount: BigInt!
+}
+
+type ZenithDayData @entity {
+  id: ID! # Day ID (timestamp / 86400)
+  date: Int!
+  tvlUSD: BigDecimal!
+  volumeUSD: BigDecimal!
+  feesUSD: BigDecimal!
+  treasuryRevenueUSD: BigDecimal!
+  txCount: BigInt!
+}
+
+type TreasuryFeeEvent @entity {
+  id: ID! # Transaction Hash + Log Index
+  transactionHash: Bytes!
+  timestamp: BigInt!
+  token: Token!
+  sender: Bytes!
+  amount: BigDecimal!
+  amountUSD: BigDecimal!
+}

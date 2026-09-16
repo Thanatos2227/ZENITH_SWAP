@@ -175,7 +175,7 @@ export class UniswapV3Provider implements DEXProvider {
       );
     } else {
       calldata = iface.encodeFunctionData(
-        'exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))',
+        'exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))',
         [
           [
             tokenInAddr,
