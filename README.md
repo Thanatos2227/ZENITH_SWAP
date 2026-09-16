@@ -66,35 +66,41 @@ ZENITH/
 ├── contracts/
 │   └── evm/                            # Foundry EVM Smart Contracts Suite
 │       ├── src/
-│       │   ├── ZenithRouter.sol        # Core Aggregator & Hop Execution Router
-│       │   ├── ZenithFeeManager.sol    # Protocol Treasury & Fee Controller (Max 30 BPS)
-│       │   ├── ZenithCircuitBreaker.sol# Emergency Guardian & Governance Pauser
-│       │   └── interfaces/             # IERC20 & IZenithRouter Interfaces
+│       │   ├── treasury/
+│       │   │   ├── ZenithTreasury.sol      # Sovereign Protocol Revenue Vault
+│       │   │   ├── ZenithFeeController.sol  # Protocol Fee & AMM Tier Controller
+│       │   │   └── interfaces/             # IZenithTreasury & IZenithFeeController
+│       │   ├── v1/                         # Zenith V1 Constant Product AMM Suite
+│       │   ├── v2/                         # Zenith V2 Multi-Fee AMM Suite
+│       │   ├── v3/                         # Zenith V3 Concentrated Liquidity AMM Suite
+│       │   ├── router/
+│       │   │   └── ZenithRouter.sol        # Unified AMM Aggregator Router
+│       │   ├── ZenithCrossChainRouter.sol  # Sovereign Cross-Chain Swap Router
+│       │   └── ZenithCircuitBreaker.sol    # Emergency Guardian & Governance Pauser
 │       ├── script/
-│       │   └── Deploy.s.sol            # Automated Foundry Deployment Script
-│       ├── test/
-│       │   └── ZenithRouter.t.sol      # Foundry Unit & Invariant Tests
-│       ├── foundry.toml                # Foundry Build, Solc 0.8.24 & Optimization Config
-│       ├── .env.example                # Smart Contract Deployment Variables
-│       └── package.json                # @zenith/contracts-evm
+│       │   └── Deploy.s.sol                # Automated Foundry Deployment Script
+│       ├── test/                           # Foundry Test Suites (Treasury, Controller, AMMs)
+│       ├── foundry.toml                    # Foundry Build, Solc 0.8.24 & Optimization Config
+│       ├── .env.example                    # Smart Contract Deployment Variables
+│       └── package.json                    # @zenith/contracts-evm
 │
 ├── packages/
-│   ├── chains/                         # 21 Chain Configurations, RPC Fallbacks & Explorer Metadata
+│   ├── chains/                         # 53 Chain Configurations, RPC Fallbacks & Explorer Metadata
 │   ├── execution/                      # State Machine (IDLE -> QUOTE -> EXEC -> RX) & EVM/Solana Adapters
-│   ├── routing/                        # Best Execution Router, DEX Split Engine & Bridge Aggregator
+│   ├── routing/                        # Best Execution Router, AMM Math & Bridge Aggregator
+│   ├── sdk/                            # Zenith TypeScript SDK
 │   ├── security/                       # Token Risk Engine, Honeypot Detector & MEV Protection
 │   ├── tokens/                         # Multi-chain Token Registry & Custom Token Importer
 │   ├── types/                          # Shared TypeScript Types, Interfaces & Schemas
 │   └── ui/                             # Design System Tokens, Theme Definitions & Color Palettes
 │
 ├── docs/                               # Architectural & Governance Documentation
-│   ├── ARCHITECTURE.md                 # System Topology & EES Formula
-│   ├── SECURITY_AND_IDENTITY.md        # CSP, Anti-XSS & RBAC Specifications
-│   ├── KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md # 4-of-7 Multisig & Emergency Response Runbook
-│   └── COMPLIANCE_AND_ACCESSIBILITY.md # WCAG 2.1 AA & Regulatory Scope
+│   ├── TREASURY_ARCHITECTURE.md        # Sovereign Treasury & Fee Controller Topology
+│   ├── TREASURY_SECURITY_MODEL.md      # Security Invariants & Access Control Model
+│   ├── ARCHITECTURE.md                 # System Topology & Routing Formula
+│   └── KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md # Multisig & Emergency Response Runbook
 │
-├── tests/
-│   └── zenith.test.ts                  # Comprehensive End-to-End Test Suite
+├── tests/                              # Comprehensive Monorepo Test Suites (190 Tests)
 │
 ├── package.json                        # Root Workspace Configuration & Monorepo Scripts
 └── tsconfig.base.json                  # Monorepo TypeScript Compiler Base
@@ -104,16 +110,20 @@ ZENITH/
 
 ## ⚡ Smart Contract Deployment Guide
 
-### Contract Locations & Artifacts
+### Contract Locations & Roles
 
 All smart contracts are located in [`contracts/evm/`](file:///e:/APEX/ZENITH/contracts/evm/):
 
 | Contract | File Path | Role & Constructor Parameters |
 | :--- | :--- | :--- |
-| **ZenithCircuitBreaker** | [`ZenithCircuitBreaker.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/ZenithCircuitBreaker.sol) | Emergency circuit breaker (`address _governance`, `address _emergencyGuardian`) |
-| **ZenithFeeManager** | [`ZenithFeeManager.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/ZenithFeeManager.sol) | Treasury & fee collection (`address _governance`, `address _treasury`) |
-| **ZenithRouter** | [`ZenithRouter.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/ZenithRouter.sol) | Hop execution & routing (`address _feeManager`, `address _circuitBreaker`) |
-| **Deployment Script** | [`Deploy.s.sol`](file:///e:/APEX/ZENITH/contracts/evm/script/Deploy.s.sol) | Foundry deployment script handling automated deployment in dependency order |
+| **ZenithTreasury** | [`ZenithTreasury.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/treasury/ZenithTreasury.sol) | Sovereign protocol revenue vault (`address _governance`) |
+| **ZenithFeeController** | [`ZenithFeeController.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/treasury/ZenithFeeController.sol) | Fee ceilings & AMM tier parameters (`address _governance`, `address _treasury`) |
+| **ZenithV1Factory / Router** | [`ZenithV1Factory.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/v1/ZenithV1Factory.sol) | V1 Constant product AMM suite |
+| **ZenithV2Factory / Router** | [`ZenithV2Factory.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/v2/ZenithV2Factory.sol) | V2 Multi-tier configurable fee AMM suite |
+| **ZenithV3Factory / Router** | [`ZenithV3Factory.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/v3/ZenithV3Factory.sol) | V3 Concentrated liquidity AMM suite |
+| **ZenithRouter (Unified)** | [`ZenithRouter.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/router/ZenithRouter.sol) | Unified AMM router with automatic treasury fee routing |
+| **ZenithCrossChainRouter** | [`ZenithCrossChainRouter.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/ZenithCrossChainRouter.sol) | Cross-chain intent execution with treasury deposit |
+| **ZenithCircuitBreaker** | [`ZenithCircuitBreaker.sol`](file:///e:/APEX/ZENITH/contracts/evm/src/ZenithCircuitBreaker.sol) | Emergency guardian & protocol pause control |
 
 ### Deployment Dependency Order
 

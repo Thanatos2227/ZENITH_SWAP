@@ -2,98 +2,104 @@
 pragma solidity 0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
+import {ZenithTreasury} from "../src/treasury/ZenithTreasury.sol";
+import {ZenithFeeController} from "../src/treasury/ZenithFeeController.sol";
+import {ZenithV1Factory} from "../src/v1/ZenithV1Factory.sol";
+import {ZenithV1Router} from "../src/v1/ZenithV1Router.sol";
+import {ZenithV2Factory} from "../src/v2/ZenithV2Factory.sol";
+import {ZenithV2Router} from "../src/v2/ZenithV2Router.sol";
+import {ZenithV3Factory} from "../src/v3/ZenithV3Factory.sol";
+import {ZenithV3Router} from "../src/v3/ZenithV3Router.sol";
+import {ZenithRouter} from "../src/router/ZenithRouter.sol";
+import {ZenithCrossChainRouter} from "../src/ZenithCrossChainRouter.sol";
 import {ZenithCircuitBreaker} from "../src/ZenithCircuitBreaker.sol";
-import {ZenithFeeManager} from "../src/ZenithFeeManager.sol";
-import {ZenithPoolManager} from "../src/ZenithPoolManager.sol";
-import {ZenithPositionNFT} from "../src/ZenithPositionNFT.sol";
-import {ZenithReactor} from "../src/ZenithReactor.sol";
-import {ZenithRouter} from "../src/ZenithRouter.sol";
-import {DynamicFeeHook} from "../src/hooks/DynamicFeeHook.sol";
 
 contract DeployZenith is Script {
     function run() external returns (
-        address circuitBreakerAddr,
-        address feeManagerAddr,
-        address poolManagerAddr,
-        address positionNFTAddr,
-        address reactorAddr,
-        address routerAddr,
-        address dynamicHookAddr
+        address treasuryAddr,
+        address feeControllerAddr,
+        address v1FactoryAddr,
+        address v1RouterAddr,
+        address v2FactoryAddr,
+        address v2RouterAddr,
+        address v3FactoryAddr,
+        address v3RouterAddr,
+        address unifiedRouterAddr,
+        address crossChainRouterAddr
     ) {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address governanceMultisig = vm.envOr("GOVERNANCE_MULTISIG", vm.addr(deployerPrivateKey));
+        address governance = vm.envOr("GOVERNANCE_MULTISIG", vm.addr(deployerPrivateKey));
         address emergencyGuardian = vm.envOr("EMERGENCY_GUARDIAN", vm.addr(deployerPrivateKey));
-        address treasuryAddress = vm.envOr("TREASURY_ADDRESS", vm.addr(deployerPrivateKey));
-        address permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
         address wethAddress = vm.envOr("WETH_ADDRESS", address(0));
-        uint256 defaultFeeBps = vm.envOr("DEFAULT_FEE_BPS", uint256(5));
+        address permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
 
-        console.log("=== Deploying ZENITH v4 Protocol Suite (Uniswap Parity & Superiority) ===");
-        console.log("Deployer Address:    ", vm.addr(deployerPrivateKey));
-        console.log("Governance Multisig: ", governanceMultisig);
-        console.log("Emergency Guardian:  ", emergencyGuardian);
-        console.log("Treasury Address:    ", treasuryAddress);
-        console.log("Permit2 Address:     ", permit2Address);
+        console.log("=== Deploying ZENITH SWAP Canonical Protocol Suite ===");
+        console.log("Governance:         ", governance);
+        console.log("Emergency Guardian: ", emergencyGuardian);
+        console.log("WETH Address:       ", wethAddress);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        ZenithCircuitBreaker circuitBreaker = new ZenithCircuitBreaker(
-            governanceMultisig,
-            emergencyGuardian
-        );
-        circuitBreakerAddr = address(circuitBreaker);
-        console.log("1. ZenithCircuitBreaker deployed at: ", circuitBreakerAddr);
+        // 1. Deploy Canonical Treasury Vault
+        ZenithTreasury treasury = new ZenithTreasury(governance);
+        treasuryAddr = address(treasury);
+        console.log("1. ZenithTreasury:        ", treasuryAddr);
 
-        ZenithFeeManager feeManager = new ZenithFeeManager(
-            governanceMultisig,
-            treasuryAddress
-        );
-        feeManagerAddr = address(feeManager);
-        console.log("2. ZenithFeeManager deployed at:     ", feeManagerAddr);
+        // 2. Deploy Canonical Fee Controller
+        ZenithFeeController feeController = new ZenithFeeController(governance, treasuryAddr);
+        feeControllerAddr = address(feeController);
+        console.log("2. ZenithFeeController:    ", feeControllerAddr);
 
-        if (governanceMultisig == vm.addr(deployerPrivateKey) && defaultFeeBps != 5) {
-            feeManager.setDefaultFeeBps(defaultFeeBps);
-        }
+        // 3. Deploy Zenith V1 Suite
+        ZenithV1Factory v1Factory = new ZenithV1Factory(governance, treasuryAddr);
+        v1FactoryAddr = address(v1Factory);
+        ZenithV1Router v1Router = new ZenithV1Router(v1FactoryAddr, wethAddress);
+        v1RouterAddr = address(v1Router);
+        console.log("3. ZenithV1Factory:        ", v1FactoryAddr);
+        console.log("4. ZenithV1Router:         ", v1RouterAddr);
 
-        ZenithPoolManager poolManager = new ZenithPoolManager(
-            circuitBreakerAddr
-        );
-        poolManagerAddr = address(poolManager);
-        console.log("3. ZenithPoolManager deployed at:    ", poolManagerAddr);
+        // 4. Deploy Zenith V2 Suite
+        ZenithV2Factory v2Factory = new ZenithV2Factory(governance, feeControllerAddr, treasuryAddr);
+        v2FactoryAddr = address(v2Factory);
+        ZenithV2Router v2Router = new ZenithV2Router(v2FactoryAddr, wethAddress);
+        v2RouterAddr = address(v2Router);
+        console.log("5. ZenithV2Factory:        ", v2FactoryAddr);
+        console.log("6. ZenithV2Router:         ", v2RouterAddr);
 
-        ZenithPositionNFT positionNFT = new ZenithPositionNFT(
-            poolManagerAddr
-        );
-        positionNFTAddr = address(positionNFT);
-        console.log("4. ZenithPositionNFT deployed at:    ", positionNFTAddr);
+        // 5. Deploy Zenith V3 Suite
+        ZenithV3Factory v3Factory = new ZenithV3Factory(governance, feeControllerAddr);
+        v3FactoryAddr = address(v3Factory);
+        ZenithV3Router v3Router = new ZenithV3Router(v3FactoryAddr, wethAddress);
+        v3RouterAddr = address(v3Router);
+        console.log("7. ZenithV3Factory:        ", v3FactoryAddr);
+        console.log("8. ZenithV3Router:         ", v3RouterAddr);
 
-        ZenithReactor reactor = new ZenithReactor(
-            permit2Address,
-            circuitBreakerAddr
-        );
-        reactorAddr = address(reactor);
-        console.log("5. ZenithReactor deployed at:        ", reactorAddr);
-
-        DynamicFeeHook dynamicHook = new DynamicFeeHook(30, 100);
-        dynamicHookAddr = address(dynamicHook);
-        console.log("6. DynamicFeeHook deployed at:       ", dynamicHookAddr);
-
-        ZenithRouter router = new ZenithRouter(
-            feeManagerAddr,
-            circuitBreakerAddr,
+        // 6. Deploy Unified Router
+        ZenithRouter unifiedRouter = new ZenithRouter(
+            governance,
             wethAddress,
-            permit2Address,
-            poolManagerAddr
+            treasuryAddr,
+            feeControllerAddr,
+            v1RouterAddr,
+            v2RouterAddr,
+            v3RouterAddr
         );
-        routerAddr = address(router);
-        console.log("7. ZenithRouter deployed at:         ", routerAddr);
+        unifiedRouterAddr = address(unifiedRouter);
+        console.log("9. ZenithUnifiedRouter:    ", unifiedRouterAddr);
+
+        // 7. Deploy Circuit Breaker & Cross-Chain Router
+        ZenithCircuitBreaker circuitBreaker = new ZenithCircuitBreaker(governance, emergencyGuardian);
+        ZenithCrossChainRouter crossChainRouter = new ZenithCrossChainRouter(
+            treasuryAddr,
+            feeControllerAddr,
+            address(circuitBreaker),
+            permit2Address
+        );
+        crossChainRouterAddr = address(crossChainRouter);
+        console.log("10. ZenithCrossChainRouter:", crossChainRouterAddr);
 
         vm.stopBroadcast();
 
-        console.log("=== Deployment Complete ===");
-        console.log("ZENITH_POOL_MANAGER_ADDRESS=", poolManagerAddr);
-        console.log("ZENITH_POSITION_NFT_ADDRESS=", positionNFTAddr);
-        console.log("ZENITH_REACTOR_ADDRESS=", reactorAddr);
-        console.log("ZENITH_ROUTER_ADDRESS=", routerAddr);
+        console.log("=== Canonical Deployment Complete ===");
     }
 }
