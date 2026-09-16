@@ -66,7 +66,9 @@ export const ConfirmSheet: React.FC = () => {
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                 : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
             }`}>
-              {executionMode === 'GASLESS_INTENT' ? '⚡ Gasless Dutch Auction (Permit2)' : '⚡ v4 Singleton AMM'}
+              {quote.request.sourceChainId !== quote.request.destinationChainId
+                ? `⚡ ${quote.bestRoute.crossChainQuote?.provider || 'ACROSS'} Bridge Router`
+                : (quote.bestRoute?.dexQuote?.providerName || quote.dexQuote?.providerName || (executionMode === 'GASLESS_INTENT' ? '⚡ Gasless Dutch Auction (Permit2)' : '⚡ ZENITH V3 Concentrated AMM'))}
             </span>
           </div>
 

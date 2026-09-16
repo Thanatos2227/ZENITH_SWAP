@@ -11,16 +11,22 @@ import { CamelotProvider } from './camelotProvider';
 import { PancakeSwapProvider } from './pancakeSwapProvider';
 import { TraderJoeProvider } from './traderJoeProvider';
 
+export type DEXAggregationMode = 'ZENITH_ONLY' | 'EXTERNAL_AGGREGATION';
+
+export const SOVEREIGN_ZENITH_PROTOCOLS: DEXProtocol[] = ['ZENITH_V1', 'ZENITH_V2', 'ZENITH_V3'];
+
 export class DEXAggregator {
   private providers: Map<DEXProtocol, DEXProvider> = new Map();
+  private mode: DEXAggregationMode = 'EXTERNAL_AGGREGATION';
 
-  constructor(customProviders?: DEXProvider[]) {
+  constructor(customProviders?: DEXProvider[], mode: DEXAggregationMode = 'EXTERNAL_AGGREGATION') {
+    this.mode = mode;
+
     if (customProviders && customProviders.length > 0) {
       for (const p of customProviders) {
         this.providers.set(p.protocol, p);
       }
     } else {
-
       this.registerProvider(new ZenithV3Provider());
       this.registerProvider(new ZenithV2Provider());
       this.registerProvider(new ZenithV1Provider());
@@ -33,6 +39,14 @@ export class DEXAggregator {
       this.registerProvider(new PancakeSwapProvider());
       this.registerProvider(new TraderJoeProvider());
     }
+  }
+
+  public setExecutionMode(mode: DEXAggregationMode): void {
+    this.mode = mode;
+  }
+
+  public getExecutionMode(): DEXAggregationMode {
+    return this.mode;
   }
 
   public registerProvider(provider: DEXProvider): void {
@@ -50,10 +64,15 @@ export class DEXAggregator {
     amountIn: bigint;
     slippageToleranceBps: number;
     recipient?: string;
+    mode?: DEXAggregationMode;
   }): Promise<DEXQuote[]> {
-    const applicableProviders = Array.from(this.providers.values()).filter((p) =>
-      p.supportedChainIds.includes(params.chainId)
-    );
+    const activeMode = params.mode || this.mode;
+    const applicableProviders = Array.from(this.providers.values()).filter((p) => {
+      if (activeMode === 'ZENITH_ONLY' && !SOVEREIGN_ZENITH_PROTOCOLS.includes(p.protocol)) {
+        return false;
+      }
+      return p.supportedChainIds.includes(params.chainId);
+    });
 
     if (applicableProviders.length === 0) {
       return [];
@@ -101,8 +120,16 @@ export class DEXAggregator {
     quote: DEXQuote,
     userAddress: string,
     recipientAddress?: string,
-    deadline?: number
+    deadline?: number,
+    mode?: DEXAggregationMode
   ): Promise<DEXExecution> {
+    const activeMode = mode || this.mode;
+    if (activeMode === 'ZENITH_ONLY' && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
+      throw new Error(
+        `DEXAggregator is operating in sovereign ZENITH_ONLY mode. External protocol execution (${quote.provider}) is disabled.`
+      );
+    }
+
     const provider = this.providers.get(quote.provider);
     if (!provider) {
       throw new Error(`No provider registered for DEX protocol: ${quote.provider}`);
@@ -112,3 +139,4 @@ export class DEXAggregator {
 }
 
 export const defaultDEXAggregator = new DEXAggregator();
+

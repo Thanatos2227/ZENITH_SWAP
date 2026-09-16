@@ -6,7 +6,9 @@ import {
   validateEvmAddress,
   validateExecutionTarget,
   validateTokenAddress,
-  InvalidCalldataError
+  InvalidCalldataError,
+  ZenithSimulationFailedError,
+  ZenithRouteExecutionMismatchError
 } from '@zenith/contracts';
 import {
   defaultDEXAggregator,
@@ -76,6 +78,13 @@ export class EVMExecutionAdapter {
     const tokenIn = quote.request.tokenIn;
     const isNativeIn = Boolean(tokenIn.isNative || isNativeToken(tokenIn.address));
 
+    // 1. Slippage validation
+    const quotedOut = BigInt(quote.amountOutRaw || '0');
+    const minOut = BigInt(quote.minimumReceivedRaw || '0');
+    if (minOut < 0n || (quotedOut > 0n && minOut > quotedOut)) {
+      throw new Error(`Slippage bounds invalid: minimumAmountOut (${minOut}) must be >= 0 and <= quotedAmountOut (${quotedOut})`);
+    }
+
     let executionTo: string;
     let executionData: string;
     let executionValue: bigint;
@@ -107,7 +116,6 @@ export class EVMExecutionAdapter {
       approvalTarget = validateExecutionTarget(ccExecution.approvalTarget || ccExecution.to, quote.request.sourceChainId);
       requiredAllowance = BigInt(ccExecution.requiredAllowanceRaw || quote.amountInRaw);
     } else {
-
       const dexQuote = quote.dexQuote || quote.bestRoute.dexQuote;
       let dexExecution: DEXExecution | undefined = quote.bestRoute.execution as DEXExecution | undefined;
 
@@ -130,6 +138,11 @@ export class EVMExecutionAdapter {
       executionValue = BigInt(dexExecution.value || '0');
       approvalTarget = validateExecutionTarget(dexExecution.approvalTarget || dexExecution.to, quote.request.sourceChainId);
       requiredAllowance = BigInt(dexExecution.approvalAmount || dexExecution.requiredAllowanceRaw || quote.amountInRaw);
+    }
+
+    // 2. Route/Execution Consistency check
+    if (quote.executionTarget && executionTo.toLowerCase() !== quote.executionTarget.toLowerCase()) {
+      throw new ZenithRouteExecutionMismatchError(quote.executionTarget, executionTo);
     }
 
     if (!isCrossChain && isNativeIn) {
@@ -208,43 +221,65 @@ export class EVMExecutionAdapter {
       }
     }
 
+    // 3. Construct Authoritative Transaction Object
     const authoritativeTx = {
+      from: validatedUser,
       to: executionTo,
       data: executionData,
-      value: executionValue,
-      from: validatedUser
+      value: executionValue
     };
 
     params.onStatusChange?.('SIMULATING');
-    try {
-      if (typeof signer.estimateGas === 'function') {
-        await signer.estimateGas({
+
+    // 4. Pre-Flight Simulation Step 1: eth_call
+    const rpcRunner = signer.provider || provider;
+    if (rpcRunner && typeof rpcRunner.call === 'function') {
+      try {
+        await rpcRunner.call({
+          from: authoritativeTx.from,
           to: authoritativeTx.to,
           data: authoritativeTx.data,
           value: authoritativeTx.value
         });
+      } catch (callErr: any) {
+        const revertReason = callErr?.reason || callErr?.data || callErr?.message || String(callErr);
+        console.error('[ZENITH EVMAdapter] Pre-flight eth_call reverted:', callErr);
+        throw new ZenithSimulationFailedError(
+          `On-chain simulation (eth_call) reverted. Target rejected execution.`,
+          revertReason
+        );
       }
-    } catch (simErr: any) {
-      console.warn('[ZENITH EVMAdapter] Pre-flight gas estimation note:', simErr?.message || simErr);
     }
 
-    let gasLimit: bigint | undefined;
-    if (quote.bestRoute?.execution?.gasLimit) {
-      gasLimit = BigInt(quote.bestRoute.execution.gasLimit);
-    } else if (quote.bestRoute?.estimatedGasUnits) {
-      gasLimit = BigInt(quote.bestRoute.estimatedGasUnits);
-    } else if (quote.dexQuote?.gasEstimate) {
-      gasLimit = BigInt(quote.dexQuote.gasEstimate);
+    // 5. Pre-Flight Simulation Step 2: eth_estimateGas
+    let estimatedGas: bigint;
+    try {
+      if (typeof signer.estimateGas === 'function') {
+        estimatedGas = await signer.estimateGas({
+          from: authoritativeTx.from,
+          to: authoritativeTx.to,
+          data: authoritativeTx.data,
+          value: authoritativeTx.value
+        });
+      } else {
+        estimatedGas = 200000n;
+      }
+    } catch (gasErr: any) {
+      const revertReason = gasErr?.reason || gasErr?.data || gasErr?.message || String(gasErr);
+      console.error('[ZENITH EVMAdapter] Pre-flight estimateGas failed:', gasErr);
+      throw new ZenithSimulationFailedError(
+        `Gas estimation (eth_estimateGas) failed. Transaction is predicted to revert on-chain.`,
+        revertReason
+      );
     }
 
-    const finalGasLimit = gasLimit && gasLimit > 0n
-      ? (gasLimit * 120n) / 100n
-      : 350000n;
+    // Apply documented 120% safety multiplier over measured estimateGas
+    const finalGasLimit = (estimatedGas * 120n) / 100n;
 
     const submissionTx: any = {
-      to: executionTo,
-      data: executionData,
-      value: executionValue,
+      to: authoritativeTx.to,
+      data: authoritativeTx.data,
+      value: authoritativeTx.value,
       gasLimit: finalGasLimit
     };
 

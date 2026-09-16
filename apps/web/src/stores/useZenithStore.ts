@@ -15,7 +15,8 @@ import {
 } from '@zenith/types';
 import { defaultChainRegistry, ZENITH_SUPPORTED_CHAINS } from '@zenith/chains';
 import { DEFAULT_TOKENS, defaultTokenService, defaultMarketDataService, LiveMarketData, MarketStatus } from '@zenith/tokens';
-import { defaultZenithRouter, validateAndSanitizeAmount, parseTokenUnits } from '@zenith/routing';
+import { defaultZenithRouter, validateAndSanitizeAmount, parseTokenUnits, isNativeToken } from '@zenith/routing';
+import { isZenithDeployed } from '@zenith/contracts';
 import { defaultExecutionCoordinator, ExecutionStateMachine, defaultCrossChainTracker, ActiveCrossChainOrder } from '@zenith/execution';
 import { defaultThemeManager } from '@zenith/ui';
 import {
@@ -1188,6 +1189,18 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         return;
       }
 
+      const isSameChain = sourceChain.id === get().destChain.id;
+      const isSovereignZenith = quote.bestRoute?.dexQuote?.provider?.startsWith('ZENITH_') || quote.bestRoute?.hops?.some((h) => h.dexProtocol.startsWith('ZENITH_'));
+      if (isSameChain && isSovereignZenith && sourceChain.executionEnvironment === 'EVM' && sourceChain.chainId !== undefined && !isZenithDeployed(sourceChain.chainId)) {
+        get().addNotification({
+          title: 'ZENITH AMM Not Deployed',
+          message: `ZENITH Sovereign AMM is not deployed on ${sourceChain.canonicalName}. Deployment required for native Zenith AMM execution.`,
+          type: 'WARNING'
+        });
+        set({ isExecutingTrade: false, isConfirmSheetOpen: false });
+        return;
+      }
+
       if (sourceChain.executionEnvironment === 'EVM' && chainId !== null && sourceChain.chainId !== undefined && sourceChain.chainId !== chainId) {
         try {
           await get().switchNetwork(sourceChain.chainId);
@@ -1284,34 +1297,16 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         set({ isConfirmSheetOpen: false });
         executionSM.transitionTo('FAILED', { id: 'step-execute', status: 'ERROR' });
 
-        let errMsg = err?.reason || err?.message || String(err);
-        if (
-          errMsg.includes('STF') ||
-          err?.revert?.args?.[0] === 'STF' ||
-          err?.data?.includes('535446')
-        ) {
-          errMsg = `SafeTransferFrom failed (STF): Insufficient ${quote.request.tokenIn.symbol} balance or token allowance in your connected wallet.`;
-        } else if (
-          errMsg.includes('Too little received') ||
-          errMsg.includes('TOO_LITTLE_RECEIVED') ||
-          errMsg.includes('Slippage limit exceeded') ||
-          err?.revert?.args?.[0] === 'Too little received'
-        ) {
-          errMsg = `Slippage Limit Exceeded (Too little received): On-chain pool output was below your minimum requested pay to user of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please increase your slippage tolerance (e.g. 1.0% or 2.0%) or refresh the quote.`;
-        } else if (
-          errMsg.includes('require(false)') ||
-          errMsg.includes('execution reverted') ||
-          errMsg.includes('CALL_EXCEPTION')
-        ) {
-          errMsg = `On-Chain Execution Reverted (require(false)): The contract rejected execution. This typically occurs when swapping on a network without active pool liquidity, unapproved token allowance, or severe price movement.`;
-        }
-
+        const rawCode = err?.code || err?.info?.error?.code;
+        const rawMsg = err?.reason || err?.message || String(err);
         const isUserRejected =
-          err?.code === 4001 ||
-          err?.code === 'ACTION_REJECTED' ||
-          errMsg.includes('rejected') ||
-          errMsg.includes('denied') ||
-          errMsg.includes('User rejected');
+          rawCode === 4001 ||
+          rawCode === 'ACTION_REJECTED' ||
+          rawMsg.toLowerCase().includes('user rejected') ||
+          rawMsg.toLowerCase().includes('user denied') ||
+          rawMsg.toLowerCase().includes('user disapproved') ||
+          rawMsg.toLowerCase().includes('user cancelled') ||
+          rawMsg.toLowerCase().includes('user canceled');
 
         if (isUserRejected) {
           get().addNotification({
@@ -1319,13 +1314,36 @@ export const useZenithStore = create<ZenithState>((set, get) => {
             message: 'You rejected the transaction in your wallet.',
             type: 'INFO'
           });
-        } else {
-          get().addNotification({
-            title: 'Execution Failed',
-            message: errMsg || 'Transaction could not be executed on-chain.',
-            type: 'ERROR'
-          });
+          return;
         }
+
+        let errMsg = rawMsg;
+        if (
+          rawMsg.includes('STF') ||
+          err?.revert?.args?.[0] === 'STF' ||
+          err?.data?.includes('535446')
+        ) {
+          errMsg = `SafeTransferFrom failed (STF): Insufficient ${quote.request.tokenIn.symbol} balance or token allowance in your connected wallet.`;
+        } else if (
+          rawMsg.includes('Too little received') ||
+          rawMsg.includes('TOO_LITTLE_RECEIVED') ||
+          rawMsg.includes('Slippage limit exceeded') ||
+          err?.revert?.args?.[0] === 'Too little received'
+        ) {
+          errMsg = `Slippage Limit Exceeded (Too little received): On-chain pool output was below your minimum requested pay to user of ${quote.minimumReceivedFormatted} ${quote.request.tokenOut.symbol}. Please increase your slippage tolerance (e.g. 1.0% or 2.0%) or refresh the quote.`;
+        } else if (
+          rawMsg.includes('require(false)') ||
+          rawMsg.includes('execution reverted') ||
+          rawMsg.includes('CALL_EXCEPTION')
+        ) {
+          errMsg = `On-Chain Execution Reverted: The smart contract rejected this swap on ${quote.request.sourceChainId}. Possible reasons: insufficient liquidity, pool price impact, or token allowance missing.`;
+        }
+
+        get().addNotification({
+          title: 'Execution Failed',
+          message: errMsg || 'Transaction could not be executed on-chain.',
+          type: 'ERROR'
+        });
       } finally {
         set({ isExecutingTrade: false });
       }
@@ -1357,11 +1375,11 @@ export const useZenithStore = create<ZenithState>((set, get) => {
 
       const isTokenInMatch = currentTokenIn.chainId.toLowerCase() === chainId.toLowerCase() &&
         (currentTokenIn.address.toLowerCase() === address.toLowerCase() ||
-         (currentTokenIn.isNative && (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || address.toLowerCase() === '0x0000000000000000000000000000000000000000')));
+         (currentTokenIn.isNative && isNativeToken(address)));
 
       const isTokenOutMatch = currentTokenOut.chainId.toLowerCase() === chainId.toLowerCase() &&
         (currentTokenOut.address.toLowerCase() === address.toLowerCase() ||
-         (currentTokenOut.isNative && (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || address.toLowerCase() === '0x0000000000000000000000000000000000000000')));
+         (currentTokenOut.isNative && isNativeToken(address)));
 
       if (isTokenInMatch && data.priceUSD && data.priceUSD > 0 && currentTokenIn.priceUSD !== data.priceUSD) {
         updatedTokenIn = { ...currentTokenIn, priceUSD: data.priceUSD };

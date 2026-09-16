@@ -191,7 +191,7 @@ export const SwapCard: React.FC = () => {
             title="Toggle between Gasless Intent (UniswapX RFQ) and Instant AMM"
           >
             <Sparkles className="w-3 h-3" />
-            {executionMode === 'GASLESS_INTENT' ? '⚡ Gasless (UniswapX)' : '⚡ v4 AMM'}
+            {executionMode === 'GASLESS_INTENT' ? '⚡ Gasless (UniswapX)' : '⚡ Instant AMM'}
           </button>
         </div>
 

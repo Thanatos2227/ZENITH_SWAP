@@ -528,6 +528,7 @@ export interface QuoteResponse {
   intent?: CrossChainIntent;
   dexQuote?: DEXQuote;
   crossChainQuote?: CrossChainQuote;
+  executionTarget?: string;
   isExecutable?: boolean;
   executableTransaction?: ExecutableTransaction;
   validation?: QuoteValidationResult;

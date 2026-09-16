@@ -290,7 +290,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
 
     test('Zenith V1 builds valid execution', async () => {
       const quote = await v1.getQuote({
-        chainId: 1,
+        chainId: 31337,
         tokenIn: NATIVE_ETH,
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
@@ -304,7 +304,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
 
     test('Zenith V2 builds valid execution', async () => {
       const quote = await v2.getQuote({
-        chainId: 1,
+        chainId: 31337,
         tokenIn: USDC_ETH,
         tokenOut: NATIVE_ETH,
         amountIn: 1000000000n,
@@ -318,7 +318,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
 
     test('Zenith V3 builds valid exactInputSingle execution', async () => {
       const quote = await v3.getQuote({
-        chainId: 1,
+        chainId: 31337,
         tokenIn: NATIVE_ETH,
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,

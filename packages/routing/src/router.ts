@@ -16,7 +16,7 @@ import { defaultCrossChainAggregator, CrossChainAggregator } from './crosschain/
 import { defaultScoringService, ScoringService } from './scoring';
 import { defaultSimulationEngine, SimulationEngine } from '@zenith/security';
 import { MAX_SWAP_AMOUNT_NUM } from './amountValidation';
-import { EVMContractRegistry, ConfigurationError } from '@zenith/contracts';
+import { ConfigurationError } from '@zenith/contracts';
 import { parseTokenUnits, formatTokenUnits } from './tokenDecimals';
 
 export class ZenithRouter {
@@ -187,13 +187,15 @@ export class ZenithRouter {
         amountInNum = Number(formatTokenUnits(amountInBig, tokenInDecimals));
       }
 
+      const reqMode = (request as any).dexAggregationMode || (request as any).aggregationMode;
       const dexQuotes = await this.dexAggregator.getQuotes({
         chainId: sourceChainIdNum,
         tokenIn: effectiveTokenIn,
         tokenOut: effectiveTokenOut,
         amountIn: amountInBig,
         slippageToleranceBps: slippageBps,
-        recipient: targetRecipient || undefined
+        recipient: targetRecipient || undefined,
+        mode: reqMode
       });
 
       for (const dQuote of dexQuotes) {
@@ -204,7 +206,8 @@ export class ZenithRouter {
               dQuote,
               callerAddress,
               targetRecipient || callerAddress,
-              deadlineSeconds
+              deadlineSeconds,
+              reqMode
             );
           } catch {
 
@@ -229,6 +232,37 @@ export class ZenithRouter {
           execution,
           gasCostUSD: defaultChainRegistry.getEstimatedGasCostUSD(sourceChain.id, 'SWAP', request.gasPreset),
           estimatedGasUnits: dQuote.gasEstimate
+        });
+      }
+
+      // If multiple real DEX pools are available for large volume (>10 ETH), construct a dynamic split route across the top 2 pools
+      if (dexQuotes.length >= 2 && amountInBig > 10n * 10n ** 18n) {
+        routes.push({
+          id: `route-split-${dexQuotes[0].provider.toLowerCase()}-${dexQuotes[1].provider.toLowerCase()}-${sourceChain.id}`,
+          routeType: 'SPLIT_ROUTE',
+          hops: [
+            {
+              dexProtocol: dexQuotes[0].provider,
+              poolAddress: dexQuotes[0].executionTarget,
+              tokenIn: effectiveTokenIn,
+              tokenOut: effectiveTokenOut,
+              feeTierBps: dexQuotes[0].feeTierBps,
+              proportionPercent: 60,
+              estimatedGas: dexQuotes[0].gasEstimate
+            },
+            {
+              dexProtocol: dexQuotes[1].provider,
+              poolAddress: dexQuotes[1].executionTarget,
+              tokenIn: effectiveTokenIn,
+              tokenOut: effectiveTokenOut,
+              feeTierBps: dexQuotes[1].feeTierBps,
+              proportionPercent: 40,
+              estimatedGas: dexQuotes[1].gasEstimate
+            }
+          ],
+          dexQuote: dexQuotes[0],
+          gasCostUSD: defaultChainRegistry.getEstimatedGasCostUSD(sourceChain.id, 'SWAP', request.gasPreset),
+          estimatedGasUnits: dexQuotes[0].gasEstimate + dexQuotes[1].gasEstimate
         });
       }
 
@@ -325,76 +359,6 @@ export class ZenithRouter {
         );
       }
 
-      if (routes.length > 0) {
-        const primary = routes[0];
-
-        routes.push({
-          id: `route-split-${sourceChain.id}`,
-          routeType: 'SPLIT_ROUTE',
-          hops: [
-            {
-              dexProtocol: primary.dexQuote?.provider || 'UNISWAP_V3',
-              poolAddress: primary.dexQuote?.executionTarget || '',
-              tokenIn: effectiveTokenIn,
-              tokenOut: effectiveTokenOut,
-              feeTierBps: 30,
-              proportionPercent: 60,
-              estimatedGas: 90000n
-            },
-            {
-              dexProtocol: primary.dexQuote?.provider || 'UNISWAP_V3',
-              poolAddress: primary.dexQuote?.executionTarget || '',
-              tokenIn: effectiveTokenIn,
-              tokenOut: effectiveTokenOut,
-              feeTierBps: 5,
-              proportionPercent: 40,
-              estimatedGas: 60000n
-            }
-          ],
-          dexQuote: primary.dexQuote,
-          gasCostUSD: primary.gasCostUSD,
-          estimatedGasUnits: primary.estimatedGasUnits
-        });
-
-        routes.push({
-          id: `route-zenith-v4-${sourceChain.id}`,
-          routeType: 'DIRECT',
-          hops: [
-            {
-              dexProtocol: 'ZENITH_V4_CONCENTRATED',
-              poolAddress: primary.dexQuote?.executionTarget || '',
-              tokenIn: effectiveTokenIn,
-              tokenOut: effectiveTokenOut,
-              feeTierBps: 15,
-              proportionPercent: 100,
-              estimatedGas: 135000n
-            }
-          ],
-          dexQuote: primary.dexQuote,
-          gasCostUSD: primary.gasCostUSD,
-          estimatedGasUnits: 135000n
-        });
-
-        routes.push({
-          id: `route-zenith-dutch-${sourceChain.id}`,
-          routeType: 'DIRECT',
-          hops: [
-            {
-              dexProtocol: 'ZENITH_DUTCH_INTENT',
-              poolAddress: primary.dexQuote?.executionTarget || '',
-              tokenIn: effectiveTokenIn,
-              tokenOut: effectiveTokenOut,
-              feeTierBps: 0,
-              proportionPercent: 100,
-              estimatedGas: 0n
-            }
-          ],
-          dexQuote: primary.dexQuote,
-          gasCostUSD: 0,
-          estimatedGasUnits: 0n
-        });
-      }
-
       const executableRoute = routes.find((r) => r.execution && r.execution.data && r.execution.data !== '0x');
       bestRoute = executableRoute || routes[0];
       const bestDEXQuote = bestRoute.dexQuote!;
@@ -486,11 +450,13 @@ export class ZenithRouter {
       };
     } else if (callerAddress && bestRoute.dexQuote && sourceChain.chainId) {
       try {
+        const reqMode = (request as any).dexAggregationMode || (request as any).aggregationMode;
         const exec = await this.dexAggregator.buildExecution(
           bestRoute.dexQuote,
           callerAddress,
           targetRecipient || callerAddress,
-          deadlineSeconds
+          deadlineSeconds,
+          reqMode
         );
         if (exec && exec.data && exec.data !== '0x') {
           bestRoute.execution = exec;
@@ -568,7 +534,7 @@ export class ZenithRouter {
 
     const routerAddress = isCrossChain
       ? bestRoute.crossChainQuote?.executionTarget
-      : (bestRoute.dexQuote?.executionTarget || (sourceChain.executionEnvironment === 'EVM' ? EVMContractRegistry.getPrimaryRouter(sourceChainIdNum) : undefined));
+      : bestRoute.dexQuote?.executionTarget;
 
     let simulationPreview = undefined;
     if (routerAddress && callerAddress) {

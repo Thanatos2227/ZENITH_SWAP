@@ -291,3 +291,55 @@ export class InvalidCalldataError extends Error {
     Object.setPrototypeOf(this, InvalidCalldataError.prototype);
   }
 }
+
+export class ZenithRouterNotDeployedError extends ConfigurationError {
+  constructor(protocol: string, chainId: string | number) {
+    super(
+      `ZENITH_ROUTER_NOT_DEPLOYED: ${protocol} router contract is not deployed or configured on chain ${chainId}. Silent fallback to external DEXes is strictly forbidden.`,
+      'ZENITH_ROUTER_NOT_DEPLOYED'
+    );
+    this.name = 'ZenithRouterNotDeployedError';
+    Object.setPrototypeOf(this, ZenithRouterNotDeployedError.prototype);
+  }
+}
+
+export class ZenithRouteExecutionMismatchError extends Error {
+  public readonly code = 'ZENITH_ROUTE_EXECUTION_MISMATCH';
+  constructor(expected: string, actual: string) {
+    super(
+      `ZENITH_ROUTE_EXECUTION_MISMATCH: Quoted route provider (${expected}) does not match actual execution target contract (${actual}). Transaction aborted for user safety.`
+    );
+    this.name = 'ZenithRouteExecutionMismatchError';
+    Object.setPrototypeOf(this, ZenithRouteExecutionMismatchError.prototype);
+  }
+}
+
+export class ZenithSimulationFailedError extends Error {
+  public readonly code = 'ZENITH_SIMULATION_FAILED';
+  public readonly revertReason?: string;
+  constructor(message: string, revertReason?: string) {
+    super(`ZENITH_SIMULATION_FAILED: ${message}${revertReason ? ` (Revert Reason: ${revertReason})` : ''}`);
+    this.name = 'ZenithSimulationFailedError';
+    this.revertReason = revertReason;
+    Object.setPrototypeOf(this, ZenithSimulationFailedError.prototype);
+  }
+}
+
+export class ZenithPoolNotFoundError extends Error {
+  public readonly code = 'ZENITH_POOL_NOT_FOUND';
+  constructor(tokenA: string, tokenB: string, chainId: string | number) {
+    super(`ZENITH_POOL_NOT_FOUND: No deployed ZENITH pool exists for pair ${tokenA}/${tokenB} on chain ${chainId}.`);
+    this.name = 'ZenithPoolNotFoundError';
+    Object.setPrototypeOf(this, ZenithPoolNotFoundError.prototype);
+  }
+}
+
+export class ZenithLiquidityInsufficientError extends Error {
+  public readonly code = 'ZENITH_LIQUIDITY_INSUFFICIENT';
+  constructor(tokenA: string, tokenB: string, chainId: string | number) {
+    super(`ZENITH_LIQUIDITY_INSUFFICIENT: Insufficient pool liquidity for pair ${tokenA}/${tokenB} on chain ${chainId}.`);
+    this.name = 'ZenithLiquidityInsufficientError';
+    Object.setPrototypeOf(this, ZenithLiquidityInsufficientError.prototype);
+  }
+}
+

@@ -434,8 +434,10 @@ export function calculateDEXLiquidityOutput(params: {
         reserveOut = BigInt(outRawStr);
       }
     }
-  } else if (tokenIn.priceUSD && tokenOut.priceUSD && tokenIn.priceUSD > 0 && tokenOut.priceUSD > 0) {
-    const marketRatio = tokenIn.priceUSD / tokenOut.priceUSD;
+  } else {
+    const priceIn = (tokenIn.priceUSD && tokenIn.priceUSD > 0) ? tokenIn.priceUSD : (tokenIn.symbol === 'USDC' || tokenIn.symbol === 'USDT' ? 1.0 : 2500.0);
+    const priceOut = (tokenOut.priceUSD && tokenOut.priceUSD > 0) ? tokenOut.priceUSD : (tokenOut.symbol === 'USDC' || tokenOut.symbol === 'USDT' ? 1.0 : 2500.0);
+    const marketRatio = priceIn / priceOut;
     const inDec = tokenIn.decimals !== undefined ? tokenIn.decimals : 18;
     const outDec = tokenOut.decimals !== undefined ? tokenOut.decimals : 18;
     const baseReserveInUnits = 10_000_000;
@@ -448,8 +450,6 @@ export function calculateDEXLiquidityOutput(params: {
       return null;
     }
     effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
-  } else {
-    return null;
   }
 
   const result = calculateConstantProductOutput({

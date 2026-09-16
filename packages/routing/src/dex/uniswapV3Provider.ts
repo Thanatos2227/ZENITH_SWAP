@@ -28,7 +28,9 @@ export class UniswapV3Provider implements DEXProvider {
     }
 
     try {
-      const routerAddress = getUniswapV3Router(params.chainId);
+      const isNative = isNativeToken(params.tokenIn.address) || Boolean(params.tokenIn.isNative) || isNativeToken(params.tokenOut.address) || Boolean(params.tokenOut.isNative);
+      const universalRouter = getUniswapUniversalRouter(params.chainId);
+      const routerAddress = (isNative && universalRouter) ? universalRouter : getUniswapV3Router(params.chainId);
 
       const calculated = calculateDEXLiquidityOutput({
         chainId: params.chainId,

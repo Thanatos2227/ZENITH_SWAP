@@ -11,7 +11,6 @@ import { defaultChainRegistry } from '@zenith/chains';
 import { defaultAcrossProvider } from './providers/acrossProvider';
 import { defaultStargateProvider } from './providers/stargateProvider';
 import { defaultDeBridgeProvider } from './providers/debridgeProvider';
-import { EVMContractRegistry } from '@zenith/contracts';
 import { defaultDEXAggregator } from '../dex/dexAggregator';
 import { defaultTokenService } from '@zenith/tokens';
 import { formatTokenUnits } from '../tokenDecimals';
@@ -294,8 +293,6 @@ export class CrossChainAggregator {
     const routes: SwapRoute[] = [];
 
     for (const quote of quotes) {
-      const srcChain = defaultChainRegistry.getChain(quote.sourceChainId);
-      const chainIdNum = srcChain?.chainId || 1;
       const quoteAny = quote as any;
 
       const hops: RouteHop[] = [];
@@ -311,14 +308,7 @@ export class CrossChainAggregator {
           estimatedGas: quoteAny.sourceDexQuote.gasEstimate || 150000n
         });
       } else if (quote.sourceToken.address.toLowerCase() !== request.tokenIn.address.toLowerCase()) {
-        let routerAddress = quote.executionTarget;
-        if (srcChain?.executionEnvironment === 'EVM') {
-          try {
-            routerAddress = EVMContractRegistry.getPrimaryRouter(chainIdNum);
-          } catch {
-            routerAddress = quote.executionTarget;
-          }
-        }
+        const routerAddress = quote.executionTarget;
 
         hops.push({
           dexProtocol: 'UNISWAP_V3',

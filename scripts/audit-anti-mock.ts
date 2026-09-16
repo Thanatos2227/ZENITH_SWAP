@@ -115,7 +115,7 @@ export function runAudit(): AuditViolation[] {
   return violations;
 }
 
-if (require.main === module) {
+if (typeof require !== 'undefined' && require.main === module) {
   console.log('🔍 Running ZENITH Anti-Mock & Zero-Address Audit...');
   const violations = runAudit();
 

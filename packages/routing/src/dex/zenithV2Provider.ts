@@ -4,7 +4,7 @@ import {
   ZENITH_V2_ROUTER_ABI,
   CANONICAL_NATIVE_ADDRESS,
   getZenithV2Router,
-  EVMContractRegistry
+  ZenithRouterNotDeployedError
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
 import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
@@ -13,11 +13,12 @@ export class ZenithV2Provider implements DEXProvider {
   public readonly id: DEXProtocol = 'ZENITH_V2';
   public readonly protocol: DEXProtocol = 'ZENITH_V2';
   public readonly name = 'ZENITH V2 AMM';
-  public readonly supportedChainIds: number[] = [1, 10, 56, 137, 8453, 42161, 43114];
+  public readonly supportedChainIds: number[] = [1, 10, 56, 137, 8453, 42161, 43114, 31337];
 
   public isAvailable(chainId: number | string, _tokenIn: Token, _tokenOut: Token): boolean {
     const id = typeof chainId === 'number' ? chainId : (chainId === 'polygon' ? 137 : Number(chainId));
-    return this.supportedChainIds.includes(id);
+    const routerAddress = getZenithV2Router(id);
+    return Boolean(routerAddress && this.supportedChainIds.includes(id));
   }
 
   public async getQuote(params: DEXQuoteParams): Promise<DEXQuote | null> {
@@ -25,52 +26,48 @@ export class ZenithV2Provider implements DEXProvider {
       return null;
     }
 
-    try {
-      const routerAddress = getZenithV2Router(params.chainId) || EVMContractRegistry.getPrimaryRouter(params.chainId);
-      if (!routerAddress) {
-        return null;
-      }
-
-      const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
-
-      const calculated = calculateDEXLiquidityOutput({
-        chainId: params.chainId,
-        tokenIn: params.tokenIn,
-        tokenOut: params.tokenOut,
-        amountIn: params.amountIn,
-        feeTierBps: effectiveFeeBps,
-        slippageToleranceBps: params.slippageToleranceBps || 50
-      });
-
-      if (!calculated || calculated.amountOut <= 0n) {
-        return null;
-      }
-
-      const quoteTimestamp = Date.now();
-
-      return {
-        provider: 'ZENITH_V2',
-        providerName: this.name,
-        chainId: params.chainId,
-        tokenIn: params.tokenIn,
-        tokenOut: params.tokenOut,
-        amountIn: params.amountIn,
-        amountOut: calculated.amountOut,
-        minimumAmountOut: calculated.minimumAmountOut,
-        feeAmount: calculated.feeAmount,
-        feeTierBps: calculated.feeTierBps,
-        priceImpactPercent: calculated.priceImpactPercent,
-        executionTarget: routerAddress,
-        approvalTarget: routerAddress,
-        gasEstimate: 125000n,
-        gasCostUSD: 0.03,
-        quoteTimestamp,
-        expiration: quoteTimestamp + 15000,
-        routePath: [params.tokenIn.address, params.tokenOut.address]
-      };
-    } catch {
+    const routerAddress = getZenithV2Router(params.chainId);
+    if (!routerAddress) {
       return null;
     }
+
+    const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
+
+    const calculated = calculateDEXLiquidityOutput({
+      chainId: params.chainId,
+      tokenIn: params.tokenIn,
+      tokenOut: params.tokenOut,
+      amountIn: params.amountIn,
+      feeTierBps: effectiveFeeBps,
+      slippageToleranceBps: params.slippageToleranceBps || 50
+    });
+
+    if (!calculated || calculated.amountOut <= 0n) {
+      return null;
+    }
+
+    const quoteTimestamp = Date.now();
+
+    return {
+      provider: 'ZENITH_V2',
+      providerName: this.name,
+      chainId: params.chainId,
+      tokenIn: params.tokenIn,
+      tokenOut: params.tokenOut,
+      amountIn: params.amountIn,
+      amountOut: calculated.amountOut,
+      minimumAmountOut: calculated.minimumAmountOut,
+      feeAmount: calculated.feeAmount,
+      feeTierBps: calculated.feeTierBps,
+      priceImpactPercent: calculated.priceImpactPercent,
+      executionTarget: routerAddress,
+      approvalTarget: routerAddress,
+      gasEstimate: 125000n,
+      gasCostUSD: 0.03,
+      quoteTimestamp,
+      expiration: quoteTimestamp + 15000,
+      routePath: [params.tokenIn.address, params.tokenOut.address]
+    };
   }
 
   public async buildExecution(
@@ -80,9 +77,9 @@ export class ZenithV2Provider implements DEXProvider {
     deadline?: number
   ): Promise<DEXExecution> {
     const chainIdNum = typeof quote.chainId === 'number' ? quote.chainId : Number(quote.chainId);
-    const routerAddress = getZenithV2Router(chainIdNum) || EVMContractRegistry.getPrimaryRouter(chainIdNum);
+    const routerAddress = getZenithV2Router(chainIdNum);
     if (!routerAddress) {
-      throw new Error(`Zenith V2 Router not configured for chain ${chainIdNum}`);
+      throw new ZenithRouterNotDeployedError('ZENITH_V2', chainIdNum);
     }
     const iface = new Interface(ZENITH_V2_ROUTER_ABI);
     const recipient = recipientAddress || userAddress;
@@ -117,3 +114,4 @@ export class ZenithV2Provider implements DEXProvider {
 }
 
 export const zenithV2Provider = new ZenithV2Provider();
+
