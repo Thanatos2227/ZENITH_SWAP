@@ -1,4 +1,8 @@
 import { Token } from '@zenith/types';
+import {
+  simulateV3Swap,
+  TickMath
+} from '../math/v3ExactMath';
 
 export function isNativeToken(address: string | undefined | null): boolean {
   if (!address) return false;
@@ -538,4 +542,133 @@ export function calculatePriceImpactPercent(
   const diff = idealOut > amountOut ? idealOut - amountOut : 0n;
   const impactBps = Number((diff * 10000n) / idealOut);
   return Number((impactBps / 100).toFixed(4));
+}
+
+export function calculateV3ConcentratedOutput(params: {
+  chainId: number;
+  tokenIn: Token;
+  tokenOut: Token;
+  amountIn: bigint;
+  feeTierBps?: number;
+  slippageToleranceBps: number;
+  customReserveIn?: bigint;
+  customReserveOut?: bigint;
+  customLiquidity?: bigint;
+  customSqrtPriceX96?: bigint;
+  customCurrentTick?: number;
+  customTickSpacing?: number;
+  initializedTicks?: { tick: number; liquidityNet: bigint }[];
+}): {
+  amountOut: bigint;
+  minimumAmountOut: bigint;
+  feeAmount: bigint;
+  feeTierBps: number;
+  priceImpactPercent: number;
+  finalSqrtPriceX96?: bigint;
+  finalTick?: number;
+} | null {
+  const {
+    chainId,
+    tokenIn,
+    tokenOut,
+    amountIn,
+    feeTierBps,
+    slippageToleranceBps,
+    customReserveIn,
+    customReserveOut,
+    customLiquidity,
+    customSqrtPriceX96,
+    customCurrentTick,
+    customTickSpacing,
+    initializedTicks
+  } = params;
+
+  if (amountIn <= 0n) return null;
+
+  let reserveIn: bigint;
+  let reserveOut: bigint;
+  let effectiveFeeBps: number;
+  const inNorm = normalizeAddress(tokenIn.address, chainId, tokenIn.wrappedAddress);
+  const outNorm = normalizeAddress(tokenOut.address, chainId, tokenOut.wrappedAddress);
+
+  if (customReserveIn !== undefined && customReserveOut !== undefined) {
+    if (customReserveIn <= 0n || customReserveOut <= 0n) return null;
+    reserveIn = customReserveIn;
+    reserveOut = customReserveOut;
+    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
+  } else {
+    const pool = findVerifiedPool(
+      chainId,
+      tokenIn.address,
+      tokenOut.address,
+      tokenIn.wrappedAddress,
+      tokenOut.wrappedAddress
+    );
+    if (!pool || pool.reserveIn <= 0n || pool.reserveOut <= 0n) {
+      return null;
+    }
+    reserveIn = pool.reserveIn;
+    reserveOut = pool.reserveOut;
+    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : pool.feeBps;
+  }
+
+  const zeroForOne = inNorm.toLowerCase() < outNorm.toLowerCase();
+  const feePips = effectiveFeeBps * 100;
+  const tickSpacing = customTickSpacing !== undefined
+    ? customTickSpacing
+    : (feePips === 500 ? 10 : (feePips === 3000 ? 60 : (feePips === 10000 ? 200 : 60)));
+
+  let liquidity: bigint;
+  let sqrtPriceX96: bigint;
+  let currentTick: number;
+
+  if (customLiquidity !== undefined && customSqrtPriceX96 !== undefined) {
+    liquidity = customLiquidity;
+    sqrtPriceX96 = customSqrtPriceX96;
+    currentTick = customCurrentTick !== undefined
+      ? customCurrentTick
+      : TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+  } else {
+    const reserve0 = zeroForOne ? reserveIn : reserveOut;
+    const reserve1 = zeroForOne ? reserveOut : reserveIn;
+    liquidity = sqrtBigInt(reserve0 * reserve1);
+    sqrtPriceX96 = calculateV3SqrtPriceX96(reserve0, reserve1);
+    currentTick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+  }
+
+  const simResult = simulateV3Swap({
+    amountIn,
+    zeroForOne,
+    sqrtPriceX96,
+    currentTick,
+    liquidity,
+    feePips,
+    tickSpacing,
+    initializedTicks
+  });
+
+  if (simResult.amountOut <= 0n) return null;
+
+  const safeSlippage = slippageToleranceBps !== undefined && !isNaN(slippageToleranceBps)
+    ? slippageToleranceBps
+    : 50;
+  const slippageMultiplier = 10000n - BigInt(Math.max(0, safeSlippage));
+  const minimumAmountOut = (simResult.amountOut * slippageMultiplier) / 10000n;
+
+  const priceImpactPercent = calculatePriceImpactPercent(
+    amountIn,
+    simResult.amountOut,
+    reserveIn,
+    reserveOut
+  );
+
+  return {
+    amountOut: simResult.amountOut,
+    minimumAmountOut: minimumAmountOut === 0n ? 1n : minimumAmountOut,
+    feeAmount: simResult.feeAmount,
+    feeTierBps: effectiveFeeBps,
+    priceImpactPercent,
+    finalSqrtPriceX96: simResult.finalSqrtPriceX96,
+    finalTick: simResult.finalTick
+  };
 }

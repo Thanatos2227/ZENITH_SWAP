@@ -134,6 +134,28 @@ contract ZenithV3Pool {
         require(tickUpper % tickSpacing == 0, "ZenithV3Pool: TU_MOD");
     }
 
+    function _updateTick(
+        int24 tick,
+        int128 liquidityDelta,
+        bool upper
+    ) private returns (bool flipped) {
+        Info storage info = ticks[tick];
+
+        uint128 liquidityGrossBefore = info.liquidityGross;
+        uint128 liquidityGrossAfter = LiquidityMath.addDelta(liquidityGrossBefore, liquidityDelta);
+
+        flipped = (liquidityGrossAfter == 0) != (liquidityGrossBefore == 0);
+
+        if (liquidityGrossBefore == 0) {
+            info.initialized = true;
+        }
+
+        info.liquidityGross = liquidityGrossAfter;
+        info.liquidityNet = upper
+            ? info.liquidityNet - liquidityDelta
+            : info.liquidityNet + liquidityDelta;
+    }
+
     function _modifyPosition(
         address owner,
         int24 tickLower,
@@ -147,6 +169,16 @@ contract ZenithV3Pool {
         position = positions[positionKey];
 
         if (liquidityDelta != 0) {
+            bool flippedLower = _updateTick(tickLower, liquidityDelta, false);
+            bool flippedUpper = _updateTick(tickUpper, liquidityDelta, true);
+
+            if (flippedLower) {
+                tickBitmap.flipTick(tickLower, tickSpacing);
+            }
+            if (flippedUpper) {
+                tickBitmap.flipTick(tickUpper, tickSpacing);
+            }
+
             if (_slot0.tick < tickLower) {
                 amount0 = SqrtPriceMath.getAmount0Delta(
                     TickMath.getSqrtRatioAtTick(tickLower),
@@ -256,6 +288,24 @@ contract ZenithV3Pool {
         emit Burn(msg.sender, tickLower, tickUpper, amount, amount0, amount1);
     }
 
+    struct SwapState {
+        int256 amountSpecifiedRemaining;
+        int256 amountCalculated;
+        uint160 sqrtPriceX96;
+        int24 tick;
+        uint128 liquidity;
+    }
+
+    struct StepComputations {
+        uint160 sqrtPriceStartX96;
+        int24 tickNext;
+        bool initialized;
+        uint160 sqrtPriceNextX96;
+        uint256 amountIn;
+        uint256 amountOut;
+        uint256 feeAmount;
+    }
+
     function swap(
         address recipient,
         bool zeroForOne,
@@ -273,39 +323,93 @@ contract ZenithV3Pool {
             "ZenithV3Pool: LIMIT_BOUND"
         );
 
-        uint128 stateLiquidity = liquidity;
-        (uint160 sqrtPriceNextX96, uint256 stepAmountIn, uint256 stepAmountOut, ) = SwapMath.computeSwapStep(
-            _slot0.sqrtPriceX96,
-            sqrtPriceLimitX96,
-            stateLiquidity,
-            amountSpecified,
-            fee
-        );
+        bool exactInput = amountSpecified > 0;
 
-        if (zeroForOne) {
-            amount0 = int256(stepAmountIn);
-            amount1 = -int256(stepAmountOut);
-        } else {
-            amount0 = -int256(stepAmountOut);
-            amount1 = int256(stepAmountIn);
+        SwapState memory state = SwapState({
+            amountSpecifiedRemaining: amountSpecified,
+            amountCalculated: 0,
+            sqrtPriceX96: _slot0.sqrtPriceX96,
+            tick: _slot0.tick,
+            liquidity: liquidity
+        });
+
+        while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) {
+            StepComputations memory step;
+            step.sqrtPriceStartX96 = state.sqrtPriceX96;
+
+            (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(
+                state.tick,
+                tickSpacing,
+                zeroForOne
+            );
+
+            if (step.tickNext < TickMath.MIN_TICK) {
+                step.tickNext = TickMath.MIN_TICK;
+            } else if (step.tickNext > TickMath.MAX_TICK) {
+                step.tickNext = TickMath.MAX_TICK;
+            }
+
+            step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
+
+            (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
+                state.sqrtPriceX96,
+                (zeroForOne ? step.sqrtPriceNextX96 < sqrtPriceLimitX96 : step.sqrtPriceNextX96 > sqrtPriceLimitX96)
+                    ? sqrtPriceLimitX96
+                    : step.sqrtPriceNextX96,
+                state.liquidity,
+                state.amountSpecifiedRemaining,
+                fee
+            );
+
+            if (exactInput) {
+                state.amountSpecifiedRemaining -= int256(step.amountIn + step.feeAmount);
+                state.amountCalculated -= int256(step.amountOut);
+            } else {
+                state.amountSpecifiedRemaining += int256(step.amountOut);
+                state.amountCalculated += int256(step.amountIn + step.feeAmount);
+            }
+
+            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                if (step.initialized) {
+                    int128 liquidityNet = ticks[step.tickNext].liquidityNet;
+                    if (zeroForOne) liquidityNet = -liquidityNet;
+                    state.liquidity = LiquidityMath.addDelta(state.liquidity, liquidityNet);
+                }
+                state.tick = zeroForOne ? step.tickNext - 1 : step.tickNext;
+            } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
+                state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+            }
         }
 
-        slot0.sqrtPriceX96 = sqrtPriceNextX96;
-        slot0.tick = TickMath.getTickAtSqrtRatio(sqrtPriceNextX96);
+        if (state.tick != _slot0.tick) {
+            (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
+        } else {
+            slot0.sqrtPriceX96 = state.sqrtPriceX96;
+        }
+
+        if (liquidity != state.liquidity) liquidity = state.liquidity;
+
+        if (zeroForOne == exactInput) {
+            amount0 = amountSpecified - state.amountSpecifiedRemaining;
+            amount1 = state.amountCalculated;
+        } else {
+            amount0 = state.amountCalculated;
+            amount1 = amountSpecified - state.amountSpecifiedRemaining;
+        }
 
         if (zeroForOne) {
-            if (stepAmountOut > 0) _safeTransfer(token1, recipient, stepAmountOut);
+            if (amount1 < 0) _safeTransfer(token1, recipient, uint256(-amount1));
             uint256 balance0Before = IERC20(token0).balanceOf(address(this));
             IZenithV3SwapCallback(msg.sender).zenithV3SwapCallback(amount0, amount1, data);
-            require(balance0Before + stepAmountIn <= IERC20(token0).balanceOf(address(this)), "ZenithV3Pool: SWAP0");
+            require(balance0Before + uint256(amount0) <= IERC20(token0).balanceOf(address(this)), "ZenithV3Pool: SWAP0");
         } else {
-            if (stepAmountOut > 0) _safeTransfer(token0, recipient, stepAmountOut);
+            if (amount0 < 0) _safeTransfer(token0, recipient, uint256(-amount0));
             uint256 balance1Before = IERC20(token1).balanceOf(address(this));
             IZenithV3SwapCallback(msg.sender).zenithV3SwapCallback(amount0, amount1, data);
-            require(balance1Before + stepAmountIn <= IERC20(token1).balanceOf(address(this)), "ZenithV3Pool: SWAP1");
+            require(balance1Before + uint256(amount1) <= IERC20(token1).balanceOf(address(this)), "ZenithV3Pool: SWAP1");
         }
 
-        emit Swap(msg.sender, recipient, amount0, amount1, slot0.sqrtPriceX96, stateLiquidity, slot0.tick);
+        emit Swap(msg.sender, recipient, amount0, amount1, state.sqrtPriceX96, state.liquidity, state.tick);
     }
 
     function _safeTransfer(address token, address to, uint256 value) private {

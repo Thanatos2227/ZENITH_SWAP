@@ -7,7 +7,11 @@ import {
   ZenithRouterNotDeployedError
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
-import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
+import {
+  calculateV3ConcentratedOutput,
+  isNativeToken,
+  resolvePoolTokenAddress
+} from './dexMath';
 
 export class ZenithV3Provider implements DEXProvider {
   public readonly id: DEXProtocol = 'ZENITH_V3';
@@ -33,13 +37,20 @@ export class ZenithV3Provider implements DEXProvider {
 
     const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
 
-    const calculated = calculateDEXLiquidityOutput({
+    const calculated = calculateV3ConcentratedOutput({
       chainId: params.chainId,
       tokenIn: params.tokenIn,
       tokenOut: params.tokenOut,
       amountIn: params.amountIn,
       feeTierBps: effectiveFeeBps,
-      slippageToleranceBps: params.slippageToleranceBps || 50
+      slippageToleranceBps: params.slippageToleranceBps || 50,
+      customReserveIn: (params as any).customReserveIn,
+      customReserveOut: (params as any).customReserveOut,
+      customLiquidity: (params as any).customLiquidity,
+      customSqrtPriceX96: (params as any).customSqrtPriceX96,
+      customCurrentTick: (params as any).customCurrentTick,
+      customTickSpacing: (params as any).customTickSpacing,
+      initializedTicks: (params as any).initializedTicks
     });
 
     if (!calculated || calculated.amountOut <= 0n) {

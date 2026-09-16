@@ -1,4 +1,13 @@
 export * from './math/ammMath';
+export {
+  FullMath,
+  SqrtPriceMath,
+  SwapMath,
+  simulateV3Swap,
+  type TickInfo,
+  type SimulateSwapParams,
+  type SimulateSwapResult
+} from './math/v3ExactMath';
 export * from './scoring';
 export * from './dex';
 export * from './bridgeAggregator';
