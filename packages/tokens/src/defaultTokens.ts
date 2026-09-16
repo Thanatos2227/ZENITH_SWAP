@@ -2521,4 +2521,3 @@ export const MARKET_EXCLUDED_TOKEN_KEYS = new Set([
 export const MARKET_TOKENS: Token[] = DEFAULT_TOKENS.filter(
   (t) => !MARKET_EXCLUDED_TOKEN_KEYS.has(`${t.chainId.toLowerCase()}:${t.address.toLowerCase()}`)
 );
-

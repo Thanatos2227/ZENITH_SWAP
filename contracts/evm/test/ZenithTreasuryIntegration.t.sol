@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
@@ -130,25 +129,19 @@ contract ZenithTreasuryIntegrationTest is Test {
         tokenA = new IntegrationMockERC20("Token A", "TKNA");
         tokenB = new IntegrationMockERC20("Token B", "TKNB");
 
-        // 1. Deploy Treasury
         treasury = new ZenithTreasury(governance);
 
-        // 2. Deploy FeeController
         feeController = new ZenithFeeController(governance, address(treasury));
 
-        // 3. Deploy V1
         v1Factory = new ZenithV1Factory(governance, address(treasury));
         v1Router = new ZenithV1Router(address(v1Factory), address(weth));
 
-        // 4. Deploy V2
         v2Factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
         v2Router = new ZenithV2Router(address(v2Factory), address(weth));
 
-        // 5. Deploy V3
         v3Factory = new ZenithV3Factory(governance, address(feeController));
         v3Router = new ZenithV3Router(address(v3Factory), address(weth));
 
-        // 6. Deploy Unified Router
         unifiedRouter = new ZenithRouter(
             governance,
             address(weth),
@@ -159,11 +152,9 @@ contract ZenithTreasuryIntegrationTest is Test {
             address(v3Router)
         );
 
-        // Authorize unifiedRouter as fee collector in Treasury
         vm.prank(governance);
         treasury.setFeeCollector(address(unifiedRouter), true);
 
-        // Setup liquidity in V1
         tokenA.mint(address(this), 1_000_000 ether);
         tokenB.mint(address(this), 1_000_000 ether);
         tokenA.approve(address(v1Router), type(uint256).max);
@@ -180,15 +171,13 @@ contract ZenithTreasuryIntegrationTest is Test {
             block.timestamp + 1000
         );
 
-        // Fund Alice
         tokenA.mint(alice, 10_000 ether);
     }
 
-    // TEST 24 & 27: Unified Router swap collects protocol fee to Treasury and delivers net output to recipient
     function test_unifiedRouter_swap_collectsProtocolFeeToTreasury() public {
         uint256 swapIn = 1_000 ether;
-        uint256 protocolFeeBps = feeController.protocolFeeBps(); // 5 BPS = 0.05%
-        uint256 expectedProtocolFee = (swapIn * protocolFeeBps) / 10000; // 0.5 ether
+        uint256 protocolFeeBps = feeController.protocolFeeBps();
+        uint256 expectedProtocolFee = (swapIn * protocolFeeBps) / 10000;
 
         vm.startPrank(alice);
         tokenA.approve(address(unifiedRouter), swapIn);
@@ -207,19 +196,15 @@ contract ZenithTreasuryIntegrationTest is Test {
         );
         vm.stopPrank();
 
-        // 1. Output received by Alice
         assertTrue(amountOut > 0, "Alice must receive output tokenB");
         assertEq(tokenB.balanceOf(alice), amountOut);
 
-        // 2. Protocol fee delivered to Treasury
         assertEq(tokenA.balanceOf(address(treasury)), expectedProtocolFee, "Treasury balance must equal protocol fee");
         assertEq(treasury.getCollectedFees(address(tokenA)), expectedProtocolFee, "Treasury cumulative accounting updated");
 
-        // 3. Alice's tokenA balance decreased by exact swapIn
         assertEq(tokenA.balanceOf(alice), 10_000 ether - swapIn);
     }
 
-    // TEST 29: User swap principal is NOT deposited into Treasury
     function test_userSwapPrincipal_notCustodiedInTreasury() public {
         uint256 swapIn = 5_000 ether;
         uint256 protocolFee = (swapIn * 5) / 10000;
@@ -240,19 +225,16 @@ contract ZenithTreasuryIntegrationTest is Test {
         );
         vm.stopPrank();
 
-        // Treasury holds ONLY protocol fee, not the swap principal
         assertEq(tokenA.balanceOf(address(treasury)), protocolFee);
         assertTrue(tokenA.balanceOf(address(treasury)) < swapIn);
     }
 
-    // TEST 30: Slippage protection in Unified Router reverts if output minimum not met
     function test_slippageProtection_reverts() public {
         uint256 swapIn = 1_000 ether;
 
         vm.startPrank(alice);
         tokenA.approve(address(unifiedRouter), swapIn);
 
-        // Demand impossible minimum output (e.g. 50,000 tokenB for 1,000 tokenA)
         vm.expectRevert();
         unifiedRouter.swap(
             ZenithRouter.SwapParams({
@@ -269,7 +251,6 @@ contract ZenithTreasuryIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    // TEST 31: Expired deadline reverts
     function test_expiredDeadline_reverts() public {
         vm.startPrank(alice);
         tokenA.approve(address(unifiedRouter), 100 ether);
@@ -286,13 +267,12 @@ contract ZenithTreasuryIntegrationTest is Test {
                 amountIn: 100 ether,
                 amountOutMinimum: 1 ether,
                 recipient: alice,
-                deadline: block.timestamp - 1 // in the past
+                deadline: block.timestamp - 1
             })
         );
         vm.stopPrank();
     }
 
-    // TEST 33 & 34: Zero amount and zero recipient reject
     function test_zeroAmountAndRecipient_revert() public {
         vm.startPrank(alice);
         vm.expectRevert("ZenithRouter: ZERO_AMOUNT_IN");

@@ -92,7 +92,6 @@ export class UniswapV3Provider implements DEXProvider {
     const isNativeOut = isNativeToken(quote.tokenOut.address) || Boolean(quote.tokenOut.isNative);
     const universalRouter = getUniswapUniversalRouter(chainIdNum);
 
-    // If native asset is involved on source or destination, execute via Universal Router (WRAP_ETH / UNWRAP_WETH)
     if ((isNativeIn || isNativeOut) && universalRouter) {
       const uIface = new Interface(UNISWAP_UNIVERSAL_ROUTER_ABI);
       const abiCoder = AbiCoder.defaultAbiCoder();
@@ -103,8 +102,7 @@ export class UniswapV3Provider implements DEXProvider {
       const ROUTER_ADDRESS_THIS = '0x0000000000000000000000000000000000000002';
 
       if (isNativeIn) {
-        // Native In -> Token Out:
-        // Command 0x0b (WRAP_ETH) + 0x00 (V3_SWAP_EXACT_IN)
+
         const wrapInput = abiCoder.encode(['address', 'uint256'], [ROUTER_ADDRESS_THIS, quote.amountIn]);
         const swapInput = abiCoder.encode(
           ['address', 'uint256', 'uint256', 'bytes', 'bool'],
@@ -128,8 +126,7 @@ export class UniswapV3Provider implements DEXProvider {
           requiredAllowanceRaw: '0'
         };
       } else {
-        // Token In -> Native Out:
-        // Command 0x00 (V3_SWAP_EXACT_IN) + 0x01 (UNWRAP_WETH)
+
         const swapInput = abiCoder.encode(
           ['address', 'uint256', 'uint256', 'bytes', 'bool'],
           [ROUTER_ADDRESS_THIS, quote.amountIn, quote.minimumAmountOut, path, true]
@@ -155,7 +152,6 @@ export class UniswapV3Provider implements DEXProvider {
       }
     }
 
-    // Standard ERC20 -> ERC20 execution via SwapRouter02 / SwapRouter
     const iface = new Interface(UNISWAP_V3_SWAP_ROUTER_ABI);
     const isSwapRouter02 = routerAddress.toLowerCase() === '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'.toLowerCase() ||
       routerAddress.toLowerCase() === '0x2626664c2603336e57b271c5c0b26f421741e481'.toLowerCase() ||

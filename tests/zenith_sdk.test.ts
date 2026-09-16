@@ -5,7 +5,7 @@ import { registerZenithDeployment } from '@zenith/contracts';
 import { Token } from '@zenith/types';
 
 describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
-  // Register test deployment addresses for isolated test suite execution
+
   registerZenithDeployment(137, {
     v1Router: '0x1111111111111111111111111111111111111111',
     v2Router: '0x2222222222222222222222222222222222222222',
@@ -53,7 +53,7 @@ describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
         chainId: 137,
         tokenIn,
         tokenOut,
-        amountIn: 1000n * 10n ** 6n, // 1000 USDC
+        amountIn: 1000n * 10n ** 6n,
         slippageToleranceBps: 50
       });
 

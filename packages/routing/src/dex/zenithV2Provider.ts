@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 import { DEXProtocol, Token } from '@zenith/types';
 import { Interface } from 'ethers';
 import {

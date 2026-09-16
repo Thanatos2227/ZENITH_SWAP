@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {stdStorage, StdStorage} from "../src/StdStorage.sol";
@@ -229,7 +228,7 @@ contract StdStorageTest is Test {
 
     function test_StorageCheckedWriteMapPackedFullSuccess() public {
         uint256 full = test.map_packed(address(1337));
-        // keep upper 128, set lower 128 to 1337
+
         full = (full & (uint256((1 << 128) - 1) << 128)) | 1337;
         stdstore.target(address(test))
             .sig(test.map_packed.selector)
@@ -296,9 +295,6 @@ contract StdStorageTest is Test {
         assertEq(val, type(int256).min);
     }
 
-    // A getter returning a signed type narrower than 256 bits ABI-encodes the value
-    // sign-extended, while the slot holds only the field's own bits. Before this was handled,
-    // `find` matched neither and reverted with "Slot(s) not found."
     function test_StorageReadIntPackedNegative() public {
         int256 val = stdstore.enable_packed_slots().target(address(test)).sig(test.tJ.selector).read_int();
         assertEq(val, -5);
@@ -317,17 +313,12 @@ contract StdStorageTest is Test {
     function test_StorageWriteIntPackedNegative() public {
         stdstore.enable_packed_slots().target(address(test)).sig(test.tJ.selector).checked_write_int(-42);
         assertEq(test.tJ(), -42);
-        // the neighbour sharing the slot is untouched
+
         assertEq(test.tK(), 7);
     }
 
     function testFuzz_Packed(uint256 val, uint8 elemToGet) public {
-        // This function tries an assortment of packed slots, shifts meaning number of elements
-        // that are packed. Shiftsizes are the size of each element, i.e. 8 means a data type that is 8 bits, 16 == 16 bits, etc.
-        // Combined, these determine how a slot is packed. Making it random is too hard to avoid global rejection limit
-        // and make it performant.
 
-        // change the number of shifts
         for (uint256 i = 1; i < 5; i++) {
             uint256 shifts = i;
 
@@ -350,9 +341,8 @@ contract StdStorageTest is Test {
                 }
             }
 
-            // we may have some right bits unaccounted for
             leftBits += 256 - (leftBits + shiftSizes[elemToGet] + rightBits);
-            // clear left bits, then clear right bits and realign
+
             uint256 expectedValToRead = (val << leftBits) >> (leftBits + rightBits);
 
             uint256 readVal = stdstore.target(address(test))
@@ -366,19 +356,17 @@ contract StdStorageTest is Test {
     }
 
     function testFuzz_Packed2(uint256 nvars, uint256 seed) public {
-        // Number of random variables to generate.
+
         nvars = bound(nvars, 1, 20);
 
-        // This will decrease as we generate values in the below loop.
         uint256 bitsRemaining = 256;
 
-        // Generate a random value and size for each variable.
         uint256[] memory vals = new uint256[](nvars);
         uint256[] memory sizes = new uint256[](nvars);
         uint256[] memory offsets = new uint256[](nvars);
 
         for (uint256 i = 0; i < nvars; i++) {
-            // Generate a random value and size.
+
             offsets[i] = i == 0 ? 0 : offsets[i - 1] + sizes[i - 1];
 
             uint256 nvarsRemaining = nvars - i;
@@ -389,13 +377,12 @@ contract StdStorageTest is Test {
             uint256 maxVal;
             uint256 varSize = sizes[i];
             assembly {
-                // mask = (1 << varSize) - 1
+
                 maxVal := sub(shl(varSize, 1), 1)
             }
             vals[i] = bound(uint256(keccak256(abi.encodePacked(seed, i))), 0, maxVal);
         }
 
-        // Pack all values into the slot.
         for (uint256 i = 0; i < nvars; i++) {
             stdstore.enable_packed_slots()
                 .target(address(test))
@@ -405,7 +392,6 @@ contract StdStorageTest is Test {
                 .checked_write(vals[i]);
         }
 
-        // Verify the read data matches.
         for (uint256 i = 0; i < nvars; i++) {
             uint256 readVal = stdstore.enable_packed_slots()
                 .target(address(test))
@@ -426,7 +412,6 @@ contract StdStorageTest is Test {
         assertEq(test.edgeCaseArray(0), 1);
     }
 
-    // Regression tests for https://github.com/foundry-rs/forge-std/issues/345
     function test_StorageFindShortString() public {
         ShortBytesStorage target = new ShortBytesStorage();
         assertEq(stdstore.target(address(target)).sig(target.exists.selector).find(), 0);
@@ -459,9 +444,6 @@ contract StdStorageTest is Test {
         stdstore.target(target).sig(sig).find();
     }
 
-    // Regression test for https://github.com/foundry-rs/forge-std/issues/740
-    // `find()` used to infinite-loop on tokens whose `balanceOf` reads multiple
-    // storage slots and returns a derived value (reflection tokens).
     function test_RevertFindOnReflectionToken() public {
         MockReflectionToken token = new MockReflectionToken();
         ReflectionTokenTarget target = new ReflectionTokenTarget(token);
@@ -555,11 +537,8 @@ contract StorageTest {
 
     uint256 randomPacking;
 
-    // Array with length matching values of elements.
     uint256[] public edgeCaseArray = [3, 3, 3];
 
-    // Signed fields narrower than 256 bits. `tJ`/`tK` share a slot; `tSolo` is pushed into a
-    // slot of its own by the `uint256` that follows it.
     int64 public tJ = -5;
     uint64 public tK = 7;
 
@@ -594,7 +573,7 @@ contract StorageTest {
     }
 
     function extra_sload() public view returns (bytes32 t) {
-        // trigger read on slot `tE`, and make a staticcall to make sure compiler doesn't optimize this SLOAD away
+
         assembly {
             pop(staticcall(gas(), sload(tE.slot), 0, 0, 0, 0))
         }
@@ -607,24 +586,24 @@ contract StorageTest {
 
     function _getMask(uint256 size) internal pure returns (uint256 mask) {
         assembly {
-            // mask = (1 << size) - 1
+
             mask := sub(shl(size, 1), 1)
         }
     }
 
     function setRandomPacking(uint256 val, uint256 size, uint256 offset) public {
-        // Generate mask based on the size of the value
+
         uint256 mask = _getMask(size);
-        // Zero out all bits for the word we're about to set
+
         uint256 cleanedWord = randomPacking & ~(mask << offset);
-        // Place val in the correct spot of the cleaned word
+
         randomPacking = cleanedWord | val << offset;
     }
 
     function getRandomPacked(uint256 size, uint256 offset) public view returns (uint256) {
-        // Generate mask based on the size of the value
+
         uint256 mask = _getMask(size);
-        // Shift to place the bits in the correct position, and use mask to zero out remaining bits
+
         return (randomPacking >> offset) & mask;
     }
 
@@ -641,17 +620,12 @@ contract StorageTest {
             }
         }
 
-        // we may have some right bits unaccounted for
         leftBits += 256 - (leftBits + shiftSizes[elem] + rightBits);
 
-        // clear left bits, then clear right bits and realign
         return (randomPacking << leftBits) >> (leftBits + rightBits);
     }
 }
 
-// Minimal mock of a reflection token: `balanceOf` reads many storage slots
-// and always returns a constant, so no single slot mutation can change its
-// return value and stdStorage can never find a matching slot.
 contract MockReflectionToken {
     uint256 internal _a = 1;
     uint256 internal _b = 2;
@@ -662,11 +636,9 @@ contract MockReflectionToken {
         _balances[msg.sender] = 1000 ether;
     }
 
-    // Reads _a, _b, _c, and _balances[account] but always returns a constant.
-    // This means mutating any single slot won't change the return value.
     function balanceOf(address account) public view returns (uint256) {
         uint256 x = _a + _b + _c + _balances[account];
-        x; // suppress unused warning
+        x;
         return 42;
     }
 }

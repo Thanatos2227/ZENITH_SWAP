@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-
 import { getZenithDeployment } from '../deployments';
 
 export const ZENITH_V3_FACTORY_ABI = [

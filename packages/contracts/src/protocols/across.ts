@@ -1,24 +1,19 @@
 import { UnsupportedProtocolError } from '../errors';
 
-/**
- * Across V3 SpokePool Canonical Deployments
- * Official documentation: https://docs.across.to/reference/contract-addresses
- */
 export const ACROSS_V3_SPOKE_POOLS: Record<number, string> = {
-  1: '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5',      // Ethereum
-  10: '0x6f26Bf09B1C792e3228e5467807a900A50DeECAa',     // Optimism
-  137: '0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096',    // Polygon
-  8453: '0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64',   // Base
-  42161: '0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A',  // Arbitrum One
-  59144: '0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2d752',  // Linea
-  534352: '0x3BaD7ad0728f9917d1Bf08af5782dCbD516cD961', // Scroll
-  81457: '0x2D509190Ed0172ba588407D4c2df908d53F0222C',  // Blast
-  34443: '0x3B95452d3BE21f63231495A519fCE79D3B51AC50',  // Mode
-  324: '0xE0B01066d5308388F90280C371c2A272543b7773'     // ZKsync Era
+  1: '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5',
+  10: '0x6f26Bf09B1C792e3228e5467807a900A50DeECAa',
+  137: '0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096',
+  8453: '0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64',
+  42161: '0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A',
+  59144: '0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2d752',
+  534352: '0x3BaD7ad0728f9917d1Bf08af5782dCbD516cD961',
+  81457: '0x2D509190Ed0172ba588407D4c2df908d53F0222C',
+  34443: '0x3B95452d3BE21f63231495A519fCE79D3B51AC50',
+  324: '0xE0B01066d5308388F90280C371c2A272543b7773'
 };
 
 export const ACROSS_SPOKE_POOLS = ACROSS_V3_SPOKE_POOLS;
-
 
 export const ACROSS_SPOKE_POOL_ABI = [
   'function depositV3(address depositor, address recipient, address inputToken, address outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, address exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes message) external payable',

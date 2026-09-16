@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-// Packages imports
 import { defaultChainRegistry, NETWORK_GAS_PROFILES } from '../packages/chains/src';
 import {
   DEFAULT_TOKENS,
@@ -35,7 +34,6 @@ import {
 } from '../packages/types/src';
 import { defaultThemeManager, ZENITH_TOKENS } from '../packages/ui/src';
 
-// Utility & Store imports
 import {
   formatAddress,
   isExplicitlyDisconnected,
@@ -45,7 +43,6 @@ import {
   clearStoredWalletSession
 } from '../apps/web/src/utils/walletDetector';
 
-// Mock localStorage for Web tests in Node.js environment
 class LocalStorageMock {
   private store: Record<string, string> = {};
   getItem(key: string): string | null {
@@ -64,9 +61,6 @@ class LocalStorageMock {
 (global as any).localStorage = new LocalStorageMock();
 (global as any).window = { localStorage: (global as any).localStorage };
 
-// ============================================================================
-// SUITE 1: FUNCTIONAL TESTS (Registration, Auth, Session, Search, CRUD, Import)
-// ============================================================================
 test('SUITE 1: Functional Tests', async (t) => {
   await t.test('1.1 Web3 Wallet Authentication, Session Management & Disconnect Persistence', () => {
     clearStoredWalletSession();
@@ -113,7 +107,6 @@ test('SUITE 1: Functional Tests', async (t) => {
     assert.equal(imported.verificationTier, 'UNVERIFIED');
     assert.equal(imported.chainId, 'polygon');
 
-    // Invalid EVM address length (starts with 0x but length !== 42)
     assert.throws(() => {
       defaultTokenService.importCustomToken({
         chainId: 'polygon',
@@ -154,9 +147,6 @@ test('SUITE 1: Functional Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 2: UI / UX & DESIGN SYSTEM TESTS
-// ============================================================================
 test('SUITE 2: UI/UX & Design System Tests', async (t) => {
   await t.test('2.1 Theme Management & Dark/Light Mode Token Consistency', () => {
     defaultThemeManager.setTheme('dark');
@@ -196,9 +186,6 @@ test('SUITE 2: UI/UX & Design System Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 3: RESPONSIVE & VIEWPORT SPECIFICATION TESTS
-// ============================================================================
 test('SUITE 3: Responsive & Viewport Layout Tests', async (t) => {
   await t.test('3.1 Screen Breakpoint Resolutions & Layout Classification', () => {
     const breakpoints = {
@@ -234,9 +221,6 @@ test('SUITE 3: Responsive & Viewport Layout Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 4: BROWSER COMPATIBILITY TESTS
-// ============================================================================
 test('SUITE 4: Browser Compatibility & Standard Runtime Support', async (t) => {
   await t.test('4.1 Web3 Provider EIP-1193 Standard Interface', () => {
     const mockEIP1193Provider = {
@@ -261,9 +245,6 @@ test('SUITE 4: Browser Compatibility & Standard Runtime Support', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 5: API & ORACLE NETWORK TESTS
-// ============================================================================
 test('SUITE 5: API & Oracle Network Tests', async (t) => {
   await t.test('5.1 Live Market Data Fetching & Cascading Fallback Hierarchy', async () => {
     const marketMap = await defaultMarketDataService.fetchMarketData();
@@ -295,9 +276,6 @@ test('SUITE 5: API & Oracle Network Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 6: STATE STORE & DATABASE INTEGRITY TESTS
-// ============================================================================
 test('SUITE 6: State Store & Database Integrity Tests', async (t) => {
   await t.test('6.1 Immutability, Atomic State Transitions & Replay Protection', () => {
     const initialChain = defaultChainRegistry.getChain('ethereum');
@@ -322,9 +300,6 @@ test('SUITE 6: State Store & Database Integrity Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 7: SECURITY, RISK & VULNERABILITY TESTS
-// ============================================================================
 test('SUITE 7: Security, Risk & Vulnerability Tests', async (t) => {
   await t.test('7.1 Honeypot & Malicious Token Quarantine', () => {
     const safeToken: Token = {
@@ -412,9 +387,6 @@ test('SUITE 7: Security, Risk & Vulnerability Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 8: PERFORMANCE & COMPUTATIONAL STRESS TESTS
-// ============================================================================
 test('SUITE 8: Performance & Computational Stress Tests', async (t) => {
   await t.test('8.1 High-Throughput AMM Math Benchmark (>10,000 ops/sec)', () => {
     const start = performance.now();
@@ -444,9 +416,6 @@ test('SUITE 8: Performance & Computational Stress Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 9: INTEGRATION TESTS
-// ============================================================================
 test('SUITE 9: Integration Tests', async (t) => {
   await t.test('9.1 End-to-End Quoting Pipeline: Token -> Router -> Math -> Risk -> EES', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -488,9 +457,6 @@ test('SUITE 9: Integration Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 10: REGRESSION & RELEASE VERIFICATION
-// ============================================================================
 test('SUITE 10: Regression & Release Verification', async (t) => {
   await t.test('10.1 All 53 Supported Chains are Registered and Validated', () => {
     const allChains = defaultChainRegistry.getAllChains();
@@ -514,9 +480,6 @@ test('SUITE 10: Regression & Release Verification', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 11: ACCESSIBILITY (WCAG 2.1 AA) TESTS
-// ============================================================================
 test('SUITE 11: Accessibility (WCAG 2.1 AA) Tests', async (t) => {
   await t.test('11.1 Color Contrast Tokens & Palette Luminance Separation', () => {
     const darkBg = ZENITH_TOKENS.colors.dark.bgMain;
@@ -542,9 +505,6 @@ test('SUITE 11: Accessibility (WCAG 2.1 AA) Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 12: RELIABILITY, FAILOVER & RECOVERY TESTS
-// ============================================================================
 test('SUITE 12: Reliability, Failover & Recovery Tests', async (t) => {
   await t.test('12.1 Primary RPC Failure & Automatic Fallback to Secondary RPC', () => {
     const ethChain = defaultChainRegistry.getChain('ethereum')!;
@@ -585,9 +545,6 @@ test('SUITE 12: Reliability, Failover & Recovery Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 13: LOCALIZATION, NUMBER & CURRENCY FORMATTING TESTS
-// ============================================================================
 test('SUITE 13: Localization, Number & Currency Formatting Tests', async (t) => {
   await t.test('13.1 Number Truncation & Currency Formatting', () => {
     assert.equal(truncateToThreeDecimals(1234.5678), '1234.567');
@@ -608,9 +565,6 @@ test('SUITE 13: Localization, Number & Currency Formatting Tests', async (t) => 
   });
 });
 
-// ============================================================================
-// SUITE 14: COMPLETE END-TO-END USER JOURNEYS
-// ============================================================================
 test('SUITE 14: Complete End-to-End User Journeys', async (t) => {
   await t.test('14.1 Full Trade Flow: Select -> Quote -> Approve -> Sign -> Execute -> Receipt', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -672,9 +626,6 @@ test('SUITE 14: Complete End-to-End User Journeys', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 15: SPECIAL & EXTREME EDGE-CASE TESTS
-// ============================================================================
 test('SUITE 15: Special & Extreme Edge-Case Tests', async (t) => {
   await t.test('15.1 Zero-Division & Micro-Dust Protection', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'base' && t.symbol === 'ETH')!;
@@ -710,9 +661,6 @@ test('SUITE 15: Special & Extreme Edge-Case Tests', async (t) => {
   });
 });
 
-// ============================================================================
-// SUITE 16: DEDICATED BLOCKCHAIN & CRYPTO / DEX TEST SUITE
-// ============================================================================
 test('SUITE 16: Dedicated Blockchain & Crypto / DEX Test Suite', async (t) => {
   await t.test('16.1 Multi-Chain Address Validation across EVM, Solana & UTXO', () => {
     const isValidEVM = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
@@ -745,21 +693,21 @@ test('SUITE 16: Dedicated Blockchain & Crypto / DEX Test Suite', async (t) => {
   });
 
   await t.test('16.3 Protocol Fee Collection & Governance BPS Enforcement (Max 30 BPS)', () => {
-    const defaultFeeBps = 5; // 0.05%
-    const maxAllowedFeeBps = 30; // 0.30%
+    const defaultFeeBps = 5;
+    const maxAllowedFeeBps = 30;
 
     const calculateFee = (amount: bigint, bps: number) => (amount * BigInt(bps)) / 10000n;
-    const tradeAmount = 1000000000000000000n; // 1 ETH
+    const tradeAmount = 1000000000000000000n;
 
     const protocolFee = calculateFee(tradeAmount, defaultFeeBps);
-    assert.equal(protocolFee, 500000000000000n); // 0.0005 ETH
+    assert.equal(protocolFee, 500000000000000n);
 
     const maxFee = calculateFee(tradeAmount, maxAllowedFeeBps);
-    assert.equal(maxFee, 3000000000000000n); // 0.003 ETH
+    assert.equal(maxFee, 3000000000000000n);
   });
 
   await t.test('16.4 Reentrancy Guard & Smart Contract Access Control Simulation', () => {
-    let reentrancyStatus = 1; // 1 = NOT_ENTERED, 2 = ENTERED
+    let reentrancyStatus = 1;
     const nonReentrantCall = (fn: () => void) => {
       assert.equal(reentrancyStatus, 1, 'Reentrancy guard violation');
       reentrancyStatus = 2;

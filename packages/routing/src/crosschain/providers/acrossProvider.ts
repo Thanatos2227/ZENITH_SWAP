@@ -41,7 +41,6 @@ export class AcrossProvider implements CrossChainProvider {
     if (!src?.chainId || !dst?.chainId) return false;
     if (src.executionEnvironment !== 'EVM' || dst.executionEnvironment !== 'EVM') return false;
 
-    // Verify token compatibility: Across bridges canonical assets (e.g. USDC, USDT, WETH/ETH, DAI, WBTC)
     if (tokenIn && tokenOut) {
       const symIn = (tokenIn.symbol || '').toUpperCase().replace(/^W/, '');
       const symOut = (tokenOut.symbol || '').toUpperCase().replace(/^W/, '');
@@ -80,12 +79,11 @@ export class AcrossProvider implements CrossChainProvider {
     let relayerFeePctStr = '0';
     let bridgeFeeUSD = 0;
 
-    // Fetch authoritative live Across quote from suggested-fees API
     try {
       const url = `https://app.across.to/api/suggested-fees?inputToken=${validatedInputToken}&outputToken=${validatedOutputToken}&originChainId=${srcChain.chainId}&destinationChainId=${dstChain.chainId}&amount=${amountInBig.toString()}`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (!resp.ok) {
-        // Across does not support this route or API returned error — fail closed
+
         return null;
       }
 
@@ -127,7 +125,7 @@ export class AcrossProvider implements CrossChainProvider {
         bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0;
       }
     } catch {
-      // Across API failed or unreachable — Fail Closed (no synthetic fallback allowed)
+
       return null;
     }
 
@@ -279,7 +277,7 @@ export class AcrossProvider implements CrossChainProvider {
         }
       }
     } catch {
-      // API lookup network delay
+
     }
 
     return {

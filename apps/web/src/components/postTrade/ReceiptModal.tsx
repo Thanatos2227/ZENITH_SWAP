@@ -159,4 +159,3 @@ export const ReceiptModal: React.FC = () => {
     </div>
   );
 };
-

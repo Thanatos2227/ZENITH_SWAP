@@ -94,7 +94,6 @@ export const MarketsView: React.FC = () => {
     return val.toFixed(8);
   };
 
-
   const formatMarketCap = (cap?: number | null): string => {
     if (!cap || cap <= 0) return '—';
     if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`;

@@ -52,7 +52,7 @@ export class CrossChainTracker {
     const {
       order,
       stateMachine,
-      maxPollDurationMs = 1800000, // 30 mins max poll
+      maxPollDurationMs = 1800000,
       pollIntervalMs = 4000,
       onStateChange
     } = params;
@@ -84,7 +84,6 @@ export class CrossChainTracker {
             txHash: status.destinationTxHash
           });
 
-          // Verify transaction on destination chain RPC
           const destVerification = await this.verifyDestinationSettlement({
             destinationChainId: order.destinationChainId,
             destinationTxHash: status.destinationTxHash,
@@ -108,7 +107,7 @@ export class CrossChainTracker {
               receipt: destVerification.receipt
             };
           } else {
-            // Still confirming or waiting for finality
+
           }
         } else if (status.isFailed) {
           currentOrder.status = 'FAILED';
@@ -124,14 +123,13 @@ export class CrossChainTracker {
 
           return { isSuccess: false, error: status.errorMessage || 'Cross-chain fulfillment failed' };
         } else {
-          // Still in flight
+
           onStateChange?.('FULFILLING');
         }
       } catch (err: any) {
         console.warn(`[CrossChainTracker] Polling note for order ${order.orderId}:`, err?.message || err);
       }
 
-      // Wait for the next poll interval (timer used strictly for polling cadence)
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
@@ -171,12 +169,11 @@ export class CrossChainTracker {
           return { isVerified: false, receipt, reason: 'Destination transaction reverted on-chain' };
         }
       } catch (err: any) {
-        // RPC network lag
+
         return { isVerified: false, reason: err?.message || 'Destination RPC query pending' };
       }
     }
 
-    // For non-EVM or instant verified provider statuses
     return { isVerified: true };
   }
 }

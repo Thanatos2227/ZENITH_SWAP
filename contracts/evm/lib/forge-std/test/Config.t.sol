@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity ^0.8.13;
 
 import {Test} from "../src/Test.sol";
@@ -14,98 +13,78 @@ contract ConfigTest is Test, Config {
     }
 
     function test_loadConfig() public {
-        // Deploy the config contract with the test fixture.
+
         _loadConfig("./test/fixtures/config.toml", false);
 
-        // -- MAINNET --------------------------------------------------------------
-
-        // Read and assert RPC URL for Mainnet (chain ID 1)
         assertEq(config.getRpcUrl(1), "https://ethereum.reth.rs/rpc");
 
-        // Read and assert boolean values
         assertTrue(config.get(1, "is_live").toBool());
         bool[] memory bool_array = config.get(1, "bool_array").toBoolArray();
         assertTrue(bool_array[0]);
         assertFalse(bool_array[1]);
 
-        // Read and assert address values
         assertEq(config.get(1, "weth").toAddress(), 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
         address[] memory address_array = config.get(1, "deps").toAddressArray();
         assertEq(address_array[0], 0x0000000000000000000000000000000000000000);
         assertEq(address_array[1], 0x1111111111111111111111111111111111111111);
 
-        // Read and assert bytes32 values
         assertEq(config.get(1, "word").toBytes32(), bytes32(uint256(1234)));
         bytes32[] memory bytes32_array = config.get(1, "word_array").toBytes32Array();
         assertEq(bytes32_array[0], bytes32(uint256(5678)));
         assertEq(bytes32_array[1], bytes32(uint256(9999)));
 
-        // Read and assert uint values
         assertEq(config.get(1, "number").toUint256(), 1234);
         uint256[] memory uint_array = config.get(1, "number_array").toUint256Array();
         assertEq(uint_array[0], 5678);
         assertEq(uint_array[1], 9999);
 
-        // Read and assert int values
         assertEq(config.get(1, "signed_number").toInt256(), -1234);
         int256[] memory int_array = config.get(1, "signed_number_array").toInt256Array();
         assertEq(int_array[0], -5678);
         assertEq(int_array[1], 9999);
 
-        // Read and assert bytes values
         assertEq(config.get(1, "b").toBytes(), hex"abcd");
         bytes[] memory bytes_array = config.get(1, "b_array").toBytesArray();
         assertEq(bytes_array[0], hex"dead");
         assertEq(bytes_array[1], hex"beef");
 
-        // Read and assert string values
         assertEq(config.get(1, "str").toString(), "foo");
         string[] memory string_array = config.get(1, "str_array").toStringArray();
         assertEq(string_array[0], "bar");
         assertEq(string_array[1], "baz");
 
-        // -- OPTIMISM ------------------------------------------------------------
-
-        // Read and assert RPC URL for Optimism (chain ID 10)
         assertEq(config.getRpcUrl(10), "https://mainnet.optimism.io");
 
-        // Read and assert boolean values
         assertFalse(config.get(10, "is_live").toBool());
         bool_array = config.get(10, "bool_array").toBoolArray();
         assertFalse(bool_array[0]);
         assertTrue(bool_array[1]);
 
-        // Read and assert address values
         assertEq(config.get(10, "weth").toAddress(), 0x4200000000000000000000000000000000000006);
         address_array = config.get(10, "deps").toAddressArray();
         assertEq(address_array[0], 0x2222222222222222222222222222222222222222);
         assertEq(address_array[1], 0x3333333333333333333333333333333333333333);
 
-        // Read and assert bytes32 values
         assertEq(config.get(10, "word").toBytes32(), bytes32(uint256(9999)));
         bytes32_array = config.get(10, "word_array").toBytes32Array();
         assertEq(bytes32_array[0], bytes32(uint256(1234)));
         assertEq(bytes32_array[1], bytes32(uint256(5678)));
 
-        // Read and assert uint values
         assertEq(config.get(10, "number").toUint256(), 9999);
         uint_array = config.get(10, "number_array").toUint256Array();
         assertEq(uint_array[0], 1234);
         assertEq(uint_array[1], 5678);
 
-        // Read and assert int values
         assertEq(config.get(10, "signed_number").toInt256(), 9999);
         int_array = config.get(10, "signed_number_array").toInt256Array();
         assertEq(int_array[0], -1234);
         assertEq(int_array[1], -5678);
 
-        // Read and assert bytes values
         assertEq(config.get(10, "b").toBytes(), hex"dcba");
         bytes_array = config.get(10, "b_array").toBytesArray();
         assertEq(bytes_array[0], hex"c0ffee");
         assertEq(bytes_array[1], hex"babe");
 
-        // Read and assert string values
         assertEq(config.get(10, "str").toString(), "alice");
         string_array = config.get(10, "str_array").toStringArray();
         assertEq(string_array[0], "bob");
@@ -115,7 +94,6 @@ contract ConfigTest is Test, Config {
     function test_loadConfigAndForks() public {
         _loadConfigAndForks("./test/fixtures/config.toml", false);
 
-        // assert that the map of chain id and fork ids is created and that the chain ids actually match
         assertEq(forkOf[1], 0);
         vm.selectFork(forkOf[1]);
         assertEq(vm.getChainId(), 1);
@@ -137,7 +115,6 @@ contract ConfigTest is Test, Config {
         keys[5] = "b";
         keys[6] = "str";
 
-        // Read and assert RPC URL for Mainnet (chain ID 1)
         assertEq(config.getRpcUrl(1), "https://ethereum.reth.rs/rpc");
 
         for (uint256 i = 0; i < keys.length; ++i) {
@@ -145,7 +122,6 @@ contract ConfigTest is Test, Config {
             assertFalse(config.exists(1, string.concat(keys[i], "_")));
         }
 
-        // Assert RPC URL for Optimism (chain ID 10)
         assertEq(config.getRpcUrl(10), "https://mainnet.optimism.io");
 
         for (uint256 i = 0; i < keys.length; ++i) {
@@ -155,19 +131,17 @@ contract ConfigTest is Test, Config {
     }
 
     function test_writeConfig() public {
-        // Create a temporary copy of the config file to avoid modifying the original.
+
         string memory originalConfig = "./test/fixtures/config.toml";
         string memory testConfig = "./test/fixtures/config.t.toml";
         vm.copyFile(originalConfig, testConfig);
 
-        // Deploy the config contract with the temporary fixture.
         _loadConfig(testConfig, false);
 
-        // Enable writing to file bypassing the context check.
         vm.store(address(config), bytes32(uint256(5)), bytes32(uint256(1)));
 
         {
-            // Update a single boolean value and verify the change.
+
             config.set(1, "is_live", false);
 
             assertFalse(config.get(1, "is_live").toBool());
@@ -175,7 +149,6 @@ contract ConfigTest is Test, Config {
             string memory content = vm.readFile(testConfig);
             assertFalse(vm.parseTomlBool(content, "$.mainnet.bool.is_live"));
 
-            // Update a single address value and verify the change.
             address new_addr = 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF;
             config.set(1, "weth", new_addr);
 
@@ -184,7 +157,6 @@ contract ConfigTest is Test, Config {
             content = vm.readFile(testConfig);
             assertEq(vm.parseTomlAddress(content, "$.mainnet.address.weth"), new_addr);
 
-            // Update a uint array and verify the change.
             uint256[] memory new_numbers = new uint256[](3);
             new_numbers[0] = 1;
             new_numbers[1] = 2;
@@ -204,7 +176,6 @@ contract ConfigTest is Test, Config {
             assertEq(updated_numbers_disk[1], 2);
             assertEq(updated_numbers_disk[2], 3);
 
-            // Update a string array and verify the change.
             string[] memory new_strings = new string[](2);
             new_strings[0] = "hello";
             new_strings[1] = "world";
@@ -221,7 +192,6 @@ contract ConfigTest is Test, Config {
             assertEq(updated_strings_disk[0], "hello");
             assertEq(updated_strings_disk[1], "world");
 
-            // Create a new uint variable and verify the change.
             config.set(1, "new_uint", uint256(42));
 
             assertEq(config.get(1, "new_uint").toUint256(), 42);
@@ -229,7 +199,6 @@ contract ConfigTest is Test, Config {
             content = vm.readFile(testConfig);
             assertEq(vm.parseTomlUint(content, "$.mainnet.uint.new_uint"), 42);
 
-            // Create a new int variable and verify the change.
             config.set(1, "new_int", int256(-42));
 
             assertEq(config.get(1, "new_int").toInt256(), -42);
@@ -237,7 +206,6 @@ contract ConfigTest is Test, Config {
             content = vm.readFile(testConfig);
             assertEq(vm.parseTomlInt(content, "$.mainnet.int.new_int"), -42);
 
-            // Create a new int array and verify the change.
             int256[] memory new_ints = new int256[](2);
             new_ints[0] = -100;
             new_ints[1] = 200;
@@ -254,7 +222,6 @@ contract ConfigTest is Test, Config {
             assertEq(updated_ints_disk[0], -100);
             assertEq(updated_ints_disk[1], 200);
 
-            // Create a new bytes32 array and verify the change.
             bytes32[] memory new_words = new bytes32[](2);
             new_words[0] = bytes32(uint256(0xDEAD));
             new_words[1] = bytes32(uint256(0xBEEF));
@@ -272,59 +239,49 @@ contract ConfigTest is Test, Config {
             assertEq(vm.toString(updated_words_disk[1]), vm.toString(new_words[1]));
         }
 
-        // Clean up the temporary file.
         vm.removeFile(testConfig);
     }
 
     function test_writeUpdatesBackToFile() public {
-        // Create a temporary copy of the config file to avoid modifying the original.
+
         string memory originalConfig = "./test/fixtures/config.toml";
         string memory testConfig = "./test/fixtures/write_config.t.toml";
         vm.copyFile(originalConfig, testConfig);
 
-        // Deploy the config contract with `writeToFile = false` (disabled).
         _loadConfig(testConfig, false);
 
-        // Update a single boolean value and verify the file is NOT changed.
         config.set(1, "is_live", false);
         string memory content = vm.readFile(testConfig);
         assertTrue(vm.parseTomlBool(content, "$.mainnet.bool.is_live"), "File should not be updated yet");
 
-        // Enable writing to file bypassing the context check.
         vm.store(address(config), bytes32(uint256(5)), bytes32(uint256(1)));
 
-        // Update the value again and verify the file IS changed.
         config.set(1, "is_live", false);
         content = vm.readFile(testConfig);
         assertFalse(vm.parseTomlBool(content, "$.mainnet.bool.is_live"), "File should be updated now");
 
-        // Disable writing to file.
         config.writeUpdatesBackToFile(false);
 
-        // Update the value again and verify the file is NOT changed.
         config.set(1, "is_live", true);
         content = vm.readFile(testConfig);
         assertFalse(vm.parseTomlBool(content, "$.mainnet.bool.is_live"), "File should not be updated again");
 
-        // Clean up the temporary file.
         vm.removeFile(testConfig);
     }
 
     function testRevert_WriteToFileInForbiddenCtxt() public {
-        // Cannot initialize enabling writing to file unless we are in SCRIPT mode.
+
         vm.expectRevert(StdConfig.WriteToFileInForbiddenCtxt.selector);
         _loadConfig("./test/fixtures/config.toml", true);
 
-        // Initialize with `writeToFile = false`.
         _loadConfig("./test/fixtures/config.toml", false);
 
-        // Cannot enable writing to file unless we are in SCRIPT mode.
         vm.expectRevert(StdConfig.WriteToFileInForbiddenCtxt.selector);
         config.writeUpdatesBackToFile(true);
     }
 
     function testRevert_InvalidChainKey() public {
-        // Create a fixture with an invalid chain key
+
         string memory invalidChainConfig = "./test/fixtures/config_invalid_chain.toml";
         vm.writeFile(
             invalidChainConfig,
@@ -352,16 +309,14 @@ contract ConfigTest is Test, Config {
     function testRevert_ChainNotInitialized() public {
         _loadConfig("./test/fixtures/config.toml", false);
 
-        // Enable writing to file bypassing the context check.
         vm.store(address(config), bytes32(uint256(5)), bytes32(uint256(1)));
 
-        // Try to write a value for a non-existent chain ID
         vm.expectRevert(abi.encodeWithSelector(StdConfig.ChainNotInitialized.selector, uint256(999999)));
         config.set(999999, "some_key", uint256(123));
     }
 
     function testRevert_UnableToParseVariable() public {
-        // Create a temporary fixture with an unparsable variable
+
         string memory badParseConfig = "./test/fixtures/config_bad_parse.toml";
         vm.writeFile(
             badParseConfig,
@@ -380,8 +335,7 @@ contract ConfigTest is Test, Config {
     }
 
     function test_loadConfigWithoutRpcEndpoint() public {
-        // A chain section may exist only to carry config values. Loading it should not
-        // require an endpoint, since nothing on the `_loadConfig` path ever reads one.
+
         string memory configOnly = "./test/fixtures/config_no_endpoint.toml";
         vm.writeFile(
             configOnly,
@@ -405,7 +359,7 @@ contract ConfigTest is Test, Config {
     }
 
     function testRevert_MissingRpcEndpoint() public {
-        // Loading a chain without an endpoint is fine; asking for the endpoint is not.
+
         string memory configOnly = "./test/fixtures/config_no_endpoint_revert.toml";
         vm.writeFile(
             configOnly,

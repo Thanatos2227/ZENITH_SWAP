@@ -47,13 +47,11 @@ export class ExecutionCoordinator {
       throw new ConfigurationError('[ExecutionCoordinator] Source or destination chain config not found in registry');
     }
 
-    // 1. Invariant: Recipient Security Enforcement
     const expectedRecipient = params.quote.request.recipientAddress || params.quote.request.userWalletAddress || params.userAddress;
     if (params.userAddress.toLowerCase() !== expectedRecipient.toLowerCase()) {
       throw new RecipientMismatchError(params.userAddress, expectedRecipient);
     }
 
-    // 2. Token Security Policy Check (Fail-Closed)
     const riskIn = defaultTokenRiskEngine.evaluateToken(params.quote.request.tokenIn);
     const riskOut = defaultTokenRiskEngine.evaluateToken(params.quote.request.tokenOut);
 
@@ -111,7 +109,6 @@ export class ExecutionCoordinator {
       this.intentEngine.updateIntentState(params.quote.intent.orderId, 'SUBMITTED');
     }
 
-    // Execute source transaction
     if (sourceChain.executionEnvironment === 'SOLANA') {
       const result = await this.solanaAdapter.executeSwap({
         quote: params.quote,
@@ -157,7 +154,6 @@ export class ExecutionCoordinator {
 
     let destinationTxHash: string | undefined;
 
-    // Cross-chain tracking and destination settlement verification
     if (isCrossChain && params.quote.intent) {
       stateMachine.transitionTo('BRIDGE_IN_FLIGHT', { id: 'step-intent-fulfill', status: 'ACTIVE' });
       this.intentEngine.updateIntentState(params.quote.intent.orderId, 'ACCEPTED', { txHashSource: txHash });
@@ -178,7 +174,6 @@ export class ExecutionCoordinator {
 
       this.tracker.registerOrder(activeOrder);
 
-      // In production or synchronous testing: track order if not skipped
       if (!params.skipDestinationWait) {
         const trackingResult = await this.tracker.trackUntilSettled({
           order: activeOrder,
@@ -210,7 +205,6 @@ export class ExecutionCoordinator {
       ? amountOutNum * params.quote.request.tokenOut.priceUSD
       : undefined;
 
-    // Calculate actual gas paid USD dynamically if available
     let gasPaidUSD = params.quote.bestRoute.gasCostUSD;
     if (gasUsedWei > 0n && gasPriceWei > 0n && sourceChain.nativeCurrency?.symbol) {
       const nativePrice = sourceChain.id === 'base' || sourceChain.id === 'arbitrum' || sourceChain.id === 'optimism' || sourceChain.id === 'ethereum'

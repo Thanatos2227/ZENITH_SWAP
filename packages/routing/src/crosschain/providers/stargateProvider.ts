@@ -22,7 +22,6 @@ import { isNativeToken, scaleTokenUnits } from '../../dex/dexMath';
 
 const stargateInterface = new Interface(STARGATE_ROUTER_ABI);
 
-// Stargate canonical pool mappings by symbol
 const STARGATE_POOL_IDS: Record<string, number> = {
   USDC: 1,
   USDT: 2,
@@ -31,17 +30,16 @@ const STARGATE_POOL_IDS: Record<string, number> = {
   WETH: 13
 };
 
-// LayerZero V1 Chain IDs for Stargate V1 Router
 const LZ_CHAIN_IDS: Record<number, number> = {
-  1: 101,      // Ethereum
-  56: 102,     // BNB
-  43114: 106,  // Avalanche
-  137: 109,    // Polygon
-  42161: 110,  // Arbitrum
-  10: 111,     // Optimism
-  8453: 184,   // Base
-  59144: 183,  // Linea
-  534352: 214  // Scroll
+  1: 101,
+  56: 102,
+  43114: 106,
+  137: 109,
+  42161: 110,
+  10: 111,
+  8453: 184,
+  59144: 183,
+  534352: 214
 };
 
 export class StargateProvider implements CrossChainProvider {
@@ -64,7 +62,6 @@ export class StargateProvider implements CrossChainProvider {
 
     if (!isStargateSupported(src.chainId) || !isStargateSupported(dst.chainId)) return false;
 
-    // Verify token compatibility
     if (tokenIn && tokenOut) {
       const symIn = (tokenIn.symbol || '').toUpperCase().replace(/^W/, '');
       const symOut = (tokenOut.symbol || '').toUpperCase().replace(/^W/, '');
@@ -72,7 +69,7 @@ export class StargateProvider implements CrossChainProvider {
       const poolOut = STARGATE_POOL_IDS[symOut] || (symOut === 'USDC' ? 1 : undefined);
 
       if (!poolIn || !poolOut) return false;
-      // Stargate bridges identical assets (or same pool types)
+
       if (poolIn !== poolOut && !(symIn.startsWith('USD') && symOut.startsWith('USD'))) return false;
     }
 
@@ -106,13 +103,12 @@ export class StargateProvider implements CrossChainProvider {
     const dstPoolId = STARGATE_POOL_IDS[symOut] || (symOut === 'USDC' ? 1 : undefined);
 
     if (!srcPoolId || !dstPoolId) {
-      // Unsupported Stargate token
+
       return null;
     }
 
     const dstLzChainId = LZ_CHAIN_IDS[dstChain.chainId!] || dstChain.chainId!;
 
-    // Stargate protocol fee (6 bps for pool transfer)
     const protocolFeeBps = 6n;
     const feeAmountRaw = (amountInBig * protocolFeeBps) / 10000n;
     const netInBig = amountInBig - feeAmountRaw;
@@ -130,7 +126,6 @@ export class StargateProvider implements CrossChainProvider {
     const slippageMultiplier = 10000n - slippageBps;
     const minDestinationAmountBig = (destinationAmountBig * slippageMultiplier) / 10000n;
 
-    // Calculate real fee USD from feeAmountRaw
     const feeNum = Number(feeAmountRaw) / (10 ** tokenInDecimals);
     const bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.05;
     const gasEstimateUSD = defaultChainRegistry.getEstimatedGasCostUSD(srcChain.id, 'BRIDGE', request.gasPreset);
@@ -150,7 +145,7 @@ export class StargateProvider implements CrossChainProvider {
           safeRecipient.toLowerCase(),
           amountInBig,
           minDestinationAmountBig,
-          [200000, 0, '0x'], // LZ tx params
+          [200000, 0, '0x'],
           recipientBytes,
           '0x'
         ]);
@@ -259,7 +254,7 @@ export class StargateProvider implements CrossChainProvider {
         }
       }
     } catch {
-      // LayerZero Scan query timeout
+
     }
 
     return {

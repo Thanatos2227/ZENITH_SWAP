@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-
 export interface ZenithDeployment {
   chainId: number;
   name: string;

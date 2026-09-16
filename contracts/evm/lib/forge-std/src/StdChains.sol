@@ -1,36 +1,7 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {VmSafe} from "./Vm.sol";
 
-/**
- * StdChains provides information about EVM compatible chains that can be used in scripts/tests.
- * For each chain, the chain's name, chain ID, and a default RPC URL are provided. Chains are
- * identified by their alias, which is the same as the alias in the `[rpc_endpoints]` section of
- * the `foundry.toml` file. For best UX, ensure the alias in the `foundry.toml` file matches the
- * alias used in this contract, which can be found as the first argument to the
- * `_setChainWithDefaultRpcUrl` call in the `_initializeStdChains` function.
- *
- * There are two main ways to use this contract:
- *   1. Set a chain with `setChain(string memory chainAlias, ChainData memory chain)` or
- *      `setChain(string memory chainAlias, Chain memory chain)`
- *   2. Get a chain with `getChain(string memory chainAlias)` or `getChain(uint256 chainId)`.
- *
- * The first time either of those are used, chains are initialized with the default set of RPC URLs.
- * This is done in `_initializeStdChains`, which uses `_setChainWithDefaultRpcUrl`. Defaults are recorded in
- * `_defaultRpcUrls`.
- *
- * The `setChain` function is straightforward, and it simply saves off the given chain data.
- *
- * The `getChain` methods use `_getChainWithUpdatedRpcUrl` to return a chain. For example, let's say
- * we want to retrieve the RPC URL for `mainnet`:
- *   - If you have specified data with `setChain`, it will return that.
- *   - If you have configured a mainnet RPC URL in `foundry.toml`, it will return the URL, provided it
- *     is valid (e.g. a URL is specified, or an environment variable is given and exists).
- *   - If neither of the above conditions is met, the default data is returned.
- *
- * Summarizing the above, the prioritization hierarchy is `setChain` -> `foundry.toml` -> environment variable -> defaults.
- */
 abstract contract StdChains {
     VmSafe private constant vm = VmSafe(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -43,30 +14,24 @@ abstract contract StdChains {
     }
 
     struct Chain {
-        // The chain name.
+
         string name;
-        // The chain's Chain ID.
+
         uint256 chainId;
-        // The chain's alias. (i.e. what gets specified in `foundry.toml`).
+
         string chainAlias;
-        // A default RPC endpoint for this chain.
-        // NOTE: This default RPC URL is included for convenience to facilitate quick tests and
-        // experimentation. Do not use this RPC URL for production test suites, CI, or other heavy
-        // usage as you will be throttled and this is a disservice to others who need this endpoint.
+
         string rpcUrl;
     }
 
-    // Maps from the chain's alias (matching the alias in the `foundry.toml` file) to chain data.
     mapping(string => Chain) private _chains;
-    // Maps from the chain's alias to its default RPC URL.
+
     mapping(string => string) private _defaultRpcUrls;
-    // Maps from a chain ID to its alias.
+
     mapping(uint256 => string) private _idToAlias;
 
     bool private _fallbackToDefaultRpcUrls = true;
 
-    /// @notice Returns chain data for the given alias, with the RPC URL resolved from config or defaults.
-    /// @dev Reverts if `chainAlias` is empty or has not been registered.
     function getChain(string memory chainAlias) internal virtual returns (Chain memory chain) {
         require(bytes(chainAlias).length != 0, "StdChains getChain(string): Chain alias cannot be the empty string.");
 
@@ -80,8 +45,6 @@ abstract contract StdChains {
         chain = _getChainWithUpdatedRpcUrl(chainAlias, chain);
     }
 
-    /// @notice Returns chain data for the given chain ID, with the RPC URL resolved from config or defaults.
-    /// @dev Reverts if `chainId` is `0` or has not been registered.
     function getChain(uint256 chainId) internal virtual returns (Chain memory chain) {
         require(chainId != 0, "StdChains getChain(uint256): Chain ID cannot be 0.");
         _initializeStdChains();
@@ -97,7 +60,6 @@ abstract contract StdChains {
         chain = _getChainWithUpdatedRpcUrl(chainAlias, chain);
     }
 
-    /// @notice Registers chain data under `chainAlias`, with priority given to the argument's `rpcUrl` field.
     function setChain(string memory chainAlias, ChainData memory chain) internal virtual {
         require(
             bytes(chainAlias).length != 0,
@@ -130,7 +92,6 @@ abstract contract StdChains {
         _idToAlias[chain.chainId] = chainAlias;
     }
 
-    /// @notice Registers chain data under `chainAlias`, with priority given to the argument's `rpcUrl` field.
     function setChain(string memory chainAlias, Chain memory chain) internal virtual {
         setChain(chainAlias, ChainData({name: chain.name, chainId: chain.chainId, rpcUrl: chain.rpcUrl}));
     }
@@ -149,8 +110,6 @@ abstract contract StdChains {
         return string(copy);
     }
 
-    // lookup rpcUrl, in descending order of priority:
-    // current -> config (foundry.toml) -> environment variable -> default
     function _getChainWithUpdatedRpcUrl(string memory chainAlias, Chain memory chain)
         private
         view
@@ -166,8 +125,7 @@ abstract contract StdChains {
                 } else {
                     chain.rpcUrl = vm.envString(envName);
                 }
-                // Distinguish 'not found' from 'cannot read'
-                // The upstream error thrown by forge for failing cheats changed so we check both the old and new versions
+
                 bytes memory oldNotFoundError =
                     abi.encodeWithSignature("CheatCodeError", string(abi.encodePacked("invalid rpc url ", chainAlias)));
                 bytes memory newNotFoundError = abi.encodeWithSignature(
@@ -187,7 +145,6 @@ abstract contract StdChains {
         return chain;
     }
 
-    /// @notice Sets whether to fall back to default RPC URLs when no URL is configured for a chain.
     function setFallbackToDefaultRpcUrls(bool useDefault) internal {
         _fallbackToDefaultRpcUrls = useDefault;
     }
@@ -197,7 +154,6 @@ abstract contract StdChains {
 
         _stdChainsInitialized = true;
 
-        // If adding an RPC here, make sure to test the default RPC URL in `test_Rpcs` in `StdChains.t.sol`
         _setChainWithDefaultRpcUrl("anvil", ChainData("Anvil", 31337, "http://127.0.0.1:8545"));
         _setChainWithDefaultRpcUrl("mainnet", ChainData("Mainnet", 1, "https://eth.llamarpc.com"));
         _setChainWithDefaultRpcUrl(
@@ -305,12 +261,11 @@ abstract contract StdChains {
         _setChainWithDefaultRpcUrl("grav", ChainData("Gravity", 127001, "https://mainnet-rpc.gravity.xyz"));
     }
 
-    // set chain info, with priority to chainAlias' rpc url in foundry.toml
     function _setChainWithDefaultRpcUrl(string memory chainAlias, ChainData memory chain) private {
         string memory rpcUrl = chain.rpcUrl;
         _defaultRpcUrls[chainAlias] = rpcUrl;
         chain.rpcUrl = "";
         setChain(chainAlias, chain);
-        chain.rpcUrl = rpcUrl; // restore argument
+        chain.rpcUrl = rpcUrl;
     }
 }

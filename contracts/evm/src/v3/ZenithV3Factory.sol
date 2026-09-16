@@ -1,12 +1,7 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV3Pool.sol";
 
-/**
- * @title ZenithV3Factory
- * @notice Factory deploying and tracking Zenith V3 concentrated liquidity AMM pools.
- */
 contract ZenithV3Factory {
     address public owner;
     mapping(uint24 => int24) public feeAmountTickSpacing;
@@ -32,11 +27,10 @@ contract ZenithV3Factory {
         require(_owner != address(0), "ZenithV3Factory: Zero owner");
         owner = _owner;
 
-        // Default fee tiers and tick spacings
-        _enableFeeAmount(100, 1);    // 0.01%
-        _enableFeeAmount(500, 10);   // 0.05%
-        _enableFeeAmount(3000, 60);  // 0.30%
-        _enableFeeAmount(10000, 200);// 1.00%
+        _enableFeeAmount(100, 1);
+        _enableFeeAmount(500, 10);
+        _enableFeeAmount(3000, 60);
+        _enableFeeAmount(10000, 200);
     }
 
     function _enableFeeAmount(uint24 fee, int24 tickSpacing) internal {

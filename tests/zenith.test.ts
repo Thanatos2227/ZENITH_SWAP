@@ -692,4 +692,3 @@ test('25. Protocol Analytics & Concentrated LP Position Management', () => {
   assert.equal(userPositions[0].isInRange, true);
   assert.ok(userPositions[0].earnedAprPercent > 0);
 });
-

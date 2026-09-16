@@ -42,7 +42,6 @@ export const PoolsView: React.FC = () => {
 
   const isDark = theme === 'dark';
 
-  // Filters & Sorting state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedChain, setSelectedChain] = useState<string>('ALL');
   const [selectedFeeTier, setSelectedFeeTier] = useState<number | 'ALL'>('ALL');
@@ -51,7 +50,6 @@ export const PoolsView: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [secondsAgo, setSecondsAgo] = useState<number>(0);
 
-  // Auto-refresh interval
   useEffect(() => {
     fetchMarketData();
     const refreshInterval = setInterval(() => {
@@ -61,7 +59,6 @@ export const PoolsView: React.FC = () => {
     return () => clearInterval(refreshInterval);
   }, [fetchMarketData]);
 
-  // Live timer update
   useEffect(() => {
     const timer = setInterval(() => {
       if (lastMarketUpdate && lastMarketUpdate > 0) {
@@ -72,19 +69,16 @@ export const PoolsView: React.FC = () => {
     return () => clearInterval(timer);
   }, [lastMarketUpdate]);
 
-  // Retrieve base pools from data service
   const basePools: ZenithPool[] = useMemo(() => {
     return defaultMarketDataService.getPools();
   }, []);
 
-  // Compute real-time live metrics per pool dynamically adjusted for live prices
   const livePools = useMemo(() => {
     return basePools.map((pool) => {
       const liveToken0Price = marketData[pool.token0.symbol]?.priceUSD ?? pool.token0.priceUSD ?? 1;
       const liveToken1Price = marketData[pool.token1.symbol]?.priceUSD ?? pool.token1.priceUSD ?? 1;
       const live24hChange1 = marketData[pool.token1.symbol]?.change24hUSD ?? pool.token1.change24hUSD ?? 0;
 
-      // Real-time exchange rate
       const exchangeRate = liveToken0Price > 0 && liveToken1Price > 0
         ? liveToken1Price / liveToken0Price
         : 1;
@@ -99,7 +93,6 @@ export const PoolsView: React.FC = () => {
     });
   }, [basePools, marketData]);
 
-  // Filtered & Sorted Pools
   const filteredPools = useMemo(() => {
     return livePools
       .filter((p) => {
@@ -149,7 +142,6 @@ export const PoolsView: React.FC = () => {
       });
   }, [livePools, searchQuery, selectedChain, selectedFeeTier, selectedHook, sortBy, sortOrder]);
 
-  // Aggregate KPI stats
   const totalTVL = useMemo(() => livePools.reduce((acc, p) => acc + p.tvlUSD, 0), [livePools]);
   const total24hVolume = useMemo(() => livePools.reduce((acc, p) => acc + p.volume24hUSD, 0), [livePools]);
   const total24hFees = useMemo(() => livePools.reduce((acc, p) => acc + p.fees24hUSD, 0), [livePools]);
@@ -159,7 +151,6 @@ export const PoolsView: React.FC = () => {
     return (sum / livePools.length).toFixed(1);
   }, [livePools]);
 
-  // Direct trade action handler
   const handleTradePool = (pool: ZenithPool) => {
     const chain = defaultChainRegistry.getChain(pool.chainId);
     if (chain) {
@@ -201,7 +192,7 @@ export const PoolsView: React.FC = () => {
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6 pb-12">
-      {/* Header & Real-time Live Status Bar */}
+      {}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">

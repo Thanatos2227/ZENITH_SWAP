@@ -1,10 +1,9 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {Test, StdUtils} from "../src/Test.sol";
 
 contract StdUtilsMock is StdUtils {
-    // We deploy a mock version so we can properly test expected reverts.
+
     function exposedGetTokenBalances(address token, address[] memory addresses)
         external
         returns (uint256[] memory balances)
@@ -26,9 +25,6 @@ contract StdUtilsMock is StdUtils {
 }
 
 contract StdUtilsTest is Test {
-    /*//////////////////////////////////////////////////////////////////////////
-                                     BOUND UINT
-    //////////////////////////////////////////////////////////////////////////*/
 
     function test_Bound() public pure {
         assertEq(bound(uint256(5), 0, 4), 0);
@@ -64,10 +60,10 @@ contract StdUtilsTest is Test {
         uint256 result;
 
         for (uint256 i = 1; i <= size * 4; ++i) {
-            // x > max
+
             result = bound(max + i, min, max);
             assertEq(result, min + (i - 1) % size);
-            // x < min
+
             result = bound(min - i, min, max);
             assertEq(result, max - (i - 1) % size);
         }
@@ -90,7 +86,7 @@ contract StdUtilsTest is Test {
     }
 
     function test_RevertIf_BoundMaxLessThanMin() public {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         vm.expectRevert(bytes("StdUtils bound(uint256,uint256,uint256): Max is less than min."));
@@ -98,17 +94,13 @@ contract StdUtilsTest is Test {
     }
 
     function testFuzz_RevertIf_BoundMaxLessThanMin(uint256 num, uint256 min, uint256 max) public {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         vm.assume(min > max);
         vm.expectRevert(bytes("StdUtils bound(uint256,uint256,uint256): Max is less than min."));
         stdUtils.exposedBound(num, min, max);
     }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                     BOUND INT
-    //////////////////////////////////////////////////////////////////////////*/
 
     function test_BoundInt() public pure {
         assertEq(bound(-3, 0, 4), 2);
@@ -153,10 +145,10 @@ contract StdUtilsTest is Test {
         int256 result;
 
         for (uint256 i = 1; i <= size * 4; ++i) {
-            // x > max
+
             result = bound(max + int256(i), min, max);
             assertEq(result, min + int256((i - 1) % size));
-            // x < min
+
             result = bound(min - int256(i), min, max);
             assertEq(result, max - int256((i - 1) % size));
         }
@@ -184,7 +176,7 @@ contract StdUtilsTest is Test {
     }
 
     function test_RevertIf_BoundIntMaxLessThanMin() public {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         vm.expectRevert(bytes("StdUtils bound(int256,int256,int256): Max is less than min."));
@@ -192,17 +184,13 @@ contract StdUtilsTest is Test {
     }
 
     function testFuzz_RevertIf_BoundIntMaxLessThanMin(int256 num, int256 min, int256 max) public {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         vm.assume(min > max);
         vm.expectRevert(bytes("StdUtils bound(int256,int256,int256): Max is less than min."));
         stdUtils.exposedBound(num, min, max);
     }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                BOUND PRIVATE KEY
-    //////////////////////////////////////////////////////////////////////////*/
 
     function test_BoundPrivateKey() public pure {
         assertEq(boundPrivateKey(0), 1);
@@ -212,12 +200,8 @@ contract StdUtilsTest is Test {
         assertEq(boundPrivateKey(SECP256K1_ORDER - 1), SECP256K1_ORDER - 1);
         assertEq(boundPrivateKey(SECP256K1_ORDER), 1);
         assertEq(boundPrivateKey(SECP256K1_ORDER + 1), 2);
-        assertEq(boundPrivateKey(UINT256_MAX), UINT256_MAX & SECP256K1_ORDER - 1); // x&y is equivalent to x-x%y
+        assertEq(boundPrivateKey(UINT256_MAX), UINT256_MAX & SECP256K1_ORDER - 1);
     }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                   BYTES TO UINT
-    //////////////////////////////////////////////////////////////////////////*/
 
     function test_BytesToUint() external pure {
         bytes memory maxUint = hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
@@ -230,7 +214,7 @@ contract StdUtilsTest is Test {
     }
 
     function test_RevertIf_BytesLengthExceeds32() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         bytes memory thirty3Bytes = hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
@@ -238,20 +222,12 @@ contract StdUtilsTest is Test {
         stdUtils.exposedBytesToUint(thirty3Bytes);
     }
 
-    /*//////////////////////////////////////////////////////////////////////////
-                               COMPUTE CREATE ADDRESS
-    //////////////////////////////////////////////////////////////////////////*/
-
     function test_ComputeCreateAddress() external pure {
         address deployer = 0x6C9FC64A53c1b71FB3f9Af64d1ae3A4931A5f4E9;
         uint256 nonce = 14;
         address createAddress = computeCreateAddress(deployer, nonce);
         assertEq(createAddress, 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45);
     }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                              COMPUTE CREATE2 ADDRESS
-    //////////////////////////////////////////////////////////////////////////*/
 
     function test_ComputeCreate2Address() external pure {
         bytes32 salt = bytes32(uint256(31415));
@@ -271,9 +247,6 @@ contract StdUtilsTest is Test {
 }
 
 contract StdUtilsForkTest is Test {
-    /*//////////////////////////////////////////////////////////////////////////
-                                  GET TOKEN BALANCES
-    //////////////////////////////////////////////////////////////////////////*/
 
     address internal SHIB = 0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE;
     address internal SHIB_HOLDER_0 = 0x855F5981e831D83e6A4b4EBFCAdAa68D92333170;
@@ -285,16 +258,14 @@ contract StdUtilsForkTest is Test {
     address internal USDC_HOLDER_1 = 0x3e67F4721E6d1c41a015f645eFa37BEd854fcf52;
 
     function setUp() public {
-        // All tests of the `getTokenBalances` method are fork tests using live contracts.
+
         vm.createSelectFork({urlOrAlias: "mainnet", blockNumber: 16_428_900});
     }
 
     function test_RevertIf_CannotGetTokenBalances_NonTokenContract() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
-        // The UniswapV2Factory contract has neither a `balanceOf` function nor a fallback function,
-        // so the `balanceOf` call should revert.
         address token = address(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
         address[] memory addresses = new address[](1);
         addresses[0] = USDC_HOLDER_0;
@@ -304,7 +275,7 @@ contract StdUtilsForkTest is Test {
     }
 
     function test_RevertIf_CannotGetTokenBalances_EOA() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdUtilsMock stdUtils = new StdUtilsMock();
 
         address eoa = vm.addr({privateKey: 1});

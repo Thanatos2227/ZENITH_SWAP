@@ -1,35 +1,24 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./interfaces/IZenithFeeController.sol";
 
-/**
- * @title ZenithFeeController
- * @notice Centralized, auditable protocol fee and pool tier configuration for ZENITH SWAP (V1, V2, V3, and Cross-Chain).
- * @dev Enforces strict protocol fee ceilings (max 30 BPS / 0.30%) to prevent governance fee manipulation.
- *      Does NOT custody any protocol revenue; solely manages configuration and authorized collector roles.
- */
 contract ZenithFeeController is IZenithFeeController {
     address public override governance;
     address public override pendingGovernance;
     address public override treasury;
 
-    // Protocol Fee Ceilings (in Basis Points, 1 BPS = 0.01%)
-    uint256 public constant MAX_PROTOCOL_FEE_BPS = 30; // Max 0.30%
-    uint256 public constant MAX_CROSS_CHAIN_FEE_BPS = 30; // Max 0.30%
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 30;
+    uint256 public constant MAX_CROSS_CHAIN_FEE_BPS = 30;
 
-    uint256 public override protocolFeeBps = 5;      // Default 0.05%
-    uint256 public override crossChainFeeBps = 5;    // Default 0.05%
-    uint256 public override v1TotalFeeBps = 30;      // Default 0.30%
+    uint256 public override protocolFeeBps = 5;
+    uint256 public override crossChainFeeBps = 5;
+    uint256 public override v1TotalFeeBps = 30;
 
-    // V2 Allowed Fee Tiers (in BPS)
     mapping(uint24 => bool) public override isV2FeeTierAllowed;
 
-    // V3 Allowed Fee Tiers (in hundredths of a pip) & Tick Spacings
     mapping(uint24 => bool) public override isV3FeeTierAllowed;
     mapping(uint24 => int24) public override v3TickSpacings;
 
-    // Authorized Protocol Fee Collectors
     mapping(address => bool) public override isFeeCollector;
 
     modifier onlyGovernance() {
@@ -44,16 +33,14 @@ contract ZenithFeeController is IZenithFeeController {
         governance = _governance;
         treasury = _treasury;
 
-        // Initialize standard V2 fee tiers
-        isV2FeeTierAllowed[5] = true;   // 0.05%
-        isV2FeeTierAllowed[30] = true;  // 0.30%
-        isV2FeeTierAllowed[100] = true; // 1.00%
+        isV2FeeTierAllowed[5] = true;
+        isV2FeeTierAllowed[30] = true;
+        isV2FeeTierAllowed[100] = true;
 
-        // Initialize standard V3 fee tiers and corresponding tick spacings
-        _enableV3FeeTier(100, 1);    // 0.01% - Tick spacing 1 (stable pairs)
-        _enableV3FeeTier(500, 10);   // 0.05% - Tick spacing 10 (correlated pairs)
-        _enableV3FeeTier(3000, 60);  // 0.30% - Tick spacing 60 (standard pairs)
-        _enableV3FeeTier(10000, 200);// 1.00% - Tick spacing 200 (volatile/exotic pairs)
+        _enableV3FeeTier(100, 1);
+        _enableV3FeeTier(500, 10);
+        _enableV3FeeTier(3000, 60);
+        _enableV3FeeTier(10000, 200);
     }
 
     function _enableV3FeeTier(uint24 feeTier, int24 tickSpacing) internal {
@@ -62,16 +49,10 @@ contract ZenithFeeController is IZenithFeeController {
         emit V3FeeTierConfigured(feeTier, tickSpacing, true);
     }
 
-    /**
-     * @notice Computes sovereign protocol fee from gross swap input.
-     */
     function calculateProtocolFee(uint256 amount) public view override returns (uint256 feeAmount) {
         return (amount * protocolFeeBps) / 10000;
     }
 
-    /**
-     * @notice Computes sovereign cross-chain protocol fee from gross bridge amount.
-     */
     function calculateCrossChainFee(uint256 amount) public view override returns (uint256 feeAmount) {
         return (amount * crossChainFeeBps) / 10000;
     }
@@ -122,7 +103,6 @@ contract ZenithFeeController is IZenithFeeController {
         emit V3FeeTierConfigured(feeTier, tickSpacing, allowed);
     }
 
-    // Two-Step Safe Governance Handover
     function transferGovernance(address _newGovernance) external override onlyGovernance {
         if (_newGovernance == address(0)) revert ZeroAddress();
         pendingGovernance = _newGovernance;

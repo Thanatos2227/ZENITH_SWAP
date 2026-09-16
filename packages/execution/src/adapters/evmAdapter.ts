@@ -105,7 +105,7 @@ export class EVMExecutionAdapter {
       approvalTarget = validateExecutionTarget(ccExecution.approvalTarget || ccExecution.to, quote.request.sourceChainId);
       requiredAllowance = BigInt(ccExecution.requiredAllowanceRaw || quote.amountInRaw);
     } else {
-      // Same-Chain DEX Execution
+
       const dexQuote = quote.dexQuote || quote.bestRoute.dexQuote;
       let dexExecution: DEXExecution | undefined = quote.bestRoute.execution as DEXExecution | undefined;
 
@@ -130,7 +130,6 @@ export class EVMExecutionAdapter {
       requiredAllowance = BigInt(dexExecution.approvalAmount || dexExecution.requiredAllowanceRaw || quote.amountInRaw);
     }
 
-    // Same-Chain Native Token balance verification
     if (!isCrossChain && isNativeIn) {
       try {
         if (typeof signer.provider?.getBalance === 'function') {
@@ -148,7 +147,6 @@ export class EVMExecutionAdapter {
       }
     }
 
-    // Token balance and allowance check before execution for ERC20 tokens
     if (!isNativeIn && approvalTarget !== CANONICAL_NATIVE_ADDRESS) {
       const validatedTokenIn = validateTokenAddress(tokenIn.address, quote.request.sourceChainId);
       const tokenContract = new Contract(validatedTokenIn, ERC20_ABI, signer);
@@ -185,7 +183,6 @@ export class EVMExecutionAdapter {
       }
     }
 
-    // Define the single authoritative transaction payload
     const authoritativeTx = {
       to: executionTo,
       data: executionData,
@@ -193,7 +190,6 @@ export class EVMExecutionAdapter {
       from: validatedUser
     };
 
-    // Pre-flight simulation on the exact transaction
     params.onStatusChange?.('SIMULATING');
     try {
       if (typeof signer.estimateGas === 'function') {
@@ -207,7 +203,6 @@ export class EVMExecutionAdapter {
       console.warn('[EVMAdapter] Pre-flight gas estimation note:', simErr?.message || simErr);
     }
 
-    // Enforce transaction consistency before signing
     const submissionTx = {
       to: executionTo,
       data: executionData,
@@ -224,7 +219,6 @@ export class EVMExecutionAdapter {
 
     params.onStatusChange?.('SIGNING');
 
-    // Send the authoritative executable transaction
     let tx;
     try {
       tx = await signer.sendTransaction(submissionTx);

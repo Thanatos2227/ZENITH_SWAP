@@ -1,15 +1,6 @@
 import { ConfigurationError } from '../errors';
 import { getZenithDeployment } from '../deployments';
 
-/**
- * ZENITH Treasury & Protocol Fee Recipient Registry
- *
- * HARD REQUIREMENT:
- * The project owner does NOT have deployed ZENITH treasury addresses.
- * All addresses remain strictly UNDEFINED until configured.
- * Never invent, mock, or substitute zero/dead/random addresses.
- * Any operation requiring a treasury address must fail closed with ConfigurationError.
- */
 export const ZENITH_TREASURY: Record<string | number, string | undefined> = {
   1: undefined,
   10: undefined,

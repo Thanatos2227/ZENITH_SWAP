@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {stdMath} from "../src/StdMath.sol";
@@ -100,7 +99,7 @@ contract StdMathTest is Test {
         if ((a >= 0 && b >= 0) || (a < 0 && b < 0)) {
             manualDelta = absDelta;
         }
-        // (a < 0 && b >= 0) || (a >= 0 && b < 0)
+
         else {
             manualDelta = absA + absB;
         }
@@ -140,7 +139,7 @@ contract StdMathTest is Test {
     }
 
     function test_GetPercentDelta_Int() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdMathMock stdMathMock = new StdMathMock();
 
         assertEq(stdMath.percentDelta(int256(0), int256(1337)), 1e18);
@@ -156,8 +155,8 @@ contract StdMathTest is Test {
         assertEq(stdMath.percentDelta(type(int192).max, type(int192).max), 0);
         assertEq(stdMath.percentDelta(type(int192).min, type(int192).min), 0);
 
-        assertEq(stdMath.percentDelta(type(int192).min, type(int192).max), 2e18); // rounds the 1 wei diff down
-        assertEq(stdMath.percentDelta(type(int192).max, type(int192).min), 2e18 - 1); // rounds the 1 wei diff down
+        assertEq(stdMath.percentDelta(type(int192).min, type(int192).max), 2e18);
+        assertEq(stdMath.percentDelta(type(int192).max, type(int192).min), 2e18 - 1);
         assertEq(stdMath.percentDelta(0, int256(2500)), 1e18);
         assertEq(stdMath.percentDelta(2500, int256(2500)), 0);
         assertEq(stdMath.percentDelta(5000, int256(2500)), 1e18);
@@ -177,7 +176,7 @@ contract StdMathTest is Test {
         if ((a >= 0 && b >= 0) || (a < 0 && b < 0)) {
             manualDelta = absDelta;
         }
-        // (a < 0 && b >= 0) || (a >= 0 && b < 0)
+
         else {
             manualDelta = absA + absB;
         }
@@ -187,10 +186,6 @@ contract StdMathTest is Test {
 
         assertEq(percentDelta, manualPercentDelta);
     }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                   HELPERS
-    //////////////////////////////////////////////////////////////////////////*/
 
     function getAbs(int256 a) private pure returns (uint256) {
         if (a < 0) {

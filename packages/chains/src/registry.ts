@@ -8,12 +8,6 @@ import {
 } from '@zenith/types';
 import { ZENITH_SUPPORTED_CHAINS } from './chains.data';
 
-/**
- * Network gas estimates for pre-trade quote display.
- * NOTE: These values are pre-trade ESTIMATES.
- * Actual execution gas cost is calculated post-confirmation from transaction receipts:
- * actualGasCost = receipt.gasUsed * receipt.effectiveGasPrice
- */
 export interface NetworkGasProfile {
   swapGasUnits: number;
   avgGasPriceGwei: number;
@@ -22,10 +16,6 @@ export interface NetworkGasProfile {
   bridgeRelayUSD: number;
 }
 
-/**
- * Pre-trade estimated gas profiles across all supported network tiers.
- * Must be treated as pre-trade estimates, not actual final gas.
- */
 export const NETWORK_GAS_PROFILES: Record<string, NetworkGasProfile> = {
 
   ethereum: { swapGasUnits: 140000, avgGasPriceGwei: 18, typicalSwapUSD: 4.85, typicalSplitSwapUSD: 8.50, bridgeRelayUSD: 6.20 },

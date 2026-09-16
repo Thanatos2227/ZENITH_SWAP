@@ -1550,4 +1550,3 @@ export class MarketDataService {
 }
 
 export const defaultMarketDataService = MarketDataService.getInstance();
-

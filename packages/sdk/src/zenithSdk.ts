@@ -42,7 +42,7 @@ export class ZenithSDK {
 
   constructor(config?: ZenithSDKConfig) {
     this.router = new ZenithRouter();
-    this.defaultSlippageBps = config?.defaultSlippageBps ?? 50; // 0.5%
+    this.defaultSlippageBps = config?.defaultSlippageBps ?? 50;
     this.referralAddress = config?.referralAddress;
 
     if (config?.providers) {
@@ -64,9 +64,6 @@ export class ZenithSDK {
     return this.providers.get(chainId);
   }
 
-  /**
-   * Helper to normalize token parameter (Address string or Token object)
-   */
   private async resolveToken(token: Token | string, chainId: number): Promise<Token> {
     if (typeof token === 'string') {
       const provider = this.providers.get(chainId);
@@ -86,9 +83,6 @@ export class ZenithSDK {
     return token;
   }
 
-  /**
-   * Get an aggregated or sovereign AMM quote for a swap
-   */
   public async getQuote(params: ZenithQuoteParams): Promise<ZenithQuoteResult> {
     const tokenIn = await this.resolveToken(params.tokenIn, params.chainId);
     const destChainId = params.destinationChainId ?? params.chainId;
@@ -124,10 +118,10 @@ export class ZenithSDK {
     try {
       treasuryAddr = getZenithTreasuryAddress(params.chainId);
     } catch {
-      // Sovereign fallback
+
     }
 
-    const protocolFeeBps = rawQuote.protocolFee?.feeBps ?? 5; // 0.05%
+    const protocolFeeBps = rawQuote.protocolFee?.feeBps ?? 5;
     const protocolFeeAmount = BigInt(rawQuote.protocolFee?.feeAmountRaw || ((amountInBig * BigInt(protocolFeeBps)) / 10000n).toString());
 
     const protocol = (bestRoute.dexQuote?.provider || bestRoute.hops?.[0]?.dexProtocol || 'ZENITH_V3') as DEXProtocol;
@@ -153,9 +147,6 @@ export class ZenithSDK {
     };
   }
 
-  /**
-   * Get all potential routes across Zenith V1, V2, V3 and external liquidity
-   */
   public async getRoutes(params: ZenithRouteParams): Promise<ZenithRoute[]> {
     const tokenIn = await this.resolveToken(params.tokenIn, params.chainId);
     const destChainId = params.destinationChainId ?? params.chainId;
@@ -193,7 +184,7 @@ export class ZenithSDK {
       try {
         executionTarget = EVMContractRegistry.getRouterForProtocol(proto, Number(params.chainId));
       } catch {
-        // Fallback target
+
       }
 
       return {
@@ -210,9 +201,6 @@ export class ZenithSDK {
     });
   }
 
-  /**
-   * Build an unsigned transaction for executing a swap
-   */
   public async buildSwapTransaction(
     quote: ZenithQuoteResult | QuoteResponse,
     _options?: SwapExecutionOptions
@@ -249,16 +237,10 @@ export class ZenithSDK {
     };
   }
 
-  /**
-   * Build transaction for adding/removing liquidity across V1, V2, or V3
-   */
   public async buildLiquidityTransaction(params: LiquidityParams): Promise<UnsignedTransaction> {
     return buildLiquidityTransaction(params);
   }
 
-  /**
-   * Query pool details for a given pair or pool address
-   */
   public async getPool(
     chainId: number,
     address: string,
@@ -271,9 +253,6 @@ export class ZenithSDK {
     return getPool(provider, chainId, address, protocol);
   }
 
-  /**
-   * Query all pools for a chain and protocol
-   */
   public async getPools(chainId: number, protocol?: DEXProtocol): Promise<ZenithPoolInfo[]> {
     const provider = this.providers.get(chainId);
     if (!provider) {
@@ -282,9 +261,6 @@ export class ZenithSDK {
     return getPools(provider, chainId, protocol);
   }
 
-  /**
-   * Query V3 concentrated liquidity NFT position
-   */
   public async getPosition(chainId: number, tokenId: string | bigint): Promise<ZenithV3PositionInfo> {
     const provider = this.providers.get(chainId);
     if (!provider) {
@@ -293,9 +269,6 @@ export class ZenithSDK {
     return getZenithV3Position(provider, chainId, tokenId);
   }
 
-  /**
-   * Get treasury information and protocol fees
-   */
   public async getTreasuryInfo(chainId: number): Promise<ZenithTreasuryInfo> {
     const provider = this.providers.get(chainId);
     if (!provider) {
@@ -305,5 +278,4 @@ export class ZenithSDK {
   }
 }
 
-// Default singleton instance
 export const zenithSDK = new ZenithSDK();

@@ -1,9 +1,7 @@
-// SPDX-License-Identifier: MIT
-
 import { getZenithDeployment } from '../deployments';
 
 export const ZENITH_TREASURY_ABI = [
-  // View functions
+
   'function governance() external view returns (address)',
   'function pendingGovernance() external view returns (address)',
   'function isEmergencyPaused() external view returns (bool)',
@@ -12,7 +10,7 @@ export const ZENITH_TREASURY_ABI = [
   'function cumulativeFeesCollected(address token) external view returns (uint256)',
   'function getTreasuryBalance(address token) external view returns (uint256)',
   'function getCollectedFees(address token) external view returns (uint256)',
-  // State modifying functions
+
   'function depositERC20Fee(address token, uint256 amount) external',
   'function depositNativeFee() external payable',
   'function withdraw(address token, address payable recipient, uint256 amount) external',
@@ -21,7 +19,7 @@ export const ZENITH_TREASURY_ABI = [
   'function rescueToken(address token, address payable recipient, uint256 amount) external',
   'function transferGovernance(address newGovernance) external',
   'function acceptGovernance() external',
-  // Events
+
   'event FeeReceived(address indexed token, address indexed collector, uint256 amount)',
   'event DirectNativeReceived(address indexed from, uint256 amount)',
   'event TreasuryWithdrawal(address indexed token, address indexed recipient, uint256 amount)',
@@ -34,7 +32,7 @@ export const ZENITH_TREASURY_ABI = [
 ];
 
 export const ZENITH_FEE_CONTROLLER_ABI = [
-  // Constants & View functions
+
   'function MAX_PROTOCOL_FEE_BPS() external view returns (uint256)',
   'function MAX_CROSS_CHAIN_FEE_BPS() external view returns (uint256)',
   'function governance() external view returns (address)',
@@ -49,7 +47,7 @@ export const ZENITH_FEE_CONTROLLER_ABI = [
   'function isFeeCollector(address collector) external view returns (bool)',
   'function calculateProtocolFee(uint256 amount) external view returns (uint256 feeAmount)',
   'function calculateCrossChainFee(uint256 amount) external view returns (uint256 feeAmount)',
-  // State modifying functions
+
   'function setProtocolFeeBps(uint256 newFeeBps) external',
   'function setCrossChainFeeBps(uint256 newFeeBps) external',
   'function setV1TotalFeeBps(uint256 newFeeBps) external',
@@ -59,7 +57,7 @@ export const ZENITH_FEE_CONTROLLER_ABI = [
   'function configureV3FeeTier(uint24 feeTier, int24 tickSpacing, bool allowed) external',
   'function transferGovernance(address newGovernance) external',
   'function acceptGovernance() external',
-  // Events
+
   'event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps)',
   'event CrossChainFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps)',
   'event V1TotalFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps)',

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
@@ -184,7 +183,6 @@ contract ZenithCrossChainRouterTest is Test {
         bytes32 orderId = crossChainRouter.initiateCrossChainSwap(params);
         vm.stopPrank();
 
-        // Warp time past deadline
         vm.warp(block.timestamp + 200);
 
         uint256 userBalBefore = mockUsdt.balanceOf(user);

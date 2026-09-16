@@ -163,7 +163,7 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
 
   describe('1. Polygon POL (18 dec) -> USDT (6 dec) Decimal Scaling & Exact Liquidity Math', () => {
     it('calculates exact integer output for 1.0 POL -> USDT without price-ratio inflation', async () => {
-      const amountInRaw = '1000000000000000000'; // 1.0 POL (18 decimals)
+      const amountInRaw = '1000000000000000000';
       const quote = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
         destinationChainId: 'polygon',
@@ -182,9 +182,6 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
       const rawAmountOutBig = BigInt(quote.amountOutRaw || quote.amountOut);
       const formattedAmountOut = parseFloat(quote.amountOutFormatted.replace(/,/g, ''));
 
-      // 1 POL is ~$0.10. At 6 decimals for USDT, 0.10 USDT = 100,000 raw units.
-      // Raw units MUST be within ~80,000 - 120,000 (0.08 - 0.12 USDT)
-      // It must NEVER be 99,960,000,000 (which would be 99,960 USDT!)
       assert.ok(
         rawAmountOutBig >= 80000n && rawAmountOutBig <= 120000n,
         `Expected raw units around 99,700 for 1 POL -> USDT (6 dec), got ${rawAmountOutBig.toString()}`
@@ -194,18 +191,15 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
         `Expected formatted output around ~0.0997 USDT, got ${formattedAmountOut}`
       );
 
-      // Verify execution target is a valid Polygon DEX router (QuickSwap or Uniswap V3)
       assert.ok(
         quote.executionTarget.toLowerCase() === QUICKSWAP_V3_ROUTER.toLowerCase() ||
         quote.executionTarget.toLowerCase() === '0xe592427a0aece92de3edee1f18e0157c05861564',
         'Execution target must be a canonical DEX router on Polygon'
       );
 
-      // Verify calldata is non-empty and starts with valid router selector
       assert.ok(quote.calldata && quote.calldata.startsWith('0x') && quote.calldata.length > 10, 'Calldata must be valid hex');
       assert.notStrictEqual(quote.calldata, '0x', 'Calldata must not be 0x');
 
-      // For native POL, no ERC-20 approval is required (approvalAddress is native sentinel)
       assert.strictEqual(
         quote.approvalAddress?.toLowerCase(),
         '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
@@ -214,26 +208,25 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
     });
 
     it('scales output proportionally for 0.1 POL and 10 POL inputs', async () => {
-      // 0.1 POL
+
       const quoteSmall = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
         destinationChainId: 'polygon',
         tokenIn: POLYGON_POL,
         tokenOut: POLYGON_USDT,
-        amountInRaw: '100000000000000000', // 0.1 POL
+        amountInRaw: '100000000000000000',
         userAddress: TEST_RECIPIENT,
         slippageTolerancePercent: 0.5
       });
       const rawSmall = BigInt(quoteSmall.amountOutRaw || quoteSmall.amountOut);
       assert.ok(rawSmall >= 8000n && rawSmall <= 12000n, `0.1 POL should yield ~9,970 units, got ${rawSmall}`);
 
-      // 10 POL
       const quoteLarge = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
         destinationChainId: 'polygon',
         tokenIn: POLYGON_POL,
         tokenOut: POLYGON_USDT,
-        amountInRaw: '10000000000000000000', // 10 POL
+        amountInRaw: '10000000000000000000',
         userAddress: TEST_RECIPIENT,
         slippageTolerancePercent: 0.5
       });
@@ -358,7 +351,7 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
         destinationChainId: 'arbitrum',
         tokenIn: ETH_USDC,
         tokenOut: ARB_WETH,
-        amountInRaw: '1000000000', // 1000 USDC
+        amountInRaw: '1000000000',
         recipientAddress: TEST_RECIPIENT
       });
       assert.ok(quote, 'Across quote must be present');
@@ -375,7 +368,7 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
         destinationChainId: 'polygon',
         tokenIn: ETH_USDC,
         tokenOut: POLYGON_USDT,
-        amountInRaw: '500000000', // 500 USDC
+        amountInRaw: '500000000',
         recipientAddress: TEST_RECIPIENT
       });
       assert.ok(quote, 'deBridge quote must be present');
@@ -419,7 +412,6 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
       assert.ok(quote.executableTransaction);
       const tx = quote.executableTransaction;
 
-      // Dry run simulation on the exact payload
       const simResult = await defaultSimulationEngine.simulateSwap({
         chainId: 'polygon',
         userAddress: TEST_RECIPIENT,
@@ -452,15 +444,14 @@ describe('ZENITH Production Swap Failure Remediation — Regression & Verificati
         destinationChainId: 'ethereum',
         tokenIn: POLYGON_POL,
         tokenOut: ETHEREUM_USDC,
-        amountInRaw: '1000000000000000000', // 1.0 POL
+        amountInRaw: '1000000000000000000',
         userAddress: TEST_RECIPIENT,
         slippageTolerancePercent: 0.5
       });
 
       assert.ok(quote, 'Quote must be returned');
       const outNum = parseFloat(quote.amountOutFormatted.replace(/,/g, ''));
-      
-      // 1 POL ($0.0997) should yield ~0.0996 USDC ($1.00), NEVER ~0.9996 USDC
+
       assert.ok(outNum >= 0.095 && outNum <= 0.105, `Expected ~0.0996 USDC, received ${outNum}`);
       assert.ok(outNum < 0.2, `Received value (${outNum}) must not be ~1.0 USDC`);
       assert.ok(BigInt(quote.amountOutRaw) >= 95000n && BigInt(quote.amountOutRaw) <= 105000n, `Raw output must be ~99,600 units (6 decimals), got ${quote.amountOutRaw}`);

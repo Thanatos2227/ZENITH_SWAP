@@ -25,9 +25,6 @@ export class ScoringService {
     this.feePolicy = feePolicy;
   }
 
-  /**
-   * Sets or updates the active fee policy.
-   */
   public setFeePolicy(policy: ZenithFeePolicy): void {
     this.feePolicy = { ...policy };
   }
@@ -36,16 +33,6 @@ export class ScoringService {
     return { ...this.feePolicy };
   }
 
-  /**
-   * Calculates realized price impact percentage from execution price deviation relative to reference market price.
-   *
-   * Crucially, price impact measures ONLY execution price degradation against the pool curve/liquidity depth.
-   * It must NOT conflate or include:
-   * - Platform/protocol fees
-   * - DEX/LP swap fees
-   * - Network gas costs
-   * - Cross-chain bridge fees
-   */
   public calculatePriceImpact(params: {
     tokenIn: Token;
     tokenOut: Token;
@@ -114,10 +101,6 @@ export class ScoringService {
     return { percentage, level, warningMessage };
   }
 
-  /**
-   * Calculates ZENITH Protocol Fee separately from DEX LP fees and Bridge fees.
-   * Hard requirement: If Treasury address is undefined/unconfigured, treasuryRecipient is undefined.
-   */
   public calculateProtocolFee(params: {
     tokenIn: Token;
     amountInRaw: string;
@@ -136,7 +119,6 @@ export class ScoringService {
       ? policy.crossChainProtocolFeeBps
       : (params.isStableSwap ? policy.stableSwapFeeBps : policy.sameChainProtocolFeeBps);
 
-    // Apply volume discount if trade value is large (> $100k)
     const tradeValueUSD = params.tokenIn.priceUSD ? params.amountInNum * params.tokenIn.priceUSD : 0;
     if (tradeValueUSD > 100000 && policy.largeTradeDiscountBps) {
       feeBps = Math.max(1, feeBps - policy.largeTradeDiscountBps);

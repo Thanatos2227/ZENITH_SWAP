@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {StdCheats} from "../src/StdCheats.sol";
@@ -157,7 +156,7 @@ contract StdCheatsTest is Test {
     }
 
     function test_DestroyAccount() public {
-        // deploy something to destroy it
+
         BarERC721 barToken = new BarERC721();
         address bar = address(barToken);
         vm.setNonce(bar, 10);
@@ -200,7 +199,6 @@ contract StdCheatsTest is Test {
         assertEq(deployed.balance, 1 ether);
     }
 
-    // We need this so we can call "this.deployCode" rather than "deployCode" directly
     function deployCodeHelper(string memory what) external {
         deployCode(what);
     }
@@ -212,16 +210,15 @@ contract StdCheatsTest is Test {
 
     function getCode(address who) internal view returns (bytes memory o_code) {
         assembly ("memory-safe") {
-            // retrieve the size of the code, this needs assembly
+
             let size := extcodesize(who)
-            // allocate output byte array - this could also be done without assembly
-            // by using o_code = new bytes(size)
+
             o_code := mload(0x40)
-            // new "memory end" including padding
+
             mstore(0x40, add(o_code, and(add(add(size, 0x20), 0x1f), not(0x1f))))
-            // store length in memory
+
             mstore(o_code, size)
-            // actually retrieve the code, this needs assembly
+
             extcodecopy(who, add(o_code, 0x20), 0, size)
         }
     }
@@ -334,7 +331,7 @@ contract StdCheatsTest is Test {
     }
 
     function testFuzz_AssumeAddressIsNot(address addr) external {
-        // skip over Payable and NonPayable enums
+
         for (uint8 i = 2; i < uint8(type(AddressType).max); i++) {
             assumeAddressIsNot(addr, AddressType(i));
         }
@@ -344,55 +341,37 @@ contract StdCheatsTest is Test {
     }
 
     function test_AssumePayable() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdCheatsMock stdCheatsMock = new StdCheatsMock();
 
-        // all should revert since these addresses are not payable
-
-        // VM address
         vm.expectRevert();
         stdCheatsMock.exposedAssumePayable(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
-        // Console address
         vm.expectRevert();
         stdCheatsMock.exposedAssumePayable(0x000000000000000000636F6e736F6c652e6c6f67);
 
-        // Create2Deployer
         vm.expectRevert();
         stdCheatsMock.exposedAssumePayable(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
-        // all should pass since these addresses are payable
-
-        // vitalik.eth
         stdCheatsMock.exposedAssumePayable(0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045);
 
-        // mock payable contract
         MockContractPayable cp = new MockContractPayable();
         stdCheatsMock.exposedAssumePayable(address(cp));
     }
 
     function test_AssumeNotPayable() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdCheatsMock stdCheatsMock = new StdCheatsMock();
 
-        // all should pass since these addresses are not payable
-
-        // VM address
         stdCheatsMock.exposedAssumeNotPayable(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
-        // Console address
         stdCheatsMock.exposedAssumeNotPayable(0x000000000000000000636F6e736F6c652e6c6f67);
 
-        // Create2Deployer
         stdCheatsMock.exposedAssumeNotPayable(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
-        // all should revert since these addresses are payable
-
-        // vitalik.eth
         vm.expectRevert();
         stdCheatsMock.exposedAssumeNotPayable(0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045);
 
-        // mock payable contract
         MockContractPayable cp = new MockContractPayable();
         vm.expectRevert();
         stdCheatsMock.exposedAssumeNotPayable(address(cp));
@@ -504,7 +483,6 @@ contract StdCheatsMock is StdCheats {
         assumeNotPayable(addr);
     }
 
-    // We deploy a mock version so we can properly test expected reverts.
     function exposedAssumeNotBlacklisted(address token, address addr) external view {
         return assumeNotBlacklisted(token, addr);
     }
@@ -526,7 +504,7 @@ contract StdCheatsForkTest is Test {
     }
 
     function test_RevertIf_CannotAssumeNoBlacklisted_EOA() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdCheatsMock stdCheatsMock = new StdCheatsMock();
         address eoa = vm.addr({privateKey: 1});
         vm.expectRevert("StdCheats assumeNotBlacklisted(address,address): Token address is not a contract.");
@@ -540,7 +518,7 @@ contract StdCheatsForkTest is Test {
     }
 
     function test_RevertIf_AssumeNoBlacklisted_USDC() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdCheatsMock stdCheatsMock = new StdCheatsMock();
         vm.expectRevert();
         stdCheatsMock.exposedAssumeNotBlacklisted(address(USDC), USDC_BLACKLISTED_USER);
@@ -552,7 +530,7 @@ contract StdCheatsForkTest is Test {
     }
 
     function test_RevertIf_AssumeNoBlacklisted_USDT() external {
-        // We deploy a mock version so we can properly test the revert.
+
         StdCheatsMock stdCheatsMock = new StdCheatsMock();
         vm.expectRevert();
         stdCheatsMock.exposedAssumeNotBlacklisted(address(USDT), USDT_BLACKLISTED_USER);
@@ -564,12 +542,10 @@ contract StdCheatsForkTest is Test {
     }
 }
 
-/// @dev https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#readProxyContract
 interface USDCLike {
     function isBlacklisted(address) external view returns (bool);
 }
 
-/// @dev https://etherscan.io/token/0xdac17f958d2ee523a2206206994597c13d831ec7#readContract
 interface USDTLike {
     function isBlackListed(address) external view returns (bool);
 }
@@ -600,12 +576,11 @@ contract MockUSDC is USDCLike {
 
 contract Bar {
     constructor() payable {
-        /// `DEAL` STDCHEAT
+
         totalSupply = 10000e18;
         balanceOf[address(this)] = totalSupply;
     }
 
-    /// `HOAX` and `CHANGEPRANK` STDCHEATS
     function bar(address expectedSender) public payable {
         require(msg.sender == expectedSender, "!prank");
     }
@@ -624,14 +599,13 @@ contract Bar {
         return 0;
     }
 
-    /// `DEAL` STDCHEAT
     mapping(address => uint256) public balanceOf;
     uint256 public totalSupply;
 }
 
 contract BarERC1155 {
     constructor() payable {
-        /// `DEALERC1155` STDCHEAT
+
         _totalSupply[0] = 10000e18;
         _balances[0][address(this)] = _totalSupply[0];
     }
@@ -644,14 +618,13 @@ contract BarERC1155 {
         return _totalSupply[id];
     }
 
-    /// `DEALERC1155` STDCHEAT
     mapping(uint256 => mapping(address => uint256)) private _balances;
     mapping(uint256 => uint256) private _totalSupply;
 }
 
 contract BarERC721 {
     constructor() payable {
-        /// `DEALERC721` STDCHEAT
+
         _owners[1] = address(1);
         _balances[address(1)] = 1;
         _owners[2] = address(this);

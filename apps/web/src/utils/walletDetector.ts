@@ -11,10 +11,6 @@ export const ZENITH_WALLET_CONNECTED_KEY = 'zenith_wallet_connected';
 export const ZENITH_WALLET_TYPE_KEY = 'zenith_wallet_type';
 export const ZENITH_WALLET_ADDRESS_KEY = 'zenith_wallet_address';
 
-/**
- * Returns true if the user explicitly clicked "Disconnect" in Zenith.
- * When true, auto-connect and session restoration are strictly prohibited.
- */
 export const isExplicitlyDisconnected = (): boolean => {
   if (typeof window === 'undefined' || !window.localStorage) return false;
   try {
@@ -24,9 +20,6 @@ export const isExplicitlyDisconnected = (): boolean => {
   }
 };
 
-/**
- * Sets or clears the explicit disconnected flag in persistent storage.
- */
 export const setExplicitlyDisconnected = (disconnected: boolean): void => {
   if (typeof window === 'undefined') return;
   try {
@@ -45,9 +38,6 @@ export const setExplicitlyDisconnected = (disconnected: boolean): void => {
   }
 };
 
-/**
- * Retrieves the stored wallet session if the user did not explicitly disconnect.
- */
 export const getStoredWalletSession = (): {
   isConnected: boolean;
   walletType: WalletType | null;
@@ -70,9 +60,6 @@ export const getStoredWalletSession = (): {
   }
 };
 
-/**
- * Persists an active wallet session.
- */
 export const setStoredWalletSession = (walletType: WalletType, address: string): void => {
   if (typeof window === 'undefined') return;
   try {
@@ -87,9 +74,6 @@ export const setStoredWalletSession = (walletType: WalletType, address: string):
   }
 };
 
-/**
- * Completely clears any persisted Zenith wallet connection and session state.
- */
 export const clearStoredWalletSession = (): void => {
   if (typeof window === 'undefined') return;
   try {
@@ -308,10 +292,6 @@ export const connectToWalletProvider = async (
   };
 };
 
-/**
- * Checks for previously authorized accounts using eth_accounts silently.
- * NEVER prompts the user or opens an extension popup.
- */
 export const checkAuthorizedAccounts = async (
   walletType: WalletType
 ): Promise<{ address: string; walletName: string; rawProvider: any; chainId?: number } | null> => {
@@ -370,10 +350,6 @@ export const checkAuthorizedAccounts = async (
   }
 };
 
-/**
- * Revokes eth_accounts permissions via wallet_revokePermissions if supported by the provider (e.g. MetaMask).
- * Returns true if successfully revoked, false if unsupported or rejected.
- */
 export const revokeWalletPermissions = async (rawProvider: any): Promise<boolean> => {
   if (!rawProvider || typeof rawProvider.request !== 'function') {
     return false;
@@ -388,16 +364,12 @@ export const revokeWalletPermissions = async (rawProvider: any): Promise<boolean
     console.log('[Wallet] wallet_revokePermissions successfully revoked eth_accounts permission');
     return true;
   } catch (err: any) {
-    // Some wallets don't support wallet_revokePermissions (or user rejected)
+
     console.warn('[Wallet] wallet_revokePermissions not supported or failed:', err?.message || err);
     return false;
   }
 };
 
-/**
- * Verifies post-disconnect permission state by calling eth_accounts.
- * If permissions were revoked, returns an empty array [].
- */
 export const verifyRevocation = async (rawProvider: any): Promise<string[]> => {
   if (!rawProvider || typeof rawProvider.request !== 'function') {
     return [];
@@ -412,4 +384,3 @@ export const verifyRevocation = async (rawProvider: any): Promise<string[]> => {
     return [];
   }
 };
-

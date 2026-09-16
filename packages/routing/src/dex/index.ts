@@ -11,4 +11,3 @@ export * from './camelotProvider';
 export * from './pancakeSwapProvider';
 export * from './traderJoeProvider';
 export * from './dexAggregator';
-

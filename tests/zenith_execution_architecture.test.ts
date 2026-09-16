@@ -46,7 +46,7 @@ test('1. Real DEX Provider Execution Calldata Encoding', async () => {
     chainId: polygon.chainId!,
     tokenIn: polToken,
     tokenOut: usdtPolygon,
-    amountIn: 1_000_000_000_000_000_000n, // 1 POL
+    amountIn: 1_000_000_000_000_000_000n,
     slippageToleranceBps: 50
   });
 
@@ -87,7 +87,7 @@ test('2. Aerodrome Provider on Base produces valid swapExactETHForTokens calldat
     chainId: baseChain.chainId!,
     tokenIn: ethToken,
     tokenOut: usdcBase,
-    amountIn: 1_000_000_000_000_000_000n, // 1 ETH
+    amountIn: 1_000_000_000_000_000_000n,
     slippageToleranceBps: 50
   });
 
@@ -156,7 +156,7 @@ test('5. deBridge DLN Provider produces valid createOrder calldata', async () =>
     destinationChainId: 'polygon',
     tokenIn: usdcEth,
     tokenOut: usdcPoly,
-    amountInRaw: '1000000', // 1 USDC
+    amountInRaw: '1000000',
     slippageTolerancePercent: 0.5,
     userWalletAddress: USER_ADDR
   });
@@ -179,7 +179,7 @@ test('6. Stargate Provider produces valid LayerZero swap calldata', async () => 
     destinationChainId: 'arbitrum',
     tokenIn: usdcEth,
     tokenOut: usdcArb,
-    amountInRaw: '1000000', // 1 USDC
+    amountInRaw: '1000000',
     slippageTolerancePercent: 0.5,
     userWalletAddress: USER_ADDR
   });
@@ -217,7 +217,7 @@ test('7. ZenithRouter end-to-end executable quote on Polygon (POL -> USDT)', asy
     destinationChainId: 'polygon',
     tokenIn: polToken,
     tokenOut: usdtPolygon,
-    amountInRaw: '1000000000000000000', // 1.0 POL
+    amountInRaw: '1000000000000000000',
     slippageTolerancePercent: 0.5,
     userWalletAddress: USER_ADDR
   });
@@ -230,7 +230,6 @@ test('7. ZenithRouter end-to-end executable quote on Polygon (POL -> USDT)', asy
   assert.equal(quoteResp.validation.isValid, true);
   assert.equal(quoteResp.validation.isExecutable, true);
 
-  // Decimal & mathematical correctness verification
   const outBig = BigInt(quoteResp.amountOutRaw);
   assert.ok(outBig > 80_000n && outBig < 120_000n, `1 POL ($0.0978) -> ~0.0975 USDT (97,546 raw units). Got ${outBig}`);
   assert.ok(!quoteResp.amountOutFormatted.includes('99,960,000,000'), 'Catastrophic decimal bug must NOT exist');
@@ -245,7 +244,7 @@ test('8. ZenithRouter informational quote without wallet is NOT marked executabl
     destinationChainId: 'ethereum',
     tokenIn: eth,
     tokenOut: usdc,
-    amountInRaw: '1000000000000000000', // 1 ETH
+    amountInRaw: '1000000000000000000',
     slippageTolerancePercent: 0.5
   });
 

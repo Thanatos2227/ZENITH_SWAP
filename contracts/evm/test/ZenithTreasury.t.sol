@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
@@ -65,7 +64,6 @@ contract ZenithTreasuryTest is Test {
         treasury.setFeeCollector(collector, true);
     }
 
-    // TEST 1: Treasury deployment
     function test_treasuryDeployment() public view {
         assertEq(treasury.governance(), governance);
         assertEq(treasury.pendingGovernance(), address(0));
@@ -73,13 +71,11 @@ contract ZenithTreasuryTest is Test {
         assertTrue(treasury.authorizedCollector(collector));
     }
 
-    // TEST 2: Reject zero governance
     function test_rejectZeroGovernance() public {
         vm.expectRevert(IZenithTreasury.ZeroAddress.selector);
         new ZenithTreasury(address(0));
     }
 
-    // TEST 3: ERC20 fee deposit by authorized collector
     function test_depositERC20Fee_authorized() public {
         uint256 feeAmount = 100 ether;
 
@@ -93,7 +89,6 @@ contract ZenithTreasuryTest is Test {
         assertEq(token.balanceOf(address(treasury)), feeAmount);
     }
 
-    // TEST 4: ERC20 deposit by unauthorized caller must revert
     function test_depositERC20Fee_unauthorized_reverts() public {
         token.mint(user, 100 ether);
 
@@ -104,7 +99,6 @@ contract ZenithTreasuryTest is Test {
         vm.stopPrank();
     }
 
-    // TEST 5: Native fee deposit
     function test_depositNativeFee_authorized() public {
         vm.deal(collector, 10 ether);
 
@@ -116,7 +110,6 @@ contract ZenithTreasuryTest is Test {
         assertEq(address(treasury).balance, 2 ether);
     }
 
-    // TEST 6: Native deposit by unauthorized caller must revert
     function test_depositNativeFee_unauthorized_reverts() public {
         vm.deal(user, 10 ether);
 
@@ -125,7 +118,6 @@ contract ZenithTreasuryTest is Test {
         treasury.depositNativeFee{value: 1 ether}();
     }
 
-    // TEST 7: Direct native transfer does not falsely increment fee accounting
     function test_directNativeTransfer_doesNotIncrementFees() public {
         vm.deal(user, 10 ether);
 
@@ -135,11 +127,10 @@ contract ZenithTreasuryTest is Test {
 
         assertEq(address(treasury).balance, 3 ether);
         assertEq(treasury.getTreasuryBalance(address(0)), 3 ether);
-        // Protocol cumulative fees must remain 0
+
         assertEq(treasury.getCollectedFees(address(0)), 0);
     }
 
-    // TEST 8: Treasury balance accounting
     function test_treasuryBalanceAccounting() public {
         assertEq(treasury.getTreasuryBalance(address(token)), 0);
         assertEq(treasury.getTreasuryBalance(address(0)), 0);
@@ -152,7 +143,6 @@ contract ZenithTreasuryTest is Test {
         assertEq(treasury.getTreasuryBalance(address(token)), 500 ether);
     }
 
-    // TEST 9: Historical fee accounting is independent of current balance
     function test_historicalFeeAccounting_persistsAfterWithdrawal() public {
         vm.startPrank(collector);
         token.approve(address(treasury), 500 ether);
@@ -165,11 +155,10 @@ contract ZenithTreasuryTest is Test {
         treasury.withdraw(address(token), payable(recipient), 300 ether);
 
         assertEq(treasury.getTreasuryBalance(address(token)), 200 ether);
-        // Lifetime cumulative remains 500 ether
+
         assertEq(treasury.getCollectedFees(address(token)), 500 ether);
     }
 
-    // TEST 10: Governance-only withdrawal
     function test_withdraw_governance() public {
         vm.startPrank(collector);
         token.approve(address(treasury), 100 ether);
@@ -183,7 +172,6 @@ contract ZenithTreasuryTest is Test {
         assertEq(treasury.getTreasuryBalance(address(token)), 40 ether);
     }
 
-    // TEST 11: Unauthorized withdrawal reverts
     function test_withdraw_unauthorized_reverts() public {
         vm.startPrank(collector);
         token.approve(address(treasury), 100 ether);
@@ -195,7 +183,6 @@ contract ZenithTreasuryTest is Test {
         treasury.withdraw(address(token), payable(recipient), 50 ether);
     }
 
-    // TEST 12: Two-step governance transfer
     function test_twoStepGovernanceTransfer() public {
         vm.prank(governance);
         treasury.transferGovernance(pendingGov);
@@ -210,7 +197,6 @@ contract ZenithTreasuryTest is Test {
         assertEq(treasury.pendingGovernance(), address(0));
     }
 
-    // TEST 13: Unauthorized governance transfer reverts
     function test_unauthorizedGovernanceTransfer_reverts() public {
         vm.prank(user);
         vm.expectRevert(IZenithTreasury.OnlyGovernance.selector);
@@ -224,7 +210,6 @@ contract ZenithTreasuryTest is Test {
         treasury.acceptGovernance();
     }
 
-    // TEST 14: Emergency pause
     function test_emergencyPause() public {
         vm.prank(governance);
         treasury.setEmergencyPause(true);
@@ -235,7 +220,6 @@ contract ZenithTreasuryTest is Test {
         assertFalse(treasury.isEmergencyPaused());
     }
 
-    // TEST 15: Deposits and withdrawals while paused revert
     function test_operationsWhilePaused_revert() public {
         vm.prank(governance);
         treasury.setEmergencyPause(true);
@@ -251,7 +235,6 @@ contract ZenithTreasuryTest is Test {
         treasury.withdraw(address(token), payable(recipient), 10 ether);
     }
 
-    // Emergency token rescue
     function test_rescueToken() public {
         token.mint(address(treasury), 250 ether);
 

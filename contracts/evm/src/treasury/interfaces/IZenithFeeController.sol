@@ -1,19 +1,13 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-/**
- * @title IZenithFeeController
- * @notice Interface for the centralized Protocol Fee Configuration Controller of ZENITH SWAP.
- */
 interface IZenithFeeController {
-    // Custom Errors
+
     error OnlyGovernance();
     error FeeExceedsMaxCeiling(uint256 feeBps, uint256 maxCeiling);
     error ZeroAddress();
     error InvalidTickSpacing(int24 tickSpacing);
     error NotPendingGovernance();
 
-    // Events
     event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
     event CrossChainFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
     event V1TotalFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
@@ -24,7 +18,6 @@ interface IZenithFeeController {
     event V2FeeTierConfigured(uint24 indexed feeTierBps, bool allowed);
     event V3FeeTierConfigured(uint24 indexed feeTier, int24 tickSpacing, bool allowed);
 
-    // View functions
     function governance() external view returns (address);
     function pendingGovernance() external view returns (address);
     function treasury() external view returns (address);
@@ -39,7 +32,6 @@ interface IZenithFeeController {
     function calculateProtocolFee(uint256 amount) external view returns (uint256 feeAmount);
     function calculateCrossChainFee(uint256 amount) external view returns (uint256 feeAmount);
 
-    // State changing functions
     function setProtocolFeeBps(uint256 newFeeBps) external;
     function setCrossChainFeeBps(uint256 newFeeBps) external;
     function setV1TotalFeeBps(uint256 newFeeBps) external;

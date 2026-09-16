@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
@@ -11,11 +10,6 @@ interface IZenithV1Callee {
     function zenithV1Call(address sender, uint256 amount0, uint256 amount1, bytes calldata data) external;
 }
 
-/**
- * @title ZenithV1Pair
- * @notice Sovereign constant-product AMM pair (x * y = k) for ZENITH SWAP V1.
- * @dev Fully independent ERC20 LP token and reserve accounting with TWAP price accumulators.
- */
 contract ZenithV1Pair is IERC20 {
     string public constant name = "ZENITH V1 LP";
     string public constant symbol = "ZTH-V1";
@@ -37,7 +31,7 @@ contract ZenithV1Pair is IERC20 {
 
     uint256 public price0CumulativeLast;
     uint256 public price1CumulativeLast;
-    uint256 public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
+    uint256 public kLast;
 
     uint256 private unlocked = 1;
     modifier lock() {

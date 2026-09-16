@@ -1,12 +1,7 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV1Pair.sol";
 
-/**
- * @title ZenithV1Factory
- * @notice Sovereign factory deploying and tracking Zenith V1 constant-product AMM pairs.
- */
 contract ZenithV1Factory {
     address public feeTo;
     address public feeToSetter;

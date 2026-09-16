@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV1Pair.sol";
@@ -6,10 +5,6 @@ import "./ZenithV1Factory.sol";
 import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH9.sol";
 
-/**
- * @title ZenithV1Router
- * @notice Sovereign liquidity and swap execution router for ZENITH SWAP V1.
- */
 contract ZenithV1Router {
     address public immutable factory;
     address public immutable WETH;
@@ -30,7 +25,6 @@ contract ZenithV1Router {
         require(msg.sender == WETH, "ZenithV1Router: NOT_WETH");
     }
 
-    // **** LIQUIDITY PROVISION ****
     function _addLiquidity(
         address tokenA,
         address tokenB,
@@ -125,7 +119,6 @@ contract ZenithV1Router {
         _safeTransferETH(to, amountETH);
     }
 
-    // **** SWAPS ****
     function _swap(uint256[] memory amounts, address[] memory path, address _to) internal virtual {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
@@ -209,7 +202,6 @@ contract ZenithV1Router {
         _safeTransferETH(to, amounts[amounts.length - 1]);
     }
 
-    // **** PURE / VIEW HELPERS ****
     function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
         require(tokenA != tokenB, "ZenithV1Router: IDENTICAL_ADDRESSES");
         (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);

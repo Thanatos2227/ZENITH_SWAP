@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-// Packages imports
 import { defaultChainRegistry } from '../packages/chains/src';
 import {
   DEFAULT_TOKENS,
@@ -30,7 +29,6 @@ import {
 } from '../packages/types/src';
 import { defaultThemeManager, ZENITH_TOKENS } from '../packages/ui/src';
 
-// Utility & Store imports
 import {
   formatAddress,
   isExplicitlyDisconnected,
@@ -39,7 +37,6 @@ import {
   setStoredWalletSession
 } from '../apps/web/src/utils/walletDetector';
 
-// Mock localStorage for Web environment simulation
 class LocalStorageMock {
   private store: Record<string, string> = {};
   getItem(key: string): string | null {
@@ -58,9 +55,6 @@ class LocalStorageMock {
 (global as any).localStorage = new LocalStorageMock();
 (global as any).window = { localStorage: (global as any).localStorage };
 
-// ============================================================================
-// 1. FUNCTIONAL TESTING
-// ============================================================================
 test('1. Functional Testing', async (t) => {
   await t.test('1.1 Swap Quoting Exact-Input & Exact-Output Calculations', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -105,9 +99,6 @@ test('1. Functional Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 2. UI TESTING
-// ============================================================================
 test('2. UI Testing', async (t) => {
   await t.test('2.1 Design System Color Tokens & Palette Integrity', () => {
     assert.equal(ZENITH_TOKENS.colors.brand.primary, '#00F2FE');
@@ -129,9 +120,6 @@ test('2. UI Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 3. USABILITY TESTING
-// ============================================================================
 test('3. Usability Testing', async (t) => {
   await t.test('3.1 User-Friendly Cryptographic Address Formatting', () => {
     const ethAddr = '0x1234567890abcdef1234567890abcdef12345678';
@@ -154,9 +142,6 @@ test('3. Usability Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 4. COMPATIBILITY TESTING
-// ============================================================================
 test('4. Compatibility Testing', async (t) => {
   await t.test('4.1 Web3 Provider EIP-1193 Standard & Solana Adapter API', () => {
     const eip1193 = {
@@ -185,9 +170,6 @@ test('4. Compatibility Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 5. RESPONSIVE TESTING
-// ============================================================================
 test('5. Responsive Testing', async (t) => {
   await t.test('5.1 Screen Breakpoint Categorization (Mobile, Tablet, Laptop, 4K)', () => {
     const getBreakpoint = (width: number) => {
@@ -213,9 +195,6 @@ test('5. Responsive Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 6. API TESTING
-// ============================================================================
 test('6. API Testing', async (t) => {
   await t.test('6.1 Multi-Tier Market Data Service Endpoint Fallbacks', async () => {
     const marketMap = await defaultMarketDataService.fetchMarketData();
@@ -235,9 +214,6 @@ test('6. API Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 7. INTEGRATION TESTING
-// ============================================================================
 test('7. Integration Testing', async (t) => {
   await t.test('7.1 Full Pipeline: Token Selection -> Quoting -> EES -> Pre-Flight Sim', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -276,9 +252,6 @@ test('7. Integration Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 8. DATABASE & STATE STORE TESTING
-// ============================================================================
 test('8. Database & State Store Testing', async (t) => {
   await t.test('8.1 In-Memory Registry Mutation Protection & Deep Isolation', () => {
     const chain = defaultChainRegistry.getChain('ethereum')!;
@@ -292,9 +265,6 @@ test('8. Database & State Store Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 9. PERFORMANCE TESTING
-// ============================================================================
 test('9. Performance Testing', async (t) => {
   await t.test('9.1 Single-Hop AMM Math Invariant Latency (<0.01ms per op)', () => {
     const reserveIn = 1000000000000000000000n;
@@ -311,9 +281,6 @@ test('9. Performance Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 10. LOAD TESTING
-// ============================================================================
 test('10. Load Testing', async (t) => {
   await t.test('10.1 Concurrent Quote Batch Execution (25 Parallel Requests)', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -345,9 +312,6 @@ test('10. Load Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 11. STRESS TESTING
-// ============================================================================
 test('11. Stress Testing', async (t) => {
   await t.test('11.1 Heavy AMM Mathematical Stress Benchmark (50,000 Iterations)', () => {
     const reserveIn = 1000000000000000000000n;
@@ -363,9 +327,6 @@ test('11. Stress Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 12. SECURITY TESTING
-// ============================================================================
 test('12. Security Testing', async (t) => {
   await t.test('12.1 Honeypot, Arbitrary Mint & High Tax Vulnerability Detection', () => {
     const maliciousToken: Token = {
@@ -404,9 +365,6 @@ test('12. Security Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 13. AUTHENTICATION TESTING
-// ============================================================================
 test('13. Authentication Testing', async (t) => {
   await t.test('13.1 Wallet Session Persistence & Explicit Revocation Enforcement', () => {
     setStoredWalletSession('METAMASK', '0x1234567890123456789012345678901234567890');
@@ -420,9 +378,6 @@ test('13. Authentication Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 14. AUTHORIZATION TESTING
-// ============================================================================
 test('14. Authorization Testing', async (t) => {
   await t.test('14.1 Role-Based Smart Contract Access Control & Guardian Pauser', () => {
     const governance = '0xSafeMultisig4of7';
@@ -438,9 +393,6 @@ test('14. Authorization Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 15. REGRESSION TESTING
-// ============================================================================
 test('15. Regression Testing', async (t) => {
   await t.test('15.1 53-Chain Governance Structure and Tier Distribution', () => {
     const all = defaultChainRegistry.getAllChains();
@@ -452,9 +404,6 @@ test('15. Regression Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 16. SMOKE TESTING
-// ============================================================================
 test('16. Smoke Testing', async (t) => {
   await t.test('16.1 Critical Path Smoke Check: Registry, Tokens & Router Instantiation', () => {
     assert.ok(defaultChainRegistry);
@@ -464,9 +413,6 @@ test('16. Smoke Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 17. SANITY TESTING
-// ============================================================================
 test('17. Sanity Testing', async (t) => {
   await t.test('17.1 Basic Sanity Calculation: 1 ETH to USDC Returns Plausible Price', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -485,9 +431,6 @@ test('17. Sanity Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 18. ACCESSIBILITY TESTING
-// ============================================================================
 test('18. Accessibility Testing', async (t) => {
   await t.test('18.1 WCAG 2.1 AA Palette Contrast & Modal ARIA Roles', () => {
     assert.equal(ZENITH_TOKENS.colors.dark.bgMain, '#080B11');
@@ -498,9 +441,6 @@ test('18. Accessibility Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 19. LOCALIZATION TESTING
-// ============================================================================
 test('19. Localization Testing', async (t) => {
   await t.test('19.1 Currency Formatting & Locale Decimal Delimiters', () => {
     const formatUSD = (num: number) => `$${num.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -509,9 +449,6 @@ test('19. Localization Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 20. RELIABILITY TESTING
-// ============================================================================
 test('20. Reliability Testing', async (t) => {
   await t.test('20.1 Primary RPC Failure & Fallback Redundancy across Chains', () => {
     const eth = defaultChainRegistry.getChain('ethereum')!;
@@ -520,9 +457,6 @@ test('20. Reliability Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 21. RECOVERY TESTING
-// ============================================================================
 test('21. Recovery Testing', async (t) => {
   await t.test('21.1 Cross-Chain Relayer Timeout & Deterministic Refund Engine', () => {
     const orderId = `recovery_intent_${Date.now()}`;
@@ -554,9 +488,6 @@ test('21. Recovery Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 22. DEPLOYMENT TESTING
-// ============================================================================
 test('22. Deployment Testing', async (t) => {
   await t.test('22.1 Smart Contract Deployment Configuration & Constructor Parameters', () => {
     const deploymentConfig = {
@@ -573,9 +504,6 @@ test('22. Deployment Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 23. ACCEPTANCE TESTING (USER CRITERIA)
-// ============================================================================
 test('23. Acceptance Testing', async (t) => {
   await t.test('23.1 Acceptance Criteria: Low Slippage, MEV Protection & Positive Score', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -595,9 +523,6 @@ test('23. Acceptance Testing', async (t) => {
   });
 });
 
-// ============================================================================
-// 24. END-TO-END TESTING
-// ============================================================================
 test('24. End-to-End Testing', async (t) => {
   await t.test('24.1 Complete Trade Journey: Quoting -> Sim -> Approval -> Execute -> Receipt', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;

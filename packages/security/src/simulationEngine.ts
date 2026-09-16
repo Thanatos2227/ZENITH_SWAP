@@ -37,7 +37,6 @@ export class SimulationEngine {
     const amountInNum = Number(amountInBig) / 10 ** tokenInDecimals;
     const amountOutNum = Number(amountOutBig) / 10 ** tokenOutDecimals;
 
-    // Check token balance & allowance if on EVM
     if (chain && chain.executionEnvironment === 'EVM' && params.userAddress && params.routerAddress) {
       try {
         const rpcUrl = defaultChainRegistry.getHealthyRPC(chain.id);
@@ -66,7 +65,6 @@ export class SimulationEngine {
           }
         }
 
-        // If calldata and router address are provided, attempt real eth_call dry run
         if (params.calldata && params.routerAddress) {
           try {
             await provider.call({
@@ -94,7 +92,7 @@ export class SimulationEngine {
           }
         }
       } catch (err: any) {
-        // RPC network failure or offline in test environment
+
         console.warn('[SimulationEngine] RPC dry run query note:', err?.message || err);
       }
     }
@@ -197,7 +195,7 @@ export class SimulationEngine {
           const decoded = iface.decodeFunctionData('Error', err.data);
           return decoded[0];
         } catch {
-          // failed decoding custom error
+
         }
       }
       return `Execution reverted with data ${err.data.slice(0, 10)}...`;

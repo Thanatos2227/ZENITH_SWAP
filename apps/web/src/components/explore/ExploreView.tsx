@@ -33,7 +33,7 @@ export const ExploreView: React.FC = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
-      {/* Header */}
+      {}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
         <div>
           <div className="flex items-center gap-2">
@@ -52,7 +52,7 @@ export const ExploreView: React.FC = () => {
           </p>
         </div>
 
-        {/* Search */}
+        {}
         <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -65,7 +65,7 @@ export const ExploreView: React.FC = () => {
         </div>
       </div>
 
-      {/* Metric Cards */}
+      {}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass-panel p-5 rounded-2xl border border-slate-800">
           <div className="flex items-center justify-between text-slate-400 text-xs font-mono uppercase">

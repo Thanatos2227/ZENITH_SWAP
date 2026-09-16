@@ -1,12 +1,7 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV2Pool.sol";
 
-/**
- * @title ZenithV2Factory
- * @notice Factory deploying and tracking Zenith V2 multi-fee tier AMM pools.
- */
 contract ZenithV2Factory {
     address public feeController;
     address public treasury;

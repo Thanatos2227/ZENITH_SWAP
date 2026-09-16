@@ -14,7 +14,7 @@ import { registerZenithDeployment } from '@zenith/contracts';
 import { Token } from '@zenith/types';
 
 describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
-  // Register test deployment addresses for isolated test suite execution
+
   registerZenithDeployment(137, {
     v1Router: '0x1111111111111111111111111111111111111111',
     v2Router: '0x2222222222222222222222222222222222222222',
@@ -44,9 +44,9 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
 
   describe('1. Zenith V1 AMM (x * y = k Math & Invariants)', () => {
     it('correctly calculates output amount with 30 BPS (0.3%) fee', () => {
-      const reserveIn = 1000n * 10n ** 6n; // 1,000 USDC
-      const reserveOut = 10000n * 10n ** 18n; // 10,000 POL
-      const amountIn = 100n * 10n ** 6n; // 100 USDC
+      const reserveIn = 1000n * 10n ** 6n;
+      const reserveOut = 10000n * 10n ** 18n;
+      const amountIn = 100n * 10n ** 6n;
 
       const res = calculateConstantProductOutput({
         amountInRaw: amountIn,
@@ -58,7 +58,6 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
 
       assert.ok(res.amountOutRaw > 0n, 'Output must be positive');
 
-      // Manual formula check: (amountInWithFee * reserveOut) / (reserveIn * 10000 + amountInWithFee)
       const amountInWithFee = amountIn * 9970n;
       const expectedOut = (amountInWithFee * reserveOut) / (reserveIn * 10000n + amountInWithFee);
       assert.strictEqual(res.amountOutRaw, expectedOut, 'Output must match standard constant product formula');
@@ -67,12 +66,11 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
     it('correctly calculates input amount needed for exact output', () => {
       const reserveIn = 1000n * 10n ** 6n;
       const reserveOut = 10000n * 10n ** 18n;
-      const amountOut = 500n * 10n ** 18n; // 500 POL
+      const amountOut = 500n * 10n ** 18n;
 
       const amountIn = calculateConstantProductInput(amountOut, reserveIn, reserveOut, 30);
       assert.ok(amountIn > 0n, 'Input must be positive');
 
-      // Invariant check: swapping amountIn should yield at least amountOut
       const resulting = calculateConstantProductOutput({
         amountInRaw: amountIn,
         reserveInRaw: reserveIn,
@@ -86,8 +84,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
     it('calculates accurate price impact', () => {
       const reserveIn = 1000n * 10n ** 6n;
       const reserveOut = 10000n * 10n ** 18n;
-      const smallAmountIn = 1n * 10n ** 6n; // 1 USDC -> small impact
-      const largeAmountIn = 500n * 10n ** 6n; // 500 USDC -> high impact
+      const smallAmountIn = 1n * 10n ** 6n;
+      const largeAmountIn = 500n * 10n ** 6n;
 
       const smallRes = calculateConstantProductOutput({
         amountInRaw: smallAmountIn,
@@ -170,8 +168,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
     });
 
     it('calculates concentrated liquidity swap output', () => {
-      const liquidity = 1000000000000000000n; // 1e18
-      const sqrtPriceX96 = 79228162514264337593543950336n; // Price = 1.0 (Q96)
+      const liquidity = 1000000000000000000n;
+      const sqrtPriceX96 = 79228162514264337593543950336n;
       const amountIn = 10n * 10n ** 18n;
 
       const amountOut = calculateV3AmountOut(amountIn, liquidity, sqrtPriceX96, 500);

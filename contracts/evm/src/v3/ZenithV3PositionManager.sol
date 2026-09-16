@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV3Pool.sol";
@@ -6,10 +5,6 @@ import "./ZenithV3Factory.sol";
 import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH9.sol";
 
-/**
- * @title ZenithV3PositionManager
- * @notice ERC721 Non-Fungible Token manager for ZENITH SWAP V3 concentrated liquidity positions.
- */
 contract ZenithV3PositionManager is IZenithV3MintCallback {
     string public constant name = "ZENITH V3 LP Positions";
     string public constant symbol = "ZTH-V3-POS";

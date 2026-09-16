@@ -28,33 +28,29 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
 
   describe('1. Bi-Directional Unit Conversions (human <-> raw)', () => {
     it('accurately converts POL (18 decimals) between human and raw units', () => {
-      // 0.1 POL
+
       const raw01 = parseTokenUnits('0.1', 18);
       assert.strictEqual(raw01, '100000000000000000', '0.1 POL must equal 10^17 raw units');
       assert.strictEqual(formatTokenUnits(raw01, 18), '0.1', '10^17 raw units must format back to 0.1 POL');
 
-      // 1.0 POL
       const raw1 = parseTokenUnits('1.0', 18);
       assert.strictEqual(raw1, '1000000000000000000', '1.0 POL must equal 10^18 raw units');
       assert.strictEqual(formatTokenUnits(raw1, 18), '1.0', '10^18 raw units must format back to 1.0 POL');
 
-      // "1" POL without decimal point
       const raw1Plain = parseTokenUnits('1', 18);
       assert.strictEqual(raw1Plain, '1000000000000000000', '"1" POL must equal 10^18 raw units');
 
-      // 2.0 POL
       const raw2 = parseTokenUnits('2.0', 18);
       assert.strictEqual(raw2, '2000000000000000000', '2.0 POL must equal 2 * 10^18 raw units');
       assert.strictEqual(formatTokenUnits(raw2, 18), '2.0', '2 * 10^18 raw units must format back to 2.0 POL');
     });
 
     it('accurately converts USDT (6 decimals) between human and raw units', () => {
-      // 1.0 USDT
+
       const rawUsdt1 = parseTokenUnits('1.0', 6);
       assert.strictEqual(rawUsdt1, '1000000', '1.0 USDT must equal 1,000,000 raw units');
       assert.strictEqual(formatTokenUnits(rawUsdt1, 6), '1.0', '1,000,000 raw units must format back to 1.0 USDT');
 
-      // 0.09787 USDT
       const rawUsdtExpected = parseTokenUnits('0.09787', 6);
       assert.strictEqual(rawUsdtExpected, '97870', '0.09787 USDT must equal 97,870 raw units');
       assert.strictEqual(formatTokenUnits(rawUsdtExpected, 6), '0.09787', '97,870 raw units must format back to 0.09787 USDT');
@@ -63,7 +59,7 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
 
   describe('2. POL → USDT Executable Quote Sanity (1.0 POL Input)', () => {
     it('produces ~0.0975 USDT output for 1.0 POL and strictly NOT a 10^12 magnified value', async () => {
-      const rawAmountIn = parseTokenUnits('1.0', 18); // 10^18
+      const rawAmountIn = parseTokenUnits('1.0', 18);
       const quote = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
         destinationChainId: 'polygon',
@@ -79,23 +75,18 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
       const outNum = parseFloat(quote.amountOutFormatted.replace(/,/g, ''));
       const rawOutBig = BigInt(quote.amountOutRaw);
 
-      // CRITICAL ASSERTION: The output MUST be approximately ~0.098-0.10 USDT (10M POL / 1M USDT pool)
-      // and MUST NEVER be > 1.0 or anywhere near 99,960,000,000.
       assert.ok(outNum >= 0.095 && outNum <= 0.105, `Expected ~0.099 USDT, got ${outNum}`);
       assert.ok(outNum < 1.0, `Output ${outNum} MUST NOT exceed 1.0 USDT for 1.0 POL`);
       assert.ok(rawOutBig >= 95000n && rawOutBig <= 105000n, `Raw out ${rawOutBig} must be in 6-decimal range (95,000 to 105,000)`);
 
-      // Verify executionPrice matches single authoritative quote
       assert.ok(quote.executionPrice >= 0.095 && quote.executionPrice <= 0.105, `executionPrice must be ~0.099, got ${quote.executionPrice}`);
       assert.strictEqual(quote.referencePrice, 0.09787, 'referencePrice must match market ratio');
 
-      // Verify minimumReceived is in destination token 6-decimal units
       const minReceivedBig = BigInt(quote.minimumReceivedRaw);
       assert.ok(minReceivedBig < rawOutBig, 'minReceived must be strictly less than amountOutRaw with positive slippage');
       assert.ok(minReceivedBig > 0n, 'minReceived must be positive');
       assert.ok(minReceivedBig < 1000000n, 'minReceived must be in 6-decimal range (< 1 USDT)');
 
-      // Verify same-chain routing does NOT use bridge
       assert.strictEqual(quote.bestRoute.routeType !== 'CROSS_CHAIN', true, 'Same-chain trade must use DEX routing, not bridge');
       assert.ok(quote.bestRoute.hops.length > 0, 'DEX route must have hops on Polygon');
     });
@@ -138,7 +129,6 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
       assert.ok(num1 >= 0.095 && num1 <= 0.105, `1.0 POL output must be ~0.099, got ${num1}`);
       assert.ok(num2 >= 0.190 && num2 <= 0.205, `2.0 POL output must be ~0.199, got ${num2}`);
 
-      // Verify linearity (ratio of 2 POL output / 1 POL output is ~2.0, 1 POL / 0.1 POL is ~10.0)
       const ratio2to1 = num2 / num1;
       assert.ok(Math.abs(ratio2to1 - 2.0) < 0.01, `2 POL to 1 POL ratio must be ~2.0, got ${ratio2to1}`);
 
@@ -152,7 +142,6 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
       const { CrossChainAggregator } = await import('@zenith/routing');
       const { ZenithRouter } = await import('@zenith/routing');
 
-      // Create a corrupted bridge provider simulating an unnormalized 10^12 decimal bug
       const corruptedBridgeProvider = {
         id: 'ACROSS' as const,
         name: 'Corrupted Test Bridge',
@@ -164,8 +153,8 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
           destinationChainId: 'base',
           sourceToken: polToken,
           destinationToken: usdtToken,
-          sourceAmountRaw: '1000000000000000000', // 1 POL
-          destinationAmountRaw: '99960000000000000', // 99 Billion USDT (10^12 bug)
+          sourceAmountRaw: '1000000000000000000',
+          destinationAmountRaw: '99960000000000000',
           minDestinationAmountRaw: '99460200000000000',
           estimatedTransferTimeSec: 20,
           bridgeFeeUSD: 0.10,

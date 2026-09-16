@@ -13,25 +13,21 @@ import { DEFAULT_TOKENS } from '../packages/tokens/src';
 import { SignerRequiredError } from '../packages/contracts/src/errors';
 
 test('Zenith Cross-Chain Router: Canonical Protocol Registrations Validation', () => {
-  // Validate canonical Across V3 SpokePool registrations across key EVM chains
+
   assert.ok(ACROSS_SPOKE_POOLS[1]);
   assert.ok(ACROSS_SPOKE_POOLS[137]);
   assert.ok(ACROSS_SPOKE_POOLS[8453]);
   assert.ok(ACROSS_SPOKE_POOLS[42161]);
   assert.ok(ACROSS_SPOKE_POOLS[10]);
 
-  // Validate Stargate V2 Routers
   assert.ok(STARGATE_V2_ROUTERS[1]);
   assert.ok(STARGATE_V2_ROUTERS[42161]);
 
-  // Validate deBridge DLN Source
   assert.ok(DEBRIDGE_DLN_SOURCE[1]);
 
-  // Validate Permit2
   assert.equal(getPermit2Address(1), '0x000000000022D473030F116dDEE9F6B43aC78BA3');
   assert.equal(getPermit2Address(8453), '0x000000000022D473030F116dDEE9F6B43aC78BA3');
 
-  // Validate Uniswap V3 Router (SwapRouter02 canonical)
   assert.equal(getUniswapV3Router(1), '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45');
   assert.equal(getUniswapV3Router(42161), '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45');
 });
@@ -49,7 +45,7 @@ test('Zenith Cross-Chain Router: End-to-End Cross-Chain Quote & Routing', async 
     destinationChainId: 'ethereum',
     tokenIn,
     tokenOut,
-    amountInRaw: '100000000', // 100 USDT
+    amountInRaw: '100000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -74,7 +70,7 @@ test('Zenith Cross-Chain Router: Signer Requirement Enforcement', async () => {
     destinationChainId: 'arbitrum',
     tokenIn,
     tokenOut,
-    amountInRaw: '100000000', // 100 USDC
+    amountInRaw: '100000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -85,7 +81,6 @@ test('Zenith Cross-Chain Router: Signer Requirement Enforcement', async () => {
   const stateMachine = new ExecutionStateMachine();
   const coordinator = new ExecutionCoordinator();
 
-  // Execution without signer must fail closed
   await assert.rejects(
     async () => {
       await coordinator.executeTrade({
@@ -111,7 +106,7 @@ test('Zenith Cross-Chain Router: Mock Signer Execution Flow', async () => {
     destinationChainId: 'arbitrum',
     tokenIn,
     tokenOut,
-    amountInRaw: '100000000', // 100 USDC
+    amountInRaw: '100000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -122,7 +117,6 @@ test('Zenith Cross-Chain Router: Mock Signer Execution Flow', async () => {
     stepStatuses.push(status);
   });
 
-  // Create a realistic mock signer for unit testing
   const mockSigner = {
     getAddress: async () => user,
     estimateGas: async () => 150000n,
@@ -169,12 +163,10 @@ test('Zenith Cross-Chain Router: Mock Signer Execution Flow', async () => {
 });
 
 test('Zenith Cross-Chain Router: Direct Unsupported Pair Fails Closed on Micro-Dust', async () => {
-  const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.isNative)!; // POL
+  const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.isNative)!;
   const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDT')!;
   const user = '0x8ba1f109551bD432803012645Ac136ddd64DBA72';
 
-  // 1 POL (~$0.097) is below minimum bridge viability threshold ($1.00 USD)
-  // Router must fail closed with CROSS_CHAIN_QUOTE_UNAVAILABLE
   await assert.rejects(
     async () => {
       await defaultZenithRouter.getQuote({
@@ -182,7 +174,7 @@ test('Zenith Cross-Chain Router: Direct Unsupported Pair Fails Closed on Micro-D
         destinationChainId: 'arbitrum',
         tokenIn,
         tokenOut,
-        amountInRaw: '1000000000000000000', // 1 POL
+        amountInRaw: '1000000000000000000',
         recipient: user,
         slippageTolerancePercent: 0.5
       });
@@ -199,13 +191,12 @@ test('Zenith Cross-Chain Router: POL (Polygon) -> USDC (Arbitrum) Multi-Hop Swap
   assert.ok(polToken, 'POL token must exist on Polygon');
   assert.ok(usdcToken, 'USDC token must exist on Arbitrum');
 
-  // Test 100 POL (~$9.78 USD)
   const quote = await defaultZenithRouter.getQuote({
     sourceChainId: 'polygon',
     destinationChainId: 'arbitrum',
     tokenIn: polToken,
     tokenOut: usdcToken,
-    amountInRaw: '100000000000000000000', // 100 POL
+    amountInRaw: '100000000000000000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -223,5 +214,3 @@ test('Zenith Cross-Chain Router: POL (Polygon) -> USDC (Arbitrum) Multi-Hop Swap
   assert.ok(BigInt(quote.minimumReceivedRaw) > 0n);
   assert.ok(BigInt(quote.minimumReceivedRaw) <= BigInt(quote.amountOutRaw));
 });
-
-

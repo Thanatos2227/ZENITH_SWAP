@@ -5,7 +5,6 @@ import {
   InvalidExecutionTargetError
 } from './errors';
 
-// Known invalid placeholders, dead/burn patterns, and non-executable test addresses
 const FORBIDDEN_PLACEHOLDER_ADDRESSES = new Set([
   '0x1111111111111111111111111111111111111111',
   '0x2222222222222222222222222222222222222222',
@@ -24,16 +23,12 @@ const FORBIDDEN_PLACEHOLDER_ADDRESSES = new Set([
   '0x000000000000000000000000000000000000dead'
 ]);
 
-// Canonical Native Asset Sentinel (ERC-7528)
 export const CANONICAL_NATIVE_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 const EVM_HEX_REGEX = /^0x[0-9a-fA-F]{40}$/;
 const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-/**
- * Validates an EVM 20-byte address format, rejecting placeholders and malformed strings.
- */
 export function validateEvmAddress(address: string | undefined | null, context = 'EVM Address'): string {
   if (!address || typeof address !== 'string') {
     throw new InvalidAddressError(`[${context}] Address is empty, null, or undefined.`);
@@ -54,9 +49,6 @@ export function validateEvmAddress(address: string | undefined | null, context =
   return trimmed;
 }
 
-/**
- * Validates a Solana Base58 public key.
- */
 export function validateSolanaAddress(address: string | undefined | null, context = 'Solana Address'): string {
   if (!address || typeof address !== 'string') {
     throw new InvalidAddressError(`[${context}] Solana address is empty, null, or undefined.`);
@@ -70,9 +62,6 @@ export function validateSolanaAddress(address: string | undefined | null, contex
   return trimmed;
 }
 
-/**
- * Validates a token address across any supported execution environment.
- */
 export function validateTokenAddress(
   address: string | undefined | null,
   chainId: string | number,
@@ -102,9 +91,6 @@ export function validateTokenAddress(
   }
 }
 
-/**
- * Validates a swap recipient address.
- */
 export function validateRecipientAddress(
   address: string | undefined | null,
   chainId: string | number
@@ -129,9 +115,6 @@ export function validateRecipientAddress(
   }
 }
 
-/**
- * Validates an execution / router / bridge target contract.
- */
 export function validateExecutionTarget(
   target: string | undefined | null,
   chainId: string | number
@@ -156,9 +139,6 @@ export function validateExecutionTarget(
   }
 }
 
-/**
- * Validates an ERC-20 / Permit2 token approval spender target.
- */
 export function validateApprovalTarget(
   spender: string | undefined | null,
   chainId: string | number

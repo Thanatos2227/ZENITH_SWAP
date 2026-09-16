@@ -1,11 +1,5 @@
 import { ConfigurationError } from '../errors';
 
-/**
- * ZENITH Settlement & Solver Contract Registry
- *
- * All addresses remain strictly UNDEFINED until official deployments are completed.
- * Fail closed if accessed.
- */
 export const ZENITH_SETTLEMENT_CONTRACT: Record<string | number, string | undefined> = {
   1: undefined,
   10: undefined,

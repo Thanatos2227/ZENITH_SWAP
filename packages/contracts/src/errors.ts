@@ -60,10 +60,6 @@ export class SignerRequiredError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Production Address Validation & Execution Errors (Section 9, 10, 28)
-// ---------------------------------------------------------------------------
-
 export class InvalidAddressError extends ConfigurationError {
   constructor(message: string, code = 'INVALID_ADDRESS') {
     super(message, code);

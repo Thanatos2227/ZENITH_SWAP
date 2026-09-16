@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity ^0.8.13;
 
 import {Test} from "../src/Test.sol";
@@ -30,10 +29,8 @@ contract LibVariableTest is Test {
     function setUp() public {
         helper = new LibVariableHelper();
 
-        // UNINITIALIZED
         uninitVar = Variable(Type(TypeKind.None, false), "");
 
-        // SINGLE VALUES
         boolVar = Variable(Type(TypeKind.Bool, false), abi.encode(true));
         addressVar = Variable(Type(TypeKind.Address, false), abi.encode(address(0xdeadbeef)));
         bytes32Var = Variable(Type(TypeKind.Bytes32, false), abi.encode(bytes32(uint256(42))));
@@ -42,7 +39,6 @@ contract LibVariableTest is Test {
         stringVar = Variable(Type(TypeKind.String, false), abi.encode("hello world"));
         bytesVar = Variable(Type(TypeKind.Bytes, false), abi.encode(hex"c0ffee"));
 
-        // ARRAY VALUES
         bool[] memory bools = new bool[](2);
         bools[0] = true;
         bools[1] = false;
@@ -79,10 +75,8 @@ contract LibVariableTest is Test {
         bytesArrayVar = Variable(Type(TypeKind.Bytes, true), abi.encode(b));
     }
 
-    // -- SUCCESS CASES --------------------------------------------------------
-
     function test_TypeHelpers() public view {
-        // TypeKind.toString()
+
         assertEq(TypeKind.None.toString(), "none");
         assertEq(TypeKind.Bool.toString(), "bool");
         assertEq(TypeKind.Address.toString(), "address");
@@ -92,30 +86,26 @@ contract LibVariableTest is Test {
         assertEq(TypeKind.String.toString(), "string");
         assertEq(TypeKind.Bytes.toString(), "bytes");
 
-        // TypeKind.toTomlKey()
         assertEq(TypeKind.Uint256.toTomlKey(), "uint");
         assertEq(TypeKind.Int256.toTomlKey(), "int");
         assertEq(TypeKind.Bytes32.toTomlKey(), "bytes32");
 
-        // Type.toString()
         assertEq(boolVar.ty.toString(), "bool");
         assertEq(boolArrayVar.ty.toString(), "bool[]");
         assertEq(uintVar.ty.toString(), "uint256");
         assertEq(uintArrayVar.ty.toString(), "uint256[]");
         assertEq(uninitVar.ty.toString(), "none");
 
-        // Type.isEqual()
         assertTrue(boolVar.ty.isEqual(Type(TypeKind.Bool, false)));
         assertFalse(boolVar.ty.isEqual(Type(TypeKind.Bool, true)));
         assertFalse(boolVar.ty.isEqual(Type(TypeKind.Address, false)));
 
-        // Type.assertEq()
         boolVar.ty.assertEq(Type(TypeKind.Bool, false));
         uintArrayVar.ty.assertEq(Type(TypeKind.Uint256, true));
     }
 
     function test_Coercion() public view {
-        // Single values
+
         assertTrue(helper.toBool(boolVar));
         assertEq(helper.toAddress(addressVar), address(0xdeadbeef));
         assertEq(helper.toBytes32(bytes32Var), bytes32(uint256(42)));
@@ -124,37 +114,31 @@ contract LibVariableTest is Test {
         assertEq(helper.toString(stringVar), "hello world");
         assertEq(helper.toBytes(bytesVar), hex"c0ffee");
 
-        // Bool array
         bool[] memory bools = helper.toBoolArray(boolArrayVar);
         assertEq(bools.length, 2);
         assertTrue(bools[0]);
         assertFalse(bools[1]);
 
-        // Address array
         address[] memory addrs = helper.toAddressArray(addressArrayVar);
         assertEq(addrs.length, 2);
         assertEq(addrs[0], address(0x1));
         assertEq(addrs[1], address(0x2));
 
-        // String array
         string[] memory strings = helper.toStringArray(stringArrayVar);
         assertEq(strings.length, 2);
         assertEq(strings[0], "one");
         assertEq(strings[1], "two");
 
-        // Bytes32 array
         bytes32[] memory b32s = helper.toBytes32Array(bytes32ArrayVar);
         assertEq(b32s.length, 2);
         assertEq(b32s[0], bytes32(uint256(1)));
         assertEq(b32s[1], bytes32(uint256(2)));
 
-        // Int array
         int256[] memory ints = helper.toInt256Array(intArrayVar);
         assertEq(ints.length, 2);
         assertEq(ints[0], -1);
         assertEq(ints[1], 2);
 
-        // Bytes array
         bytes[] memory b = helper.toBytesArray(bytesArrayVar);
         assertEq(b.length, 2);
         assertEq(b[0], hex"01");
@@ -162,7 +146,7 @@ contract LibVariableTest is Test {
     }
 
     function test_Downcasting() public view {
-        // Uint downcasting
+
         Variable memory v_uint_small = Variable(Type(TypeKind.Uint256, false), abi.encode(uint256(100)));
         assertEq(helper.toUint128(v_uint_small), 100);
         assertEq(helper.toUint64(v_uint_small), 100);
@@ -170,7 +154,6 @@ contract LibVariableTest is Test {
         assertEq(helper.toUint16(v_uint_small), 100);
         assertEq(helper.toUint8(v_uint_small), 100);
 
-        // Uint array downcasting
         uint256[] memory small_uints = new uint256[](2);
         small_uints[0] = 10;
         small_uints[1] = 20;
@@ -179,7 +162,6 @@ contract LibVariableTest is Test {
         assertEq(u8_array[0], 10);
         assertEq(u8_array[1], 20);
 
-        // Int downcasting
         Variable memory v_int_small_pos = Variable(Type(TypeKind.Int256, false), abi.encode(int256(100)));
         Variable memory v_int_small_neg = Variable(Type(TypeKind.Int256, false), abi.encode(int256(-100)));
         assertEq(helper.toInt128(v_int_small_pos), 100);
@@ -188,7 +170,6 @@ contract LibVariableTest is Test {
         assertEq(helper.toInt16(v_int_small_neg), -100);
         assertEq(helper.toInt8(v_int_small_pos), 100);
 
-        // Int array downcasting
         int256[] memory small_ints = new int256[](2);
         small_ints[0] = -10;
         small_ints[1] = 20;
@@ -197,8 +178,6 @@ contract LibVariableTest is Test {
         assertEq(i8_array[0], -10);
         assertEq(i8_array[1], 20);
     }
-
-    // -- REVERT CASES ---------------------------------------------------------
 
     function testRevert_NotInitialized() public {
         vm.expectRevert(LibVariable.NotInitialized.selector);
@@ -214,55 +193,48 @@ contract LibVariableTest is Test {
     }
 
     function testRevert_TypeMismatch() public {
-        // Single values
+
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "uint256", "bool"));
         helper.toUint256(boolVar);
 
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "address", "string"));
         helper.toAddress(stringVar);
 
-        // Arrays
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "uint256[]", "bool[]"));
         helper.toUint256Array(boolArrayVar);
 
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "address[]", "string[]"));
         helper.toAddressArray(stringArrayVar);
 
-        // Single value to array
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "bool[]", "bool"));
         helper.toBoolArray(boolVar);
 
-        // Array to single value
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "bool", "bool[]"));
         helper.toBool(boolArrayVar);
 
-        // assertEq reverts
         vm.expectRevert(abi.encodeWithSelector(LibVariable.TypeMismatch.selector, "uint256", "bool"));
         helper.assertEq(boolVar.ty, Type(TypeKind.Uint256, false));
     }
 
     function testRevert_UnsafeCast() public {
-        // uint overflow
+
         Variable memory uintLarge = Variable(Type(TypeKind.Uint256, false), abi.encode(uint256(type(uint128).max) + 1));
         expectedErr = abi.encodeWithSelector(LibVariable.UnsafeCast.selector, "value does not fit in 'uint128'");
         vm.expectRevert(expectedErr);
         helper.toUint128(uintLarge);
 
-        // int overflow
         Variable memory intLarge = Variable(Type(TypeKind.Int256, false), abi.encode(int256(type(int128).max) + 1));
         expectedErr = abi.encodeWithSelector(LibVariable.UnsafeCast.selector, "value does not fit in 'int128'");
 
         vm.expectRevert(expectedErr);
         helper.toInt128(intLarge);
 
-        // int underflow
         Variable memory intSmall = Variable(Type(TypeKind.Int256, false), abi.encode(int256(type(int128).min) - 1));
         expectedErr = abi.encodeWithSelector(LibVariable.UnsafeCast.selector, "value does not fit in 'int128'");
 
         vm.expectRevert(expectedErr);
         helper.toInt128(intSmall);
 
-        // uint array overflow
         uint256[] memory uintArray = new uint256[](2);
         uintArray[0] = 10;
         uintArray[1] = uint256(type(uint64).max) + 1;
@@ -272,7 +244,6 @@ contract LibVariableTest is Test {
         vm.expectRevert(expectedErr);
         helper.toUint64Array(uintArrayLarge);
 
-        // int array overflow
         int256[] memory intArray = new int256[](2);
         intArray[0] = 10;
         intArray[1] = int256(type(int64).max) + 1;
@@ -282,7 +253,6 @@ contract LibVariableTest is Test {
         vm.expectRevert(expectedErr);
         helper.toInt64Array(intArrayLarge);
 
-        // int array underflow
         intArray[0] = 10;
         intArray[1] = int256(type(int64).min) - 1;
         Variable memory intArraySmall = Variable(Type(TypeKind.Int256, true), abi.encode(intArray));
@@ -293,13 +263,10 @@ contract LibVariableTest is Test {
     }
 }
 
-/// @dev We must use an external helper contract to ensure proper call depth for `vm.expectRevert`,
-///      as direct library calls are inlined by the compiler, causing call depth issues.
 contract LibVariableHelper {
     using LibVariable for Type;
     using LibVariable for TypeKind;
 
-    // Assertions
     function assertExists(Variable memory v) external pure {
         v.assertExists();
     }
@@ -308,7 +275,6 @@ contract LibVariableHelper {
         t1.assertEq(t2);
     }
 
-    // Single Value Coercion
     function toBool(Variable memory v) external pure returns (bool) {
         return v.toBool();
     }
@@ -337,7 +303,6 @@ contract LibVariableHelper {
         return v.toBytes();
     }
 
-    // Array Coercion
     function toBoolArray(Variable memory v) external pure returns (bool[] memory) {
         return v.toBoolArray();
     }
@@ -366,7 +331,6 @@ contract LibVariableHelper {
         return v.toBytesArray();
     }
 
-    // Uint Downcasting
     function toUint128(Variable memory v) external pure returns (uint128) {
         return v.toUint128();
     }
@@ -387,7 +351,6 @@ contract LibVariableHelper {
         return v.toUint8();
     }
 
-    // Int Downcasting
     function toInt128(Variable memory v) external pure returns (int128) {
         return v.toInt128();
     }
@@ -408,7 +371,6 @@ contract LibVariableHelper {
         return v.toInt8();
     }
 
-    // Uint Array Downcasting
     function toUint128Array(Variable memory v) external pure returns (uint128[] memory) {
         return v.toUint128Array();
     }
@@ -429,7 +391,6 @@ contract LibVariableHelper {
         return v.toUint8Array();
     }
 
-    // Int Array Downcasting
     function toInt128Array(Variable memory v) external pure returns (int128[] memory) {
         return v.toInt128Array();
     }

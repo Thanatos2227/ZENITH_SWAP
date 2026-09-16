@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV2Pool.sol";
@@ -6,10 +5,6 @@ import "./ZenithV2Factory.sol";
 import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH9.sol";
 
-/**
- * @title ZenithV2Router
- * @notice Multi-hop swap and liquidity routing engine for ZENITH SWAP V2.
- */
 contract ZenithV2Router {
     address public immutable factory;
     address public immutable WETH;
@@ -122,7 +117,6 @@ contract ZenithV2Router {
         }
     }
 
-    // **** HELPERS ****
     function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
         require(tokenA != tokenB, "ZenithV2Router: IDENTICAL_ADDRESSES");
         (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);

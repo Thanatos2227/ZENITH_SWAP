@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
@@ -40,17 +39,14 @@ contract DeployZenith is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Deploy Canonical Treasury Vault
         ZenithTreasury treasury = new ZenithTreasury(governance);
         treasuryAddr = address(treasury);
         console.log("1. ZenithTreasury:        ", treasuryAddr);
 
-        // 2. Deploy Canonical Fee Controller
         ZenithFeeController feeController = new ZenithFeeController(governance, treasuryAddr);
         feeControllerAddr = address(feeController);
         console.log("2. ZenithFeeController:    ", feeControllerAddr);
 
-        // 3. Deploy Zenith V1 Suite
         ZenithV1Factory v1Factory = new ZenithV1Factory(governance, treasuryAddr);
         v1FactoryAddr = address(v1Factory);
         ZenithV1Router v1Router = new ZenithV1Router(v1FactoryAddr, wethAddress);
@@ -58,7 +54,6 @@ contract DeployZenith is Script {
         console.log("3. ZenithV1Factory:        ", v1FactoryAddr);
         console.log("4. ZenithV1Router:         ", v1RouterAddr);
 
-        // 4. Deploy Zenith V2 Suite
         ZenithV2Factory v2Factory = new ZenithV2Factory(governance, feeControllerAddr, treasuryAddr);
         v2FactoryAddr = address(v2Factory);
         ZenithV2Router v2Router = new ZenithV2Router(v2FactoryAddr, wethAddress);
@@ -66,7 +61,6 @@ contract DeployZenith is Script {
         console.log("5. ZenithV2Factory:        ", v2FactoryAddr);
         console.log("6. ZenithV2Router:         ", v2RouterAddr);
 
-        // 5. Deploy Zenith V3 Suite
         ZenithV3Factory v3Factory = new ZenithV3Factory(governance, feeControllerAddr);
         v3FactoryAddr = address(v3Factory);
         ZenithV3Router v3Router = new ZenithV3Router(v3FactoryAddr, wethAddress);
@@ -74,7 +68,6 @@ contract DeployZenith is Script {
         console.log("7. ZenithV3Factory:        ", v3FactoryAddr);
         console.log("8. ZenithV3Router:         ", v3RouterAddr);
 
-        // 6. Deploy Unified Router
         ZenithRouter unifiedRouter = new ZenithRouter(
             governance,
             wethAddress,
@@ -87,7 +80,6 @@ contract DeployZenith is Script {
         unifiedRouterAddr = address(unifiedRouter);
         console.log("9. ZenithUnifiedRouter:    ", unifiedRouterAddr);
 
-        // 7. Deploy Circuit Breaker & Cross-Chain Router
         ZenithCircuitBreaker circuitBreaker = new ZenithCircuitBreaker(governance, emergencyGuardian);
         ZenithCrossChainRouter crossChainRouter = new ZenithCrossChainRouter(
             treasuryAddr,

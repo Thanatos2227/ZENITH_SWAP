@@ -17,7 +17,7 @@ describe('ZENITH SWAP — Sovereign Protocol Treasury & Fee Controller Test Suit
 
   describe('1. Non-Custodial Invariant & Architecture', () => {
     it('only tracks accrued protocol fees, not user custody balances', () => {
-      // Check ABI exposes exact fee tracking functions and not generic deposit-pool custody
+
       const depositERC20FeeFrag = treasuryInterface.getFunction('depositERC20Fee');
       const depositNativeFeeFrag = treasuryInterface.getFunction('depositNativeFee');
       const getTreasuryBalanceFrag = treasuryInterface.getFunction('getTreasuryBalance');
@@ -82,13 +82,12 @@ describe('ZENITH SWAP — Sovereign Protocol Treasury & Fee Controller Test Suit
     });
 
     it('fails closed when deployments are unconfigured and allows dynamic registration', () => {
-      // Production chains without active on-chain deployments throw ConfigurationError
+
       assert.throws(() => {
         getZenithTreasuryAddress(1);
       }, /ZENITH Treasury address is not configured/);
       assert.strictEqual(getZenithFeeController(1), undefined);
 
-      // Register local devnet deployment
       registerZenithDeployment(31337, {
         treasury: '0x0123456789012345678901234567890123456789',
         feeController: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'

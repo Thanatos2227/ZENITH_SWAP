@@ -70,7 +70,6 @@ export class CrossChainAggregator {
     const results = await Promise.all(quotePromises);
     const validQuotes = results.filter((q): q is CrossChainQuote => q !== null);
 
-    // Rank quotes by net destination amount, considering total gas cost and bridge fees
     return validQuotes.sort((a, b) => {
       const diff = BigInt(b.destinationAmountRaw) - BigInt(a.destinationAmountRaw);
       if (diff !== 0n) {
@@ -101,12 +100,10 @@ export class CrossChainAggregator {
     const amountInBig = BigInt(request.amountInRaw || (request as any).amountIn || '0');
     if (amountInBig <= 0n) return [];
 
-    // Calculate approximate trade value in USD to enforce minimum bridge feasibility
     const amountInNum = Number(formatTokenUnits(amountInBig, tokenInDecimals));
     const priceInUSD = request.tokenIn.priceUSD || 0;
     const tradeValueUSD = amountInNum * priceInUSD;
 
-    // Reject micro-dust transactions below bridge minimum economic viability ($1.00 USD)
     if (tradeValueUSD > 0 && tradeValueUSD < 1.0) {
       return [];
     }
@@ -147,7 +144,6 @@ export class CrossChainAggregator {
       let bridgeAmountInBig = amountInBig;
       let sourceDexQuote = null;
 
-      // 1. Source DEX Swap (if tokenIn != srcConnector)
       const needsSourceSwap = !isSameToken(request.tokenIn, srcConnector);
       if (needsSourceSwap) {
         if (!srcChain.chainId) continue;
@@ -170,7 +166,6 @@ export class CrossChainAggregator {
 
       if (bridgeAmountInBig <= 0n) continue;
 
-      // 2. Query Authoritative Bridge Providers for (srcConnector -> dstConnector)
       let bridgeQuotes: CrossChainQuote[] = [];
       try {
         bridgeQuotes = await this.getQuotes({
@@ -186,7 +181,6 @@ export class CrossChainAggregator {
       if (!bridgeQuotes || bridgeQuotes.length === 0) continue;
       const bestBridgeQuote = bridgeQuotes[0];
 
-      // 3. Destination DEX Swap (if dstConnector != tokenOut)
       let finalAmountOutBig = BigInt(bestBridgeQuote.destinationAmountRaw);
       let minFinalAmountOutBig = BigInt(bestBridgeQuote.minDestinationAmountRaw);
       let destDexQuote = null;
@@ -283,7 +277,6 @@ export class CrossChainAggregator {
     const { request, userAddress } = params;
     let quotes = await this.getQuotes(request);
 
-    // If direct bridge quotes are unavailable, evaluate multi-hop connector routes
     if (quotes.length === 0) {
       quotes = await this.findConnectorBridgeQuotes(request);
     }
@@ -349,7 +342,7 @@ export class CrossChainAggregator {
         try {
           execution = await this.buildExecution(quote, userAddress, request.recipientAddress);
         } catch {
-          // Execution will be constructed upon wallet connection
+
         }
       }
 

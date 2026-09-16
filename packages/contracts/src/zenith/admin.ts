@@ -1,10 +1,5 @@
 import { ConfigurationError } from '../errors';
 
-/**
- * ZENITH Protocol Governance & Emergency Admin Registry
- *
- * All addresses remain strictly UNDEFINED until configured.
- */
 export const ZENITH_ADMIN: Record<string | number, string | undefined> = {
   1: undefined,
   10: undefined,

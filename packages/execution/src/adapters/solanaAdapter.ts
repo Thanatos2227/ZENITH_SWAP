@@ -42,7 +42,7 @@ export class SolanaExecutionAdapter {
     params.onStatusChange?.('SIGNING');
 
     try {
-      // Build and send through real connected Solana wallet provider
+
       const response = await walletProvider.signAndSendTransaction({
         instructions: [],
         feePayer: userPublicKey

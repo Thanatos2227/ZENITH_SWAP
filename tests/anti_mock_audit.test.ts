@@ -11,4 +11,3 @@ test('ZENITH Anti-Mock and Anti-Simulation Policy Audit', () => {
 
   assert.equal(violations.length, 0, `Expected 0 violations but found ${violations.length}`);
 });
-

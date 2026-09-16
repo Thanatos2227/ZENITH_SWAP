@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
@@ -12,12 +11,6 @@ interface IZenithV2FeeController {
     function protocolFeeBps() external view returns (uint256);
 }
 
-/**
- * @title ZenithV2Pool
- * @notice Sovereign multi-tier AMM liquidity pool for ZENITH SWAP V2.
- * @dev Supports dynamic configurable fee tiers (e.g. 5, 30, 100 bps), protocol fee revenue split,
- *      and TWAP cumulative oracle price observations.
- */
 contract ZenithV2Pool is IERC20 {
     string public name;
     string public symbol;
@@ -32,7 +25,7 @@ contract ZenithV2Pool is IERC20 {
     address public factory;
     address public token0;
     address public token1;
-    uint24  public feeBps; // Total fee in BPS (e.g. 30 = 0.30%)
+    uint24  public feeBps;
 
     uint112 private reserve0;
     uint112 private reserve1;
@@ -230,7 +223,7 @@ contract ZenithV2Pool is IERC20 {
             if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out);
             if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out);
             if (data.length > 0) {
-                // Optional flash swap hook
+
                 (bool success, ) = to.call(data);
                 require(success, "ZenithV2Pool: CALLBACK_FAILED");
             }

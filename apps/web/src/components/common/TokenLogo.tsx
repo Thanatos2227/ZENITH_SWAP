@@ -23,7 +23,6 @@ export const TokenLogo: React.FC<TokenLogoProps> = ({
   const [triedFallbackUrl, setTriedFallbackUrl] = useState(false);
   const [currentSrc, setCurrentSrc] = useState<string | undefined>(logoURI);
 
-  // Helper to generate secondary fallback URL from TrustWallet raw GitHub repo if address exists
   const getTrustWalletFallback = (): string | null => {
     if (!address || !chainId || isNative || address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') {
       return null;
@@ -68,7 +67,6 @@ export const TokenLogo: React.FC<TokenLogoProps> = ({
     setImgError(true);
   };
 
-  // If logoURI changes via props, reset error states
   React.useEffect(() => {
     setCurrentSrc(logoURI);
     setImgError(false);
@@ -88,7 +86,6 @@ export const TokenLogo: React.FC<TokenLogoProps> = ({
     );
   }
 
-  // Styled Initials Avatar Fallback
   const displaySymbol = symbol ? symbol.toUpperCase().slice(0, 3) : 'TOK';
   const initialChars = displaySymbol.slice(0, 2);
 

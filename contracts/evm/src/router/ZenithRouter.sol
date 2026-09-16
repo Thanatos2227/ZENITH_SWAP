@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
@@ -9,12 +8,6 @@ import "../v1/ZenithV1Router.sol";
 import "../v2/ZenithV2Router.sol";
 import "../v3/ZenithV3Router.sol";
 
-/**
- * @title ZenithRouter
- * @notice Unified Aggregating Router for ZENITH SWAP.
- * @dev Aggregates sovereign Zenith V1, Zenith V2, and Zenith V3 AMM tiers, routes swaps,
- *      and transparently deposits configured protocol fees to ZenithTreasury.
- */
 contract ZenithRouter {
     enum ProtocolTier { AUTO, ZENITH_V1, ZENITH_V2, ZENITH_V3 }
 
@@ -44,7 +37,7 @@ contract ZenithRouter {
         ProtocolTier protocol;
         address tokenIn;
         address tokenOut;
-        uint24 feeTier; // For V2 (in BPS) or V3 (in hundredths of a pip)
+        uint24 feeTier;
         uint256 amountIn;
         uint256 amountOutMinimum;
         address recipient;
@@ -113,7 +106,6 @@ contract ZenithRouter {
             _safeTransferFrom(params.tokenIn, msg.sender, address(this), params.amountIn);
         }
 
-        // Calculate and forward protocol fee share to ZenithTreasury
         uint256 feeBps = feeController.protocolFeeBps();
         uint256 protocolFee = (params.amountIn * feeBps) / 10000;
         uint256 swapAmountIn = params.amountIn - protocolFee;
@@ -125,7 +117,6 @@ contract ZenithRouter {
             treasury.depositERC20Fee(actualTokenIn, protocolFee);
         }
 
-        // Route to the designated Zenith AMM tier
         if (params.protocol == ProtocolTier.ZENITH_V1 || (params.protocol == ProtocolTier.AUTO && address(v1Router) != address(0))) {
             _safeApprove(actualTokenIn, address(v1Router), swapAmountIn);
             address[] memory path = new address[](2);

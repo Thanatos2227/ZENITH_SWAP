@@ -1,29 +1,24 @@
 import { ConfigurationError } from '../errors';
 
-/**
- * Uniswap Permit2 Canonical Deployment
- * Deployed at the identical deterministic CREATE2 address on all supported EVM chains.
- * Verification Source: https://github.com/Uniswap/permit2
- */
 export const PERMIT2_CANONICAL_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 export const PERMIT2_SUPPORTED_CHAINS: ReadonlySet<number> = new Set([
-  1,      // Ethereum Mainnet
-  10,     // Optimism
-  56,     // BNB Chain
-  137,    // Polygon
-  324,    // ZKsync Era
-  8453,   // Base
-  42161,  // Arbitrum One
-  43114,  // Avalanche C-Chain
-  59144,  // Linea
-  534352, // Scroll
-  81457,  // Blast
-  34443,  // Mode
-  1101,   // Polygon zkEVM
-  42220,  // Celo
-  100,    // Gnosis
-  252     // Fraxtal
+  1,
+  10,
+  56,
+  137,
+  324,
+  8453,
+  42161,
+  43114,
+  59144,
+  534352,
+  81457,
+  34443,
+  1101,
+  42220,
+  100,
+  252
 ]);
 
 export function getPermit2Address(chainId: number): string {

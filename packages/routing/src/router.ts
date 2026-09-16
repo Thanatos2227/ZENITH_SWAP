@@ -134,7 +134,6 @@ export class ZenithRouter {
       amountOutNum = Number(formatTokenUnits(amountOutBig, tokenOutDecimals));
       minimumReceivedNum = Number(formatTokenUnits(BigInt(minimumReceivedRaw), tokenOutDecimals));
 
-      // Build execution if caller is provided
       if (callerAddress && !bestRoute.execution) {
         try {
           bestRoute.execution = await this.crossChainAggregator.buildExecution(
@@ -143,7 +142,7 @@ export class ZenithRouter {
             targetRecipient || callerAddress
           );
         } catch {
-          // Execution constructed upon wallet connection
+
         }
       }
     } else {
@@ -177,7 +176,7 @@ export class ZenithRouter {
         if (amountOutNum > MAX_SWAP_AMOUNT_NUM) {
           throw new Error(`Swap amount (${amountOutNum.toLocaleString()}) exceeds maximum allowed limit of ${MAX_SWAP_AMOUNT_NUM.toLocaleString()}`);
         }
-        // Approximate initial input for exact output search
+
         const spotRatio = priceOutUSD / priceInUSD;
         const expectedInNum = amountOutNum * spotRatio * (10000 / 9970);
         const rawInStr = parseTokenUnits(expectedInNum.toFixed(Math.min(tokenInDecimals, 18)), tokenInDecimals);
@@ -195,7 +194,7 @@ export class ZenithRouter {
       });
 
       if (dexQuotes.length === 0) {
-        // Attempt Multi-Hop via canonical connector (WETH)
+
         const connectorToken: Token = {
           address: sourceChain.id === 'polygon' ? '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' : '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
           chainId: sourceChain.id,
@@ -297,7 +296,7 @@ export class ZenithRouter {
               deadlineSeconds
             );
           } catch {
-            // Execution will be built on-demand if signer provides parameters
+
           }
         }
 
@@ -322,10 +321,9 @@ export class ZenithRouter {
         });
       }
 
-      // Add SOR candidate execution pathways (concentrated AMM, gasless intent, split route)
       if (routes.length > 0) {
         const primary = routes[0];
-        // Split-route candidate
+
         routes.push({
           id: `route-split-${sourceChain.id}`,
           routeType: 'SPLIT_ROUTE',
@@ -354,7 +352,6 @@ export class ZenithRouter {
           estimatedGasUnits: primary.estimatedGasUnits
         });
 
-        // ZENITH v4 Concentrated SOR candidate
         routes.push({
           id: `route-zenith-v4-${sourceChain.id}`,
           routeType: 'DIRECT',
@@ -374,7 +371,6 @@ export class ZenithRouter {
           estimatedGasUnits: 135000n
         });
 
-        // ZENITH Dutch Intent (UniswapX RFQ) SOR candidate
         routes.push({
           id: `route-zenith-dutch-${sourceChain.id}`,
           routeType: 'DIRECT',
@@ -414,7 +410,6 @@ export class ZenithRouter {
     const tradeValueUSD = amountInNum * priceInUSD;
     const executionPrice = amountInNum > 0 && amountOutNum > 0 ? (amountOutNum / amountInNum) : (priceInUSD / priceOutUSD);
 
-    // QUOTE SANITY INVARIANT CHECK:
     if (amountInBig <= 0n || amountOutBig <= 0n || amountInNum <= 0 || amountOutNum <= 0) {
       throw new ConfigurationError('QUOTE_INVALID: Quoted amount is zero or negative', 'QUOTE_INVALID');
     }
@@ -472,7 +467,6 @@ export class ZenithRouter {
       hasBridgeStep: isCrossChain
     });
 
-    // Build authoritative ExecutableTransaction if route has execution info and user connected
     let executableTransaction: ExecutableTransaction | undefined = undefined;
     if (bestRoute.execution && callerAddress && sourceChain.chainId) {
       executableTransaction = {
@@ -520,7 +514,6 @@ export class ZenithRouter {
       validation.errors.push('Executable transaction could not be constructed');
     }
 
-    // Pre-flight simulation using authoritative target and calldata
     const routerAddress = isCrossChain
       ? bestRoute.crossChainQuote?.executionTarget
       : (bestRoute.dexQuote?.executionTarget || (sourceChain.executionEnvironment === 'EVM' ? EVMContractRegistry.getPrimaryRouter(sourceChainIdNum) : undefined));

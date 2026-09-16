@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 import { DEXProtocol, Token } from '@zenith/types';
 import { Interface } from 'ethers';
 import {
@@ -59,7 +58,7 @@ export class ZenithV1Provider implements DEXProvider {
         minimumOutRaw: calculated.minimumAmountOut.toString(),
         feeAmount: calculated.feeAmount,
         feeAmountRaw: calculated.feeAmount.toString(),
-        feeTierBps: 30, // 0.30%
+        feeTierBps: 30,
         priceImpactPercent: calculated.priceImpactPercent,
         executionTarget: routerAddress,
         approvalTarget: routerAddress,

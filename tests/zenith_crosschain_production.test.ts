@@ -26,32 +26,24 @@ import {
 import { DEFAULT_TOKENS } from '../packages/tokens/src';
 import { CrossChainIntent, SwapRoute } from '../packages/types/src';
 
-// =========================================================================
-// 1. Centralized Contracts & Registry Verification
-// =========================================================================
 test('Contracts Registry: Across, Stargate, deBridge, and Fail-Closed Treasury', () => {
-  // Across SpokePool verified addresses across EVM chains
+
   assert.equal(ACROSS_SPOKE_POOLS[1], '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5');
   assert.equal(ACROSS_SPOKE_POOLS[42161], '0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A');
   assert.equal(ACROSS_SPOKE_POOLS[10], '0x6f26Bf09B1C792e3228e5467807a900A50DeECAa');
   assert.equal(ACROSS_SPOKE_POOLS[8453], '0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64');
 
-  // Stargate V2 Routers
   assert.equal(STARGATE_V2_ROUTERS[1], '0x8731d54E9D02c286767d56ac03e8037C07e01e98');
   assert.equal(STARGATE_V2_ROUTERS[42161], '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614');
 
-  // deBridge DLN Source
   assert.equal(DEBRIDGE_DLN_SOURCE[1], '0xeF4fB24aD0916217251F553c0596F8Edc630EB66');
 
-  // Permit2 canonical address
   assert.equal(getPermit2Address(1), '0x000000000022D473030F116dDEE9F6B43aC78BA3');
   assert.equal(getPermit2Address(42161), '0x000000000022D473030F116dDEE9F6B43aC78BA3');
 
-  // Uniswap V3 Routers (SwapRouter02 canonical)
   assert.equal(getUniswapV3Router(1), '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45');
   assert.equal(getUniswapV3Router(8453), '0x2626664c2603336E57B271c5C0b26F421741e481');
 
-  // Treasury Address fails closed when unconfigured
   assert.throws(() => {
     getZenithTreasuryAddress(1);
   }, /ZENITH Treasury address is not configured/);
@@ -61,9 +53,6 @@ test('Contracts Registry: Across, Stargate, deBridge, and Fail-Closed Treasury',
   }, /ZENITH Treasury address is not configured/);
 });
 
-// =========================================================================
-// 2. Cross-Chain Provider Live Quoting & Calldata Encoding
-// =========================================================================
 test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding', async () => {
   const provider = new AcrossProvider();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
@@ -77,7 +66,7 @@ test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding
     destinationChainId: 'arbitrum',
     tokenIn,
     tokenOut,
-    amountInRaw: '1000000000', // 1000 USDC (6 decimals)
+    amountInRaw: '1000000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -98,7 +87,6 @@ test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding
     assert.equal(decoded[6].toString(), '42161');
   }
 
-  // Guaranteed execution construction check
   const sampleQuote: CrossChainQuote = {
     provider: 'ACROSS',
     providerName: 'Across Protocol V3',
@@ -141,7 +129,7 @@ test('Stargate V2 Provider: Quote Generation & Calldata Encoding', async () => {
     destinationChainId: 'arbitrum',
     tokenIn,
     tokenOut,
-    amountInRaw: '500000000', // 500 USDT
+    amountInRaw: '500000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -164,7 +152,7 @@ test('deBridge DLN Provider: Quote Generation & Calldata Encoding', async () => 
     destinationChainId: 'polygon',
     tokenIn,
     tokenOut,
-    amountInRaw: '200000000', // 200 USDC
+    amountInRaw: '200000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
@@ -176,7 +164,6 @@ test('deBridge DLN Provider: Quote Generation & Calldata Encoding', async () => 
     assert.ok(quote.calldata.startsWith('0x'));
   }
 
-  // Guaranteed execution construction check
   const sampleQuote: CrossChainQuote = {
     provider: 'DEBRIDGE_DLN',
     providerName: 'deBridge DLN',
@@ -208,9 +195,6 @@ test('deBridge DLN Provider: Quote Generation & Calldata Encoding', async () => 
   assert.ok(execution.data.startsWith('0x'));
 });
 
-// =========================================================================
-// 3. Cross-Chain Multi-Provider Aggregation
-// =========================================================================
 test('CrossChainAggregator: Multi-Provider Quote Ranking and Fallback', async () => {
   const aggregator = defaultCrossChainAggregator;
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
@@ -230,7 +214,6 @@ test('CrossChainAggregator: Multi-Provider Quote Ranking and Fallback', async ()
   assert.ok(quotes.length >= 1, 'Should return available bridge quotes');
   assert.ok(quotes[0].destinationAmountRaw, 'Best quote should have destination amount');
 
-  // Verify quotes are strictly sorted by net destination output descending
   for (let i = 0; i < quotes.length - 1; i++) {
     assert.ok(
       BigInt(quotes[i].destinationAmountRaw) >= BigInt(quotes[i + 1].destinationAmountRaw),
@@ -252,9 +235,6 @@ test('CrossChainAggregator: Multi-Provider Quote Ranking and Fallback', async ()
   assert.ok(BigInt(bestQuote.destinationAmountRaw) > 0n);
 });
 
-// =========================================================================
-// 4. Recipient Security Invariant Enforcement
-// =========================================================================
 test('Security Invariant: Recipient Mismatch Must Fail Closed with RecipientMismatchError', async () => {
   const connectedUser = '0x1234567890123456789012345678901234567890';
   const attackerAddress = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
@@ -282,7 +262,7 @@ test('Security Invariant: Recipient Mismatch Must Fail Closed with RecipientMism
     destinationToken: tokenOut,
     sourceAmountRaw: '100000000',
     minDestinationAmountRaw: bestQuote.destinationAmountRaw,
-    recipient: attackerAddress, // Different from connectedUser
+    recipient: attackerAddress,
     deadline: Math.floor(Date.now() / 1000) + 3600,
     nonce: 1,
     solverId: bestQuote.provider,
@@ -347,7 +327,7 @@ test('Security Invariant: Recipient Mismatch Must Fail Closed with RecipientMism
     async () => {
       await coordinator.executeTrade({
         quote: quoteResponse,
-        userAddress: connectedUser // Connected address differs from intent recipient
+        userAddress: connectedUser
       });
     },
     (err: unknown) => {
@@ -357,9 +337,6 @@ test('Security Invariant: Recipient Mismatch Must Fail Closed with RecipientMism
   );
 });
 
-// =========================================================================
-// 5. Signer Requirement & Anti-Simulation Invariant
-// =========================================================================
 test('Execution Invariant: Signer Required for Real EVM Execution', async () => {
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
   const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
@@ -446,13 +423,12 @@ test('Execution Invariant: Signer Required for Real EVM Execution', async () => 
 
   const coordinator = new ExecutionCoordinator();
 
-  // Executing without providing signer must throw SignerRequiredError
   await assert.rejects(
     async () => {
       await coordinator.executeTrade({
         quote: quoteResponse,
         userAddress: user
-        // signer omitted
+
       });
     },
     (err: any) => {
@@ -467,9 +443,6 @@ test('Execution Invariant: Signer Required for Real EVM Execution', async () => 
   );
 });
 
-// =========================================================================
-// 6. Cross-Chain Order Tracker & Destination Verification
-// =========================================================================
 test('CrossChainTracker: Order Lifecycle Tracking and Destination RPC Verification', async () => {
   const tracker = new CrossChainTracker();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
@@ -518,7 +491,6 @@ test('CrossChainTracker: Order Lifecycle Tracking and Destination RPC Verificati
   assert.ok(order);
   assert.equal(order.status, 'SUBMITTED');
 
-  // Destination settlement verification
   const verification = await tracker.verifyDestinationSettlement({
     destinationChainId: 'arbitrum',
     destinationTxHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
@@ -526,4 +498,3 @@ test('CrossChainTracker: Order Lifecycle Tracking and Destination RPC Verificati
   });
   assert.ok(typeof verification.isVerified === 'boolean');
 });
-

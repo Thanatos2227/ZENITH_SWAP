@@ -105,7 +105,7 @@ export const UnifiedTradingView: React.FC = () => {
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4">
       {}
-      {/* Market Header */}
+      {}
       <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800/80 shadow-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         {}
         <div className="flex flex-wrap items-center justify-between gap-4">

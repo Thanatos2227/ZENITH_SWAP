@@ -20,11 +20,6 @@ export class CrossChainIntentEngine {
     this.aggregator = aggregator;
   }
 
-  /**
-   * Fetches real competitive solver quotes from verified cross-chain aggregators.
-   * Mandate: If no live solver quotes exist, return an empty array [].
-   * Never synthesize or fabricate fallback solver quotes.
-   */
   public async getCompetitiveQuotes(intent: CrossChainIntent): Promise<SolverFillQuote[]> {
     const tokenOutDecimals = intent.destinationToken.decimals || 18;
 
@@ -55,13 +50,9 @@ export class CrossChainIntentEngine {
       });
     }
 
-    // Fail closed: Return empty quote list rather than fabricating synthetic solver quotes
     return [];
   }
 
-  /**
-   * Registers a cross-chain intent with multi-parameter replay protection.
-   */
   public registerIntent(intent: CrossChainIntent): void {
     if (!intent.orderId) {
       throw new Error('[CrossChainIntentEngine] Order ID is required');

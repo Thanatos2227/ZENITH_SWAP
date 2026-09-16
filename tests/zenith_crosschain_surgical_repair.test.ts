@@ -30,9 +30,6 @@ import {
 import { DEFAULT_TOKENS } from '../packages/tokens/src';
 import { QuoteRequest, CrossChainQuote, Token } from '../packages/types/src';
 
-// =========================================================================
-// 1. ACROSS QUOTE & DEPOSITV3 CALLDATA ENCODING
-// =========================================================================
 test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', async () => {
   const provider = new AcrossProvider();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
@@ -46,12 +43,11 @@ test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', 
     destinationChainId: 'arbitrum',
     tokenIn,
     tokenOut,
-    amountInRaw: '1000000000', // 1,000 USDC (6 decimals)
+    amountInRaw: '1000000000',
     recipient: user,
     slippageTolerancePercent: 0.5
   });
 
-  // If live Across API succeeds, verify structure; if offline, verify fail-closed
   if (quote) {
     assert.equal(quote.provider, 'ACROSS');
     assert.equal(quote.executionTarget.toLowerCase(), ACROSS_V3_SPOKE_POOLS[1].toLowerCase());
@@ -60,15 +56,14 @@ test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', 
 
     const iface = new ethers.Interface(ACROSS_SPOKE_POOL_ABI);
     const decoded = iface.decodeFunctionData('depositV3', quote.calldata);
-    assert.equal(decoded[0].toLowerCase(), user.toLowerCase()); // depositor
-    assert.equal(decoded[1].toLowerCase(), user.toLowerCase()); // recipient
-    assert.equal(decoded[2].toLowerCase(), tokenIn.address.toLowerCase()); // inputToken
-    assert.equal(decoded[3].toLowerCase(), tokenOut.address.toLowerCase()); // outputToken
-    assert.equal(decoded[4].toString(), '1000000000'); // inputAmount
-    assert.equal(decoded[6].toString(), '42161'); // destinationChainId
+    assert.equal(decoded[0].toLowerCase(), user.toLowerCase());
+    assert.equal(decoded[1].toLowerCase(), user.toLowerCase());
+    assert.equal(decoded[2].toLowerCase(), tokenIn.address.toLowerCase());
+    assert.equal(decoded[3].toLowerCase(), tokenOut.address.toLowerCase());
+    assert.equal(decoded[4].toString(), '1000000000');
+    assert.equal(decoded[6].toString(), '42161');
   }
 
-  // Verify buildExecution
   const sampleQuote: CrossChainQuote = {
     provider: 'ACROSS',
     providerName: 'Across Protocol V3',
@@ -107,9 +102,6 @@ test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', 
   assert.equal(decodedExec[4].toString(), '1000000000');
 });
 
-// =========================================================================
-// 2. DEBRIDGE DLN QUOTE & CREATEORDER CALLDATA
-// =========================================================================
 test('deBridge DLN Provider: Live Quote Parsing & Order Parameter Verification', async () => {
   const provider = new DeBridgeProvider();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
@@ -156,19 +148,14 @@ test('deBridge DLN Provider: Live Quote Parsing & Order Parameter Verification',
   assert.equal(orderCreation.takeChainId.toString(), '137');
 });
 
-// =========================================================================
-// 3. STARGATE ROUTE REJECTION FOR UNSUPPORTED ASSETS & EXACT QUOTING
-// =========================================================================
 test('Stargate Provider: Route Rejection for Unsupported Assets & Canonical Routing', async () => {
   const provider = new StargateProvider();
   const tokenInUSDC = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.symbol === 'USDC')!;
   const tokenOutUSDC = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
-  const unsupportedToken = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.isNative)!; // POL
+  const unsupportedToken = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.isNative)!;
 
-  // Supported asset
   assert.equal(provider.isAvailable('polygon', 'arbitrum', tokenInUSDC, tokenOutUSDC), true);
 
-  // Unsupported asset (POL cannot be bridged via Stargate)
   assert.equal(provider.isAvailable('polygon', 'arbitrum', unsupportedToken, tokenOutUSDC), false);
 
   const rejectedQuote = await provider.getQuote({
@@ -181,13 +168,12 @@ test('Stargate Provider: Route Rejection for Unsupported Assets & Canonical Rout
   });
   assert.equal(rejectedQuote, null);
 
-  // Valid asset quote
   const validQuote = await provider.getQuote({
     sourceChainId: 'polygon',
     destinationChainId: 'arbitrum',
     tokenIn: tokenInUSDC,
     tokenOut: tokenOutUSDC,
-    amountInRaw: '100000000', // 100 USDC
+    amountInRaw: '100000000',
     recipient: '0x8ba1f109551bD432803012645Ac136ddd64DBA72',
     slippageTolerancePercent: 0.5
   });
@@ -198,28 +184,20 @@ test('Stargate Provider: Route Rejection for Unsupported Assets & Canonical Rout
   assert.ok(BigInt(validQuote.destinationAmountRaw) > 0n);
 });
 
-// =========================================================================
-// 4. DECIMAL SCALING & EXACT RAW INTEGER MATH
-// =========================================================================
 test('Decimal Correctness: Exact BigInt unit scaling without floating point errors', () => {
-  // 1 POL (18 decimals) -> 6 decimals
-  const rawPol = 1000000000000000000n; // 10^18
+
+  const rawPol = 1000000000000000000n;
   const scaled6 = scaleTokenUnits(rawPol, 18, 6);
-  assert.equal(scaled6, 1000000n); // 10^6
+  assert.equal(scaled6, 1000000n);
 
-  // 100 USDC (6 decimals) -> 18 decimals
-  const rawUsdc = 100000000n; // 100 * 10^6
+  const rawUsdc = 100000000n;
   const scaled18 = scaleTokenUnits(rawUsdc, 6, 18);
-  assert.equal(scaled18, 100000000000000000000n); // 100 * 10^18
+  assert.equal(scaled18, 100000000000000000000n);
 
-  // Same decimals
   const rawDai = 50000000000000000000n;
   assert.equal(scaleTokenUnits(rawDai, 18, 18), rawDai);
 });
 
-// =========================================================================
-// 5. SAME-CHAIN BRIDGE REJECTION
-// =========================================================================
 test('Provider Selection: Same-Chain Bridge Requests Must Return Empty Routes', async () => {
   const aggregator = new CrossChainAggregator();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.isNative)!;
@@ -237,9 +215,6 @@ test('Provider Selection: Same-Chain Bridge Requests Must Return Empty Routes', 
   assert.equal(quotes.length, 0, 'Same-chain requests must never select bridge providers');
 });
 
-// =========================================================================
-// 6. EVM ADAPTER: SIMULATION-TO-SUBMISSION CONSISTENCY ASSERTION
-// =========================================================================
 test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', async () => {
   const adapter = new EVMExecutionAdapter();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'polygon' && t.symbol === 'USDC')!;
@@ -291,7 +266,6 @@ test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', asyn
     }
   };
 
-  // Signer required check
   await assert.rejects(
     async () => {
       await adapter.executeSwap({
@@ -305,7 +279,6 @@ test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', asyn
     }
   );
 
-  // Mock signer execution flow
   let simulatedTx: any = null;
   let submittedTx: any = null;
 
@@ -328,7 +301,7 @@ test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', asyn
       };
     },
     provider: {
-      call: async () => '0x0000000000000000000000000000000000000000000000000000000005f5e100', // 100,000,000 allowance
+      call: async () => '0x0000000000000000000000000000000000000000000000000000000005f5e100',
       getFeeData: async () => ({ gasPrice: 30000000000n }),
       getTransactionReceipt: async (hash: string) => ({
         status: 1,
@@ -354,15 +327,11 @@ test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', asyn
   assert.ok(statuses.includes('SIGNING'));
   assert.ok(statuses.includes('BRIDGE_IN_FLIGHT'));
 
-  // Assert simulation == submission target and data
   assert.equal(simulatedTx.to.toLowerCase(), submittedTx.to.toLowerCase());
   assert.equal(simulatedTx.data, submittedTx.data);
   assert.equal(simulatedTx.value.toString(), submittedTx.value.toString());
 });
 
-// =========================================================================
-// 7. CROSS-CHAIN TRACKER: DESTINATION VERIFICATION
-// =========================================================================
 test('CrossChainTracker: Destination Settlement Verification on RPC', async () => {
   const tracker = new CrossChainTracker();
   const user = '0x8ba1f109551bD432803012645Ac136ddd64DBA72';
@@ -373,6 +342,5 @@ test('CrossChainTracker: Destination Settlement Verification on RPC', async () =
     expectedRecipient: user
   });
 
-  // Verification succeeds or gracefully handles RPC lag
   assert.ok(typeof verification.isVerified === 'boolean');
 });

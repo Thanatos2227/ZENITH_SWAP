@@ -14,7 +14,6 @@ export class MEVRouter {
   public resolveMEVRoute(chainId: string, preferredLevel: MEVProtectionLevel): MEVRouteConfig {
     const normChain = chainId.toLowerCase();
 
-    // Flashbots / Private RPC is strictly available on Ethereum Mainnet
     if (normChain === 'ethereum' || normChain === '1') {
       if (preferredLevel === 'FLASHBOTS_PRIVATE') {
         return {
@@ -38,8 +37,6 @@ export class MEVRouter {
       }
     }
 
-    // On L2s with centralized/FIFO sequencers (Arbitrum, Base, Optimism), MEV is mitigated by sequencer design,
-    // but Flashbots private mempool is NOT available.
     const hasSequencerProtection = ['arbitrum', 'base', 'optimism'].includes(normChain);
 
     return {

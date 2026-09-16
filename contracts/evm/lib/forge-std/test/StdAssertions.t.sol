@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
 pragma solidity >=0.8.13 <0.9.0;
 
 import {StdAssertions} from "../src/StdAssertions.sol";
@@ -104,7 +103,6 @@ contract StdAssertionsTest is StdAssertions {
         this.assertEqCallExternal(targetB, callDataB, targetA, callDataA, strictRevertData);
     }
 
-    // Helper function to test outcome of assertEqCall via `expect` cheatcodes
     function assertEqCallExternal(
         address targetA,
         bytes memory callDataA,

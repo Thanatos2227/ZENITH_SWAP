@@ -1,5 +1,3 @@
-
-
 export const MAX_SWAP_AMOUNT_STR = '9999999.999';
 export const MAX_SWAP_AMOUNT_NUM = 9999999.999;
 export const MAX_DECIMAL_PLACES = 3;

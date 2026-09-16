@@ -47,9 +47,9 @@ export const Navbar: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/90 bg-[#080B11]/90 backdrop-blur-md transition-colors duration-200">
-      {/* Top Row: Brand on Left, Utility / Wallet Controls on Right */}
+      {}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        {/* Left: Branding */}
+        {}
         <div
           onClick={() => setActiveTab('TRADE')}
           className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group select-none shrink-0"
@@ -107,7 +107,7 @@ export const Navbar: React.FC = () => {
             )}
           </button>
 
-          {/* Theme Toggle */}
+          {}
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-yellow-400 transition-colors shrink-0"

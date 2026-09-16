@@ -1,13 +1,3 @@
-/**
- * Static Anti-Mock Audit Script for ZENITH
- *
- * Scans packages/ and apps/web/src/ for prohibited mock/simulation patterns:
- * 1. Prohibited dummy/fake addresses used as routers or recipients
- * 2. Math.random() usage in execution, transaction hashing, or signature creation
- * 3. Fake delay-based settlements (setTimeout pretending to mine/bridge)
- * 4. Fake solver bonus calculations
- */
-
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -99,7 +89,7 @@ export function runAudit(): AuditViolation[] {
             if (pattern.regex.test(line)) {
               const allowed = pattern.allowInFiles?.some((p) => p.test(fullPath));
               if (!allowed) {
-                // Ignore comments explaining anti-mock rules
+
                 if (line.trim().startsWith('//') || line.trim().startsWith('*')) {
                   return;
                 }

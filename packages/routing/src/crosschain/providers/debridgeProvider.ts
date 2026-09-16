@@ -69,12 +69,11 @@ export class DeBridgeProvider implements CrossChainProvider {
     let bridgeFeeUSD = 0;
     let relayerFee = '0.04%';
 
-    // Fetch authoritative live deBridge DLN API quote
     try {
       const url = `https://dln.debridge.finance/v1.0/dln/order/quote?srcChainId=${srcChain.chainId}&srcChainTokenIn=${validatedInputToken}&srcChainTokenInAmount=${amountInBig.toString()}&dstChainId=${dstChain.chainId}&dstChainTokenOut=${validatedOutputToken}&prependOperatingExpense=true`;
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (!res.ok) {
-        // deBridge DLN does not support this route or API returned error — fail closed
+
         return null;
       }
 
@@ -110,7 +109,7 @@ export class DeBridgeProvider implements CrossChainProvider {
         relayerFee = `${Number(data.estimation.percentFee).toFixed(4)}%`;
       }
     } catch {
-      // API timeout/offline: Fail closed (no synthetic fallback allowed)
+
       return null;
     }
 
@@ -266,7 +265,7 @@ export class DeBridgeProvider implements CrossChainProvider {
         }
       }
     } catch {
-      // deBridge network lookup delay
+
     }
 
     return {

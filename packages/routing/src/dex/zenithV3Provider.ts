@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 import { DEXProtocol, Token } from '@zenith/types';
 import { Interface } from 'ethers';
 import {
@@ -102,7 +101,7 @@ export class ZenithV3Provider implements DEXProvider {
       [
         tokenInAddr,
         tokenOutAddr,
-        (quote.feeTierBps || 30) * 100, // fee in pips (3000 = 0.30%)
+        (quote.feeTierBps || 30) * 100,
         recipient,
         swapDeadline,
         quote.amountIn,

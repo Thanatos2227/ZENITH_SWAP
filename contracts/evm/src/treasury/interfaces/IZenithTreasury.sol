@@ -1,12 +1,7 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-/**
- * @title IZenithTreasury
- * @notice Interface for the Sovereign Protocol Treasury Vault of ZENITH SWAP.
- */
 interface IZenithTreasury {
-    // Custom Errors
+
     error OnlyGovernance();
     error ProtocolPaused();
     error UnauthorizedCollector(address caller);
@@ -16,7 +11,6 @@ interface IZenithTreasury {
     error TransferFailed();
     error NotPendingGovernance();
 
-    // Events
     event FeeReceived(address indexed token, address indexed collector, uint256 amount);
     event DirectNativeReceived(address indexed from, uint256 amount);
     event TreasuryWithdrawal(address indexed token, address indexed recipient, uint256 amount);
@@ -27,7 +21,6 @@ interface IZenithTreasury {
     event GovernanceTransferInitiated(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
 
-    // View functions
     function governance() external view returns (address);
     function pendingGovernance() external view returns (address);
     function isEmergencyPaused() external view returns (bool);
@@ -37,7 +30,6 @@ interface IZenithTreasury {
     function getTreasuryBalance(address token) external view returns (uint256);
     function getCollectedFees(address token) external view returns (uint256);
 
-    // State changing functions
     function depositERC20Fee(address token, uint256 amount) external;
     function depositNativeFee() external payable;
     function withdraw(address token, address payable recipient, uint256 amount) external;

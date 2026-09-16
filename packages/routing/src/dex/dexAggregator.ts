@@ -20,12 +20,11 @@ export class DEXAggregator {
         this.providers.set(p.protocol, p);
       }
     } else {
-      // Sovereign Zenith AMM Protocol Tier Providers
+
       this.registerProvider(new ZenithV3Provider());
       this.registerProvider(new ZenithV2Provider());
       this.registerProvider(new ZenithV1Provider());
 
-      // Secondary Network Liquidity Providers
       this.registerProvider(new UniswapV3Provider());
       this.registerProvider(new QuickSwapProvider());
       this.registerProvider(new AerodromeProvider());
@@ -77,7 +76,6 @@ export class DEXAggregator {
       }
     }
 
-    // Sort descending by amountOut (best net output first)
     validQuotes.sort((a, b) => {
       if (b.amountOut > a.amountOut) return 1;
       if (b.amountOut < a.amountOut) return -1;

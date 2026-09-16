@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
@@ -17,12 +16,6 @@ interface IZenithV3SwapCallback {
     function zenithV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external;
 }
 
-/**
- * @title ZenithV3Pool
- * @notice Sovereign concentrated liquidity AMM pool for ZENITH SWAP V3.
- * @dev Implements discrete tick tracking, tick bitmaps, discrete fee growth global/inside,
- *      and integer sqrtPrice arithmetic without floating-point approximations.
- */
 contract ZenithV3Pool {
     using TickBitmap for mapping(int16 => uint256);
 
@@ -109,10 +102,9 @@ contract ZenithV3Pool {
 
     constructor() {
         factory = msg.sender;
-        (token0, token1, fee, tickSpacing) = (address(0), address(0), 0, 0); // Temporary, initialized below
+        (token0, token1, fee, tickSpacing) = (address(0), address(0), 0, 0);
     }
 
-    // Initialize parameters on creation
     function initializePool(address _token0, address _token1, uint24 _fee, int24 _tickSpacing) external {
         require(msg.sender == factory, "ZenithV3Pool: FORBIDDEN");
         assembly {

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ZenithV3Pool.sol";
@@ -6,10 +5,6 @@ import "./ZenithV3Factory.sol";
 import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH9.sol";
 
-/**
- * @title ZenithV3Router
- * @notice Multicall swap router for ZENITH SWAP V3 concentrated liquidity pools.
- */
 contract ZenithV3Router is IZenithV3SwapCallback {
     address public immutable factory;
     address public immutable WETH9;
