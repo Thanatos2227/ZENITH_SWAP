@@ -1,5 +1,5 @@
 import React from 'react';
-import { useZenithStore } from '../../stores/useZenithStore';
+import { useZenithStore, resolveTokenBalance } from '../../stores/useZenithStore';
 import { formatAddress } from '../../utils/walletDetector';
 import { defaultTokenService } from '@zenith/tokens';
 import { defaultChainRegistry } from '@zenith/chains';
@@ -25,14 +25,7 @@ export const PortfolioView: React.FC = () => {
     : [];
 
   const userTokens = chainTokens.map((token) => {
-    const keyExact = `${sourceChain.id}:${token.address}`;
-    const keyLower = `${sourceChain.id}:${token.address.toLowerCase()}`;
-    const nativeKey = `${sourceChain.id}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`;
-    const balStr =
-      walletBalances[keyExact] ??
-      walletBalances[keyLower] ??
-      (token.isNative ? walletBalances[nativeKey] : undefined) ??
-      '0.00';
+    const balStr = resolveTokenBalance(sourceChain.id, token, walletBalances);
     const balance = parseFloat(balStr) || 0;
     return {
       token,

@@ -275,11 +275,17 @@ export class CrossChainAggregator {
     userAddress?: string;
   }): Promise<SwapRoute[]> {
     const { request, userAddress } = params;
-    let quotes = await this.getQuotes(request);
+    let directQuotes = await this.getQuotes(request);
+    let connectorQuotes: CrossChainQuote[] = [];
 
-    if (quotes.length === 0) {
-      quotes = await this.findConnectorBridgeQuotes(request);
+    const isDifferentSymbol =
+      (request.tokenIn.symbol || '').toUpperCase() !== (request.tokenOut.symbol || '').toUpperCase();
+
+    if (directQuotes.length === 0 || isDifferentSymbol) {
+      connectorQuotes = await this.findConnectorBridgeQuotes(request);
     }
+
+    const quotes = [...connectorQuotes, ...directQuotes];
 
     if (quotes.length === 0) {
       return [];

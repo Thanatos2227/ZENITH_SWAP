@@ -413,15 +413,28 @@ export function calculateDEXLiquidityOutput(params: {
   if (amountIn <= 0n) return null;
 
   const pool = findVerifiedPool(chainId, tokenIn.address, tokenOut.address);
-  if (!pool) {
-    return null;
-  }
+  let reserveIn: bigint;
+  let reserveOut: bigint;
+  let effectiveFeeBps: number;
 
-  let reserveIn: bigint = pool.reserveIn;
-  let reserveOut: bigint = pool.reserveOut;
-  const effectiveFeeBps: number = feeTierBps !== undefined ? feeTierBps : pool.feeBps;
+  if (pool) {
+    reserveIn = pool.reserveIn;
+    reserveOut = pool.reserveOut;
+    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : pool.feeBps;
 
-  if (tokenIn.priceUSD && tokenOut.priceUSD && tokenIn.priceUSD > 0 && tokenOut.priceUSD > 0) {
+    if (tokenIn.priceUSD && tokenOut.priceUSD && tokenIn.priceUSD > 0 && tokenOut.priceUSD > 0) {
+      const marketRatio = tokenIn.priceUSD / tokenOut.priceUSD;
+      const inDec = tokenIn.decimals !== undefined ? tokenIn.decimals : 18;
+      const outDec = tokenOut.decimals !== undefined ? tokenOut.decimals : 18;
+      const baseReserveInUnits = 10_000_000;
+      reserveIn = BigInt(baseReserveInUnits) * 10n ** BigInt(inDec);
+      const expectedOutUnits = baseReserveInUnits * marketRatio;
+      const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDec, 8)), outDec);
+      if (BigInt(outRawStr) > 0n) {
+        reserveOut = BigInt(outRawStr);
+      }
+    }
+  } else if (tokenIn.priceUSD && tokenOut.priceUSD && tokenIn.priceUSD > 0 && tokenOut.priceUSD > 0) {
     const marketRatio = tokenIn.priceUSD / tokenOut.priceUSD;
     const inDec = tokenIn.decimals !== undefined ? tokenIn.decimals : 18;
     const outDec = tokenOut.decimals !== undefined ? tokenOut.decimals : 18;
@@ -431,7 +444,12 @@ export function calculateDEXLiquidityOutput(params: {
     const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDec, 8)), outDec);
     if (BigInt(outRawStr) > 0n) {
       reserveOut = BigInt(outRawStr);
+    } else {
+      return null;
     }
+    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
+  } else {
+    return null;
   }
 
   const result = calculateConstantProductOutput({

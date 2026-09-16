@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { BrowserProvider, JsonRpcSigner, JsonRpcProvider, Contract, formatEther, formatUnits, Provider } from 'ethers';
+import { BrowserProvider, JsonRpcSigner, JsonRpcProvider, Contract, formatEther, formatUnits, Provider, ZeroAddress } from 'ethers';
 import {
   ChainConfig,
   ExecutionStep,
@@ -269,6 +269,50 @@ export const resolveTokenLivePrice = (token: Token, marketDataRecord: Record<str
   }
 
   return 0;
+};
+
+export const resolveTokenBalance = (
+  chainId: string,
+  token: Token,
+  walletBalances: Record<string, string>
+): string => {
+  if (!walletBalances || !token) return '0.00';
+  const cId = chainId.toLowerCase();
+  const addr = token.address || '';
+  const addrLower = addr.toLowerCase();
+
+  const keys = [
+    `${chainId}:${addr}`,
+    `${chainId}:${addrLower}`,
+    `${cId}:${addr}`,
+    `${cId}:${addrLower}`
+  ];
+
+  if (
+    token.isNative ||
+    addrLower === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+    addrLower === ZeroAddress.toLowerCase() ||
+    addrLower === 'native'
+  ) {
+    keys.push(
+      `${chainId}:${ZeroAddress}`,
+      `${chainId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`,
+      `${chainId}:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`,
+      `${chainId}:native`,
+      `${cId}:${ZeroAddress.toLowerCase()}`,
+      `${cId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`,
+      `${cId}:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`,
+      `${cId}:native`
+    );
+  }
+
+  for (const key of keys) {
+    if (walletBalances[key] !== undefined && walletBalances[key] !== null) {
+      return walletBalances[key];
+    }
+  }
+
+  return '0.00';
 };
 
 export const useZenithStore = create<ZenithState>((set, get) => {
@@ -935,8 +979,17 @@ export const useZenithStore = create<ZenithState>((set, get) => {
             const formatted = formatEther(balWei);
             const num = parseFloat(formatted);
             const valStr = isNaN(num) ? '0.00' : (num === 0 ? '0.00' : formatted);
-            newBalances[`${sourceChain.id}:${nativeToken.address}`] = valStr;
-            newBalances[`${sourceChain.id}:${nativeToken.address.toLowerCase()}`] = valStr;
+            const nativeAliases = [
+              `${sourceChain.id}:${nativeToken.address}`,
+              `${sourceChain.id}:${nativeToken.address.toLowerCase()}`,
+              `${sourceChain.id}:${ZeroAddress}`,
+              `${sourceChain.id}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`,
+              `${sourceChain.id}:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`,
+              `${sourceChain.id}:native`
+            ];
+            for (const alias of nativeAliases) {
+              newBalances[alias] = valStr;
+            }
           } catch (nativeErr) {
             console.warn(`[useZenithStore] Native balance fetch failed for ${sourceChain.id}:`, nativeErr);
           }
@@ -1124,15 +1177,11 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         }
       }
 
-      const tokenInKey = `${sourceChain.id}:${quote.request.tokenIn.address}`;
-      const tokenInKeyLower = `${sourceChain.id}:${quote.request.tokenIn.address.toLowerCase()}`;
-      const nativeKey = `${sourceChain.id}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`;
-      const nativeKeyAlt = `${sourceChain.id}:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`;
-      const userBalanceStr = walletBalances[tokenInKey] ?? walletBalances[tokenInKeyLower] ?? (quote.request.tokenIn.isNative ? (walletBalances[nativeKey] ?? walletBalances[nativeKeyAlt]) : undefined);
-      const userBalanceNum = userBalanceStr !== undefined ? parseFloat(userBalanceStr) : undefined;
+      const userBalanceStr = resolveTokenBalance(sourceChain.id, quote.request.tokenIn, walletBalances);
+      const userBalanceNum = parseFloat(userBalanceStr);
       const amountInNum = parseFloat(quote.amountInFormatted.replace(/,/g, ''));
 
-      if (userBalanceNum !== undefined && userBalanceNum < amountInNum && isWalletConnected && signer) {
+      if (!isNaN(userBalanceNum) && userBalanceNum > 0 && userBalanceNum < amountInNum && isWalletConnected && signer) {
         get().addNotification({
           title: 'Insufficient Balance',
           message: `Your wallet holds ${userBalanceStr} ${quote.request.tokenIn.symbol}, but this trade requires ${quote.amountInFormatted} ${quote.request.tokenIn.symbol}.`,

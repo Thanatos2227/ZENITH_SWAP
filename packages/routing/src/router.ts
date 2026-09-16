@@ -82,9 +82,15 @@ export class ZenithRouter {
     const effectiveTokenIn: Token = { ...request.tokenIn, priceUSD: priceInUSD };
     const effectiveTokenOut: Token = { ...request.tokenOut, priceUSD: priceOutUSD };
 
-    let amountInBig: bigint = 0n;
+    const effectiveAmountInRaw = request.amountInRaw
+      ? request.amountInRaw
+      : request.amountIn !== undefined && request.amountIn !== null
+      ? parseTokenUnits(request.amountIn.toString(), tokenInDecimals)
+      : '0';
+
+    let amountInBig: bigint = BigInt(effectiveAmountInRaw);
     let amountOutBig: bigint = 0n;
-    let amountInNum: number = 0;
+    let amountInNum: number = Number(formatTokenUnits(amountInBig, tokenInDecimals));
     let amountOutNum: number = 0;
     let maximumInputRaw: string | undefined;
     let maximumInputFormatted: string | undefined;
@@ -108,6 +114,7 @@ export class ZenithRouter {
       routes = await this.crossChainAggregator.findCrossChainRoutes({
         request: {
           ...request,
+          amountInRaw: effectiveAmountInRaw,
           tokenIn: effectiveTokenIn,
           tokenOut: effectiveTokenOut,
           userWalletAddress: callerAddress,
@@ -149,11 +156,9 @@ export class ZenithRouter {
       if (tradeType === 'EXACT_INPUT') {
         if (request.amountInRaw) {
           amountInBig = BigInt(request.amountInRaw);
-        } else if (request.amountIn) {
+        } else if (request.amountIn !== undefined && request.amountIn !== null) {
           const inStr = request.amountIn.toString();
-          amountInBig = inStr.includes('.')
-            ? BigInt(parseTokenUnits(inStr, tokenInDecimals))
-            : BigInt(inStr);
+          amountInBig = BigInt(parseTokenUnits(inStr, tokenInDecimals));
         } else {
           amountInBig = 0n;
         }
@@ -164,11 +169,9 @@ export class ZenithRouter {
       } else {
         if (request.amountOutRaw) {
           amountOutBig = BigInt(request.amountOutRaw);
-        } else if (request.amountOut) {
+        } else if (request.amountOut !== undefined && request.amountOut !== null) {
           const outStr = request.amountOut.toString();
-          amountOutBig = outStr.includes('.')
-            ? BigInt(parseTokenUnits(outStr, tokenOutDecimals))
-            : BigInt(outStr);
+          amountOutBig = BigInt(parseTokenUnits(outStr, tokenOutDecimals));
         } else {
           amountOutBig = 0n;
         }
@@ -193,7 +196,8 @@ export class ZenithRouter {
         recipient: targetRecipient || undefined
       });
 
-      if (dexQuotes.length === 0) {
+      const isConnectorPair = effectiveTokenIn.symbol !== 'WETH' && effectiveTokenOut.symbol !== 'WETH' && effectiveTokenIn.symbol !== 'ETH' && effectiveTokenOut.symbol !== 'ETH';
+      if (dexQuotes.length === 0 || isConnectorPair) {
 
         const connectorToken: Token = {
           address: sourceChain.id === 'polygon' ? '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270' : '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',

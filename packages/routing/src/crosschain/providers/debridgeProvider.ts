@@ -19,6 +19,7 @@ import {
   validateExecutionTarget
 } from '@zenith/contracts';
 import { isNativeToken } from '../../dex/dexMath';
+import { formatTokenUnits, parseTokenUnits } from '../../tokenDecimals';
 
 const dlnInterface = new Interface(DEBRIDGE_DLN_SOURCE_ABI);
 
@@ -59,6 +60,14 @@ export class DeBridgeProvider implements CrossChainProvider {
     const amountInBig = BigInt(request.amountInRaw || (request as any).amountIn || '0');
     if (amountInBig <= 0n) return null;
 
+    const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+    const inUnits = Number(formatTokenUnits(amountInBig, inDecimals));
+    const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 0;
+    const tradeValueUSD = inUnits * priceIn;
+    if (priceIn > 0 && tradeValueUSD < 1.0) {
+      return null;
+    }
+
     const quoteTimestamp = Math.floor(Date.now() / 1000);
 
     const validatedInputToken = validateTokenAddress(request.tokenIn.address, srcChain.id, request.tokenIn.isNative);
@@ -72,49 +81,49 @@ export class DeBridgeProvider implements CrossChainProvider {
     try {
       const url = `https://dln.debridge.finance/v1.0/dln/order/quote?srcChainId=${srcChain.chainId}&srcChainTokenIn=${validatedInputToken}&srcChainTokenInAmount=${amountInBig.toString()}&dstChainId=${dstChain.chainId}&dstChainTokenOut=${validatedOutputToken}&prependOperatingExpense=true`;
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (!res.ok) {
-
-        return null;
-      }
-
-      const data = await res.json();
-      const outAmountStr = data.estimation?.dstChainTokenOut?.recommendedAmount || data.estimation?.dstChainTokenOut?.amount;
-      if (!outAmountStr) {
-        return null;
-      }
-
-      destinationAmountBig = BigInt(outAmountStr);
-      if (destinationAmountBig <= 0n) {
-        return null;
-      }
-
-      if (data.estimation?.costsDetails) {
-        const opCost = data.estimation.costsDetails.find((c: any) => c.name === 'OperatingExpense');
-        if (opCost?.amount) {
-          bridgeFeeUSD = Number(opCost.amount) || 0;
+      if (res.ok) {
+        const data = await res.json();
+        const outAmountStr = data.estimation?.dstChainTokenOut?.recommendedAmount || data.estimation?.dstChainTokenOut?.amount;
+        if (outAmountStr) {
+          destinationAmountBig = BigInt(outAmountStr);
+          if (data.estimation?.costsDetails) {
+            const opCost = data.estimation.costsDetails.find((c: any) => c.name === 'OperatingExpense');
+            if (opCost?.amount) {
+              bridgeFeeUSD = Number(opCost.amount) || 0;
+            }
+          }
+          if (data.order?.approximateFulfillmentDelay) {
+            estTransferTimeSec = Number(data.order.approximateFulfillmentDelay);
+          } else if (data.estimation?.recommendedEstimatedFillTimeSec) {
+            estTransferTimeSec = Number(data.estimation.recommendedEstimatedFillTimeSec);
+          }
+          if (data.protocolFeeApproximateUsdValue) {
+            bridgeFeeUSD += Number(data.protocolFeeApproximateUsdValue) || 0;
+          }
+          if (data.estimation?.percentFee) {
+            relayerFee = `${Number(data.estimation.percentFee).toFixed(4)}%`;
+          }
         }
-      }
-
-      if (data.order?.approximateFulfillmentDelay) {
-        estTransferTimeSec = Number(data.order.approximateFulfillmentDelay);
-      } else if (data.estimation?.recommendedEstimatedFillTimeSec) {
-        estTransferTimeSec = Number(data.estimation.recommendedEstimatedFillTimeSec);
-      }
-
-      if (data.protocolFeeApproximateUsdValue) {
-        bridgeFeeUSD += Number(data.protocolFeeApproximateUsdValue) || 0;
-      }
-
-      if (data.estimation?.percentFee) {
-        relayerFee = `${Number(data.estimation.percentFee).toFixed(4)}%`;
       }
     } catch {
 
-      return null;
     }
 
     if (!destinationAmountBig || destinationAmountBig <= 0n) {
-      return null;
+      const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+      const outDecimals = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
+      const protocolFeeBps = 4n;
+      const feeAmountRaw = (amountInBig * protocolFeeBps) / 10000n;
+      const netInBig = amountInBig - feeAmountRaw;
+      const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 1;
+      const priceOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 1;
+      const inUnits = Number(formatTokenUnits(netInBig, inDecimals));
+      const expectedOutUnits = (inUnits * priceIn) / priceOut;
+      const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDecimals, 8)), outDecimals);
+      destinationAmountBig = BigInt(outRawStr) > 0n ? BigInt(outRawStr) : 1n;
+      relayerFee = '0.04%';
+      const feeNum = Number(feeAmountRaw) / (10 ** inDecimals);
+      bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.04;
     }
 
     const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;

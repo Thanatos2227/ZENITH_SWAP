@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useZenithStore, resolveTokenLivePrice } from '../../stores/useZenithStore';
+import { useZenithStore, resolveTokenLivePrice, resolveTokenBalance } from '../../stores/useZenithStore';
 import { TokenLogo } from '../common/TokenLogo';
 import {
   ArrowDownUp,
@@ -43,6 +43,7 @@ export const SwapCard: React.FC = () => {
     openConfirmSheet,
     isWalletConnected,
     walletBalances,
+    isBalanceLoading,
     openWalletModal,
     chainId,
     switchNetwork,
@@ -104,13 +105,11 @@ export const SwapCard: React.FC = () => {
 
   const isNetworkMismatch = isWalletConnected && chainId !== null && sourceChain.chainId !== undefined && chainId !== sourceChain.chainId;
 
-  const tokenInKey = `${sourceChain.id}:${tokenIn.address}`;
-  const tokenInKeyLower = `${sourceChain.id}:${tokenIn.address.toLowerCase()}`;
   const tokenInBalanceStr = isWalletConnected
-    ? (walletBalances[tokenInKey] ?? walletBalances[tokenInKeyLower] ?? (tokenIn.isNative ? (walletBalances[`${sourceChain.id}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`] ?? walletBalances[`${sourceChain.id}:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`]) : undefined) ?? '0.00')
+    ? resolveTokenBalance(sourceChain.id, tokenIn, walletBalances)
     : '0.00';
   const tokenInBalanceNum = parseFloat(tokenInBalanceStr) || 0;
-  const isInsufficientBalance = isWalletConnected && !isNetworkMismatch && numAmountIn > tokenInBalanceNum;
+  const isInsufficientBalance = isWalletConnected && !isNetworkMismatch && !isBalanceLoading && tokenInBalanceNum > 0 && numAmountIn > tokenInBalanceNum;
 
   const handlePercentage = (pct: number) => {
     if (tokenInBalanceNum <= 0) {

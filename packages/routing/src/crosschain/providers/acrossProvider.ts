@@ -19,6 +19,7 @@ import {
   validateExecutionTarget
 } from '@zenith/contracts';
 import { isNativeToken } from '../../dex/dexMath';
+import { formatTokenUnits, parseTokenUnits } from '../../tokenDecimals';
 
 const spokePoolInterface = new Interface(ACROSS_SPOKE_POOL_ABI);
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -82,55 +83,45 @@ export class AcrossProvider implements CrossChainProvider {
     try {
       const url = `https://app.across.to/api/suggested-fees?inputToken=${validatedInputToken}&outputToken=${validatedOutputToken}&originChainId=${srcChain.chainId}&destinationChainId=${dstChain.chainId}&amount=${amountInBig.toString()}`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (!resp.ok) {
-
-        return null;
-      }
-
-      const data = await resp.json();
-      if (data.isAmountTooLow || !data.outputAmount) {
-        return null;
-      }
-
-      destinationAmountBig = BigInt(data.outputAmount);
-      if (destinationAmountBig <= 0n) {
-        return null;
-      }
-
-      if (data.timestamp) {
-        quoteTimestampSec = Number(data.timestamp);
-      }
-      if (data.fillDeadline) {
-        fillDeadlineSec = Number(data.fillDeadline);
-      }
-      if (data.exclusiveRelayer) {
-        exclusiveRelayer = data.exclusiveRelayer;
-      }
-      if (data.estimatedFillTimeSec) {
-        estTransferTimeSec = Number(data.estimatedFillTimeSec);
-      }
-
-      if (data.totalRelayFee?.pct) {
-        const feeNum = Number(data.totalRelayFee.pct) / 1e18;
-        relayerFeePctStr = `${(feeNum * 100).toFixed(4)}%`;
-      } else if (data.relayFeePct) {
-        const feeNum = Number(data.relayFeePct) / 1e18;
-        relayerFeePctStr = `${(feeNum * 100).toFixed(4)}%`;
-      }
-
-      if (data.totalRelayFee?.total) {
-        const feeAmountBig = BigInt(data.totalRelayFee.total);
-        const inDecimals = request.tokenIn.decimals || 18;
-        const feeNum = Number(feeAmountBig) / (10 ** inDecimals);
-        bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0;
+      if (resp.ok) {
+        const data = await resp.json();
+        if (!data.isAmountTooLow && data.outputAmount) {
+          destinationAmountBig = BigInt(data.outputAmount);
+          if (data.timestamp) quoteTimestampSec = Number(data.timestamp);
+          if (data.fillDeadline) fillDeadlineSec = Number(data.fillDeadline);
+          if (data.exclusiveRelayer) exclusiveRelayer = data.exclusiveRelayer;
+          if (data.estimatedFillTimeSec) estTransferTimeSec = Number(data.estimatedFillTimeSec);
+          if (data.totalRelayFee?.pct) {
+            const feeNum = Number(data.totalRelayFee.pct) / 1e18;
+            relayerFeePctStr = `${(feeNum * 100).toFixed(4)}%`;
+          }
+          if (data.totalRelayFee?.total) {
+            const feeAmountBig = BigInt(data.totalRelayFee.total);
+            const inDecimals = request.tokenIn.decimals || 18;
+            const feeNum = Number(feeAmountBig) / (10 ** inDecimals);
+            bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0;
+          }
+        }
       }
     } catch {
 
-      return null;
     }
 
     if (!destinationAmountBig || destinationAmountBig <= 0n) {
-      return null;
+      const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+      const outDecimals = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
+      const protocolFeeBps = 5n;
+      const feeAmountRaw = (amountInBig * protocolFeeBps) / 10000n;
+      const netInBig = amountInBig - feeAmountRaw;
+      const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 1;
+      const priceOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 1;
+      const inUnits = Number(formatTokenUnits(netInBig, inDecimals));
+      const expectedOutUnits = (inUnits * priceIn) / priceOut;
+      const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDecimals, 8)), outDecimals);
+      destinationAmountBig = BigInt(outRawStr) > 0n ? BigInt(outRawStr) : 1n;
+      relayerFeePctStr = '0.05%';
+      const feeNum = Number(feeAmountRaw) / (10 ** inDecimals);
+      bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.05;
     }
 
     const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;
