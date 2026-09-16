@@ -246,14 +246,10 @@ const getChainRpcProvider = (
 export const resolveTokenLivePrice = (token: Token, marketDataRecord: Record<string, LiveMarketData>): number => {
   if (!token) return 0;
   const tokenKey = `${token.chainId.toLowerCase()}:${token.address.toLowerCase()}`;
-  const symKey = token.symbol.toLowerCase();
-  const cleanSym = defaultMarketDataService.resolveSymbol(token.symbol).toLowerCase();
   const cached = defaultMarketDataService.getCachedMarketData(token.chainId, token.address);
 
   const price =
     marketDataRecord[tokenKey]?.priceUSD ||
-    marketDataRecord[symKey]?.priceUSD ||
-    marketDataRecord[cleanSym]?.priceUSD ||
     cached?.priceUSD ||
     token.priceUSD;
 
@@ -261,6 +257,8 @@ export const resolveTokenLivePrice = (token: Token, marketDataRecord: Record<str
     return price;
   }
 
+  const symKey = token.symbol.toLowerCase();
+  const cleanSym = defaultMarketDataService.resolveSymbol(token.symbol).toLowerCase();
   if (
     ['usdc', 'usdt', 'dai', 'usde', 'pyusd', 'fdusd', 'busd'].includes(symKey) ||
     ['usdc', 'usdt', 'dai', 'usde', 'pyusd', 'fdusd', 'busd'].includes(cleanSym)
@@ -1304,38 +1302,25 @@ export const useZenithStore = create<ZenithState>((set, get) => {
       let updatedTokenIn = currentTokenIn;
       let updatedTokenOut = currentTokenOut;
 
-      const targetSym = data.symbol ? defaultMarketDataService.resolveSymbol(data.symbol) : undefined;
-      const inSym = defaultMarketDataService.resolveSymbol(currentTokenIn.symbol);
-      const outSym = defaultMarketDataService.resolveSymbol(currentTokenOut.symbol);
+      const isTokenInMatch = currentTokenIn.chainId.toLowerCase() === chainId.toLowerCase() &&
+        (currentTokenIn.address.toLowerCase() === address.toLowerCase() ||
+         (currentTokenIn.isNative && (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || address.toLowerCase() === '0x0000000000000000000000000000000000000000')));
 
-      let priceChanged = false;
+      const isTokenOutMatch = currentTokenOut.chainId.toLowerCase() === chainId.toLowerCase() &&
+        (currentTokenOut.address.toLowerCase() === address.toLowerCase() ||
+         (currentTokenOut.isNative && (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || address.toLowerCase() === '0x0000000000000000000000000000000000000000')));
 
-      if (
-        (targetSym && inSym === targetSym) ||
-        (currentTokenIn.chainId.toLowerCase() === chainId.toLowerCase() && currentTokenIn.address.toLowerCase() === address.toLowerCase())
-      ) {
-        if (data.priceUSD && data.priceUSD > 0 && currentTokenIn.priceUSD !== data.priceUSD) {
-          updatedTokenIn = { ...currentTokenIn, priceUSD: data.priceUSD };
-          priceChanged = true;
-        }
+      if (isTokenInMatch && data.priceUSD && data.priceUSD > 0 && currentTokenIn.priceUSD !== data.priceUSD) {
+        updatedTokenIn = { ...currentTokenIn, priceUSD: data.priceUSD };
       }
-      if (
-        (targetSym && outSym === targetSym) ||
-        (currentTokenOut.chainId.toLowerCase() === chainId.toLowerCase() && currentTokenOut.address.toLowerCase() === address.toLowerCase())
-      ) {
-        if (data.priceUSD && data.priceUSD > 0 && currentTokenOut.priceUSD !== data.priceUSD) {
-          updatedTokenOut = { ...currentTokenOut, priceUSD: data.priceUSD };
-          priceChanged = true;
-        }
+      if (isTokenOutMatch && data.priceUSD && data.priceUSD > 0 && currentTokenOut.priceUSD !== data.priceUSD) {
+        updatedTokenOut = { ...currentTokenOut, priceUSD: data.priceUSD };
       }
-
-      const symKey = data.symbol?.toLowerCase();
 
       set((state) => ({
         marketData: {
           ...state.marketData,
-          [key]: data,
-          ...(symKey ? { [symKey]: data } : {})
+          [key]: data
         },
         tokenIn: updatedTokenIn,
         tokenOut: updatedTokenOut,

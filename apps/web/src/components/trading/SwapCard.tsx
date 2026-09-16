@@ -40,6 +40,7 @@ export const SwapCard: React.FC = () => {
     quoteError,
     isQuoteLoading,
     fetchQuote,
+    fetchMarketData,
     openConfirmSheet,
     isWalletConnected,
     walletBalances,
@@ -48,6 +49,7 @@ export const SwapCard: React.FC = () => {
     chainId,
     switchNetwork,
     marketData,
+    lastMarketUpdate,
     executionMode,
     setExecutionMode,
     orderType,
@@ -61,6 +63,7 @@ export const SwapCard: React.FC = () => {
   const [refreshTimer, setRefreshTimer] = useState<number>(10);
 
   useEffect(() => {
+    fetchMarketData();
     fetchQuote();
   }, []);
 
@@ -321,9 +324,6 @@ export const SwapCard: React.FC = () => {
             <span>
               ~${tradeValueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            {liveInUSD > 0 && (
-              <span>1 {tokenIn.symbol} ≈ ${liveInUSD >= 1 ? liveInUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : liveInUSD.toFixed(6)}</span>
-            )}
           </div>
 
           {inputErrorMessage && (
@@ -398,6 +398,15 @@ export const SwapCard: React.FC = () => {
               </span>
             )}
           </div>
+
+          {liveInUSD > 0 && (
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800/60 text-xs text-slate-400">
+              <span>Live Market Price</span>
+              <span className="font-mono text-cyan-300 font-semibold">
+                1 {tokenIn.symbol} ≈ ${liveInUSD >= 1000 ? liveInUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (liveInUSD >= 1 ? liveInUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : (liveInUSD >= 0.0001 ? liveInUSD.toFixed(6) : liveInUSD.toFixed(8)))}
+              </span>
+            </div>
+          )}
         </div>
 
         {quote && isAmountValid && (

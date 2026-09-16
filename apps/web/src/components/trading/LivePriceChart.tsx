@@ -27,7 +27,6 @@ export const LivePriceChart: React.FC<LivePriceChartProps> = ({ tokenIn, tokenOu
   const tokenKey = `${tokenIn.chainId.toLowerCase()}:${tokenIn.address.toLowerCase()}`;
   const storePrice =
     marketData[tokenKey]?.priceUSD ||
-    marketData[tokenIn.symbol.toLowerCase()]?.priceUSD ||
     defaultMarketDataService.getCachedMarketData(tokenIn.chainId, tokenIn.address)?.priceUSD ||
     tokenIn.priceUSD;
 
@@ -178,6 +177,8 @@ export const LivePriceChart: React.FC<LivePriceChartProps> = ({ tokenIn, tokenOu
         if (livePrice > 0) {
           authoritativePriceRef.current = livePrice;
           latestPriceRef.current = livePrice;
+          setIsTickUp((prevUp) => (stats24h.currentPrice > 0 ? livePrice >= stats24h.currentPrice : true));
+          setTickCounter((c) => c + 1);
           setStats24h((prevStats) => ({
             ...prevStats,
             currentPrice: livePrice,
@@ -217,65 +218,6 @@ export const LivePriceChart: React.FC<LivePriceChartProps> = ({ tokenIn, tokenOu
       cleanup();
     };
   }, [tokenIn.symbol, tokenOut.symbol, isOnline]);
-
-  useEffect(() => {
-
-    if (!isOnline) return;
-
-    const intervalTimer = setInterval(() => {
-      setCandles((prev) => {
-        if (prev.length === 0) return prev;
-        const lastIndex = prev.length - 1;
-        const last = prev[lastIndex];
-        const now = new Date();
-        const currentMinuteBucket = Math.floor(now.getTime() / 60000) * 60000;
-        const timeLabel = format1mTimeLabel(now);
-
-        const targetPrice = latestPriceRef.current || last.close;
-        const microJitter = (Math.random() - 0.495) * (targetPrice * 0.0003);
-        const currentPrice = Math.max(targetPrice + microJitter, 0.000001);
-        latestPriceRef.current = currentPrice;
-
-        const isUp = currentPrice >= last.close;
-        setIsTickUp(isUp);
-        setTickCounter((c) => c + 1);
-
-        setStats24h((prevStats) => ({
-          ...prevStats,
-          currentPrice,
-          high24h: Math.max(prevStats.high24h, currentPrice),
-          low24h: Math.min(prevStats.low24h, currentPrice)
-        }));
-
-        const lastCandleBucket = Math.floor(last.timestamp / 60000) * 60000;
-        if (currentMinuteBucket === lastCandleBucket) {
-          const updatedLast: MarketCandle = {
-            ...last,
-            high: Math.max(last.high, currentPrice),
-            low: Math.min(last.low, currentPrice),
-            close: currentPrice,
-            volume: last.volume + Math.floor(Math.random() * 5 + 1)
-          };
-          return [...prev.slice(0, lastIndex), updatedLast];
-        } else {
-          const newCandle: MarketCandle = {
-            timestamp: currentMinuteBucket,
-            timeLabel,
-            open: last.close,
-            high: Math.max(last.close, currentPrice),
-            low: Math.min(last.close, currentPrice),
-            close: currentPrice,
-            volume: Math.floor(Math.random() * 80 + 20)
-          };
-          return [...prev.slice(1), newCandle];
-        }
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(intervalTimer);
-    };
-  }, []);
 
   const currentPrice = storePrice || candles[candles.length - 1]?.close || stats24h.currentPrice || baseRate;
   const firstPrice = candles[0]?.open || baseRate;
