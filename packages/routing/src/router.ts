@@ -196,6 +196,42 @@ export class ZenithRouter {
         recipient: targetRecipient || undefined
       });
 
+      for (const dQuote of dexQuotes) {
+        let execution = undefined;
+        if (callerAddress) {
+          try {
+            execution = await this.dexAggregator.buildExecution(
+              dQuote,
+              callerAddress,
+              targetRecipient || callerAddress,
+              deadlineSeconds
+            );
+          } catch {
+
+          }
+        }
+
+        routes.push({
+          id: `route-direct-${dQuote.provider.toLowerCase()}-${sourceChain.id}`,
+          routeType: 'DIRECT',
+          hops: [
+            {
+              dexProtocol: dQuote.provider,
+              poolAddress: dQuote.executionTarget,
+              tokenIn: effectiveTokenIn,
+              tokenOut: effectiveTokenOut,
+              feeTierBps: dQuote.feeTierBps,
+              proportionPercent: 100,
+              estimatedGas: dQuote.gasEstimate
+            }
+          ],
+          dexQuote: dQuote,
+          execution,
+          gasCostUSD: defaultChainRegistry.getEstimatedGasCostUSD(sourceChain.id, 'SWAP', request.gasPreset),
+          estimatedGasUnits: dQuote.gasEstimate
+        });
+      }
+
       const isConnectorPair = effectiveTokenIn.symbol !== 'WETH' && effectiveTokenOut.symbol !== 'WETH' && effectiveTokenIn.symbol !== 'ETH' && effectiveTokenOut.symbol !== 'ETH';
       if (dexQuotes.length === 0 || isConnectorPair) {
 
@@ -289,42 +325,6 @@ export class ZenithRouter {
         );
       }
 
-      for (const dQuote of dexQuotes) {
-        let execution = undefined;
-        if (callerAddress) {
-          try {
-            execution = await this.dexAggregator.buildExecution(
-              dQuote,
-              callerAddress,
-              targetRecipient || callerAddress,
-              deadlineSeconds
-            );
-          } catch {
-
-          }
-        }
-
-        routes.push({
-          id: `route-direct-${dQuote.provider.toLowerCase()}-${sourceChain.id}`,
-          routeType: 'DIRECT',
-          hops: [
-            {
-              dexProtocol: dQuote.provider,
-              poolAddress: dQuote.executionTarget,
-              tokenIn: effectiveTokenIn,
-              tokenOut: effectiveTokenOut,
-              feeTierBps: dQuote.feeTierBps,
-              proportionPercent: 100,
-              estimatedGas: dQuote.gasEstimate
-            }
-          ],
-          dexQuote: dQuote,
-          execution,
-          gasCostUSD: defaultChainRegistry.getEstimatedGasCostUSD(sourceChain.id, 'SWAP', request.gasPreset),
-          estimatedGasUnits: dQuote.gasEstimate
-        });
-      }
-
       if (routes.length > 0) {
         const primary = routes[0];
 
@@ -395,7 +395,8 @@ export class ZenithRouter {
         });
       }
 
-      bestRoute = routes[0];
+      const executableRoute = routes.find((r) => r.execution && r.execution.data && r.execution.data !== '0x');
+      bestRoute = executableRoute || routes[0];
       const bestDEXQuote = bestRoute.dexQuote!;
       amountOutBig = bestDEXQuote.amountOut;
       minimumReceivedRaw = bestDEXQuote.minimumAmountOut.toString();
@@ -483,6 +484,53 @@ export class ZenithRouter {
         amountInRaw: amountInBig.toString(),
         minimumOutRaw: minimumReceivedRaw
       };
+    } else if (callerAddress && bestRoute.dexQuote && sourceChain.chainId) {
+      try {
+        const exec = await this.dexAggregator.buildExecution(
+          bestRoute.dexQuote,
+          callerAddress,
+          targetRecipient || callerAddress,
+          deadlineSeconds
+        );
+        if (exec && exec.data && exec.data !== '0x') {
+          bestRoute.execution = exec;
+          executableTransaction = {
+            to: exec.to,
+            data: exec.data,
+            value: exec.value,
+            from: callerAddress,
+            chainId: sourceChain.chainId,
+            approvalTarget: exec.approvalTarget,
+            amountInRaw: amountInBig.toString(),
+            minimumOutRaw: minimumReceivedRaw
+          };
+        }
+      } catch (execErr) {
+        console.warn('[ZenithRouter] Fallback buildExecution note:', execErr);
+      }
+    } else if (callerAddress && bestRoute.crossChainQuote && sourceChain.chainId) {
+      try {
+        const exec = await this.crossChainAggregator.buildExecution(
+          bestRoute.crossChainQuote,
+          callerAddress,
+          targetRecipient || callerAddress
+        );
+        if (exec && exec.data && exec.data !== '0x') {
+          bestRoute.execution = exec;
+          executableTransaction = {
+            to: exec.to,
+            data: exec.data,
+            value: exec.value,
+            from: callerAddress,
+            chainId: sourceChain.chainId,
+            approvalTarget: exec.approvalTarget,
+            amountInRaw: amountInBig.toString(),
+            minimumOutRaw: minimumReceivedRaw
+          };
+        }
+      } catch (execErr) {
+        console.warn('[ZenithRouter] Fallback cross-chain buildExecution note:', execErr);
+      }
     }
 
     const isExecutable = Boolean(

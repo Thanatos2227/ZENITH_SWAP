@@ -3,7 +3,8 @@ import { Interface } from 'ethers';
 import {
   ZENITH_V3_ROUTER_ABI,
   CANONICAL_NATIVE_ADDRESS,
-  getZenithV3Router
+  getZenithV3Router,
+  EVMContractRegistry
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
 import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
@@ -25,7 +26,7 @@ export class ZenithV3Provider implements DEXProvider {
     }
 
     try {
-      const routerAddress = getZenithV3Router(params.chainId);
+      const routerAddress = getZenithV3Router(params.chainId) || EVMContractRegistry.getPrimaryRouter(params.chainId);
       if (!routerAddress) {
         return null;
       }
@@ -38,17 +39,17 @@ export class ZenithV3Provider implements DEXProvider {
         tokenOut: params.tokenOut,
         amountIn: params.amountIn,
         feeTierBps: effectiveFeeBps,
-        slippageToleranceBps: params.slippageToleranceBps
+        slippageToleranceBps: params.slippageToleranceBps || 50
       });
 
-      if (!calculated) {
+      if (!calculated || calculated.amountOut <= 0n) {
         return null;
       }
 
       const quoteTimestamp = Date.now();
 
       return {
-        provider: this.protocol,
+        provider: 'ZENITH_V3',
         providerName: this.name,
         chainId: params.chainId,
         tokenIn: params.tokenIn,
@@ -56,17 +57,12 @@ export class ZenithV3Provider implements DEXProvider {
         amountIn: params.amountIn,
         amountOut: calculated.amountOut,
         minimumAmountOut: calculated.minimumAmountOut,
-        amountInRaw: params.amountIn.toString(),
-        amountOutRaw: calculated.amountOut.toString(),
-        minimumOutRaw: calculated.minimumAmountOut.toString(),
         feeAmount: calculated.feeAmount,
-        feeAmountRaw: calculated.feeAmount.toString(),
-        feeTierBps: effectiveFeeBps,
+        feeTierBps: calculated.feeTierBps,
         priceImpactPercent: calculated.priceImpactPercent,
         executionTarget: routerAddress,
         approvalTarget: routerAddress,
-        gasEstimate: 185000n,
-        gasEstimateUnits: 185000n,
+        gasEstimate: 145000n,
         gasCostUSD: 0.04,
         quoteTimestamp,
         expiration: quoteTimestamp + 15000,
@@ -84,7 +80,7 @@ export class ZenithV3Provider implements DEXProvider {
     deadline?: number
   ): Promise<DEXExecution> {
     const chainIdNum = typeof quote.chainId === 'number' ? quote.chainId : Number(quote.chainId);
-    const routerAddress = getZenithV3Router(chainIdNum);
+    const routerAddress = getZenithV3Router(chainIdNum) || EVMContractRegistry.getPrimaryRouter(chainIdNum);
     if (!routerAddress) {
       throw new Error(`Zenith V3 Router not configured for chain ${chainIdNum}`);
     }
