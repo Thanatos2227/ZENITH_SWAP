@@ -69,6 +69,13 @@ contract ZenithV3Router is IZenithV3SwapCallback {
         ensure(params.deadline)
         returns (uint256 amountOut)
     {
+        bool isNativeIn = msg.value > 0;
+        if (isNativeIn) {
+            require(params.tokenIn == WETH9, "ZenithV3Router: NOT_WETH9");
+            require(msg.value == params.amountIn, "ZenithV3Router: VALUE_MISMATCH");
+            IWETH9(WETH9).deposit{value: msg.value}();
+        }
+
         bool zeroForOne = params.tokenIn < params.tokenOut;
         address pool = ZenithV3Factory(factory).getPool(params.tokenIn, params.tokenOut, params.fee);
         require(pool != address(0), "ZenithV3Router: POOL_NOT_FOUND");
@@ -77,12 +84,14 @@ contract ZenithV3Router is IZenithV3SwapCallback {
             ? (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1)
             : params.sqrtPriceLimitX96;
 
+        address payer = isNativeIn ? address(this) : msg.sender;
+
         (int256 amount0, int256 amount1) = ZenithV3Pool(pool).swap(
             params.recipient,
             zeroForOne,
             int256(params.amountIn),
             sqrtPriceLimitX96,
-            abi.encode(params.tokenIn, msg.sender)
+            abi.encode(params.tokenIn, payer)
         );
 
         amountOut = uint256(-(zeroForOne ? amount1 : amount0));

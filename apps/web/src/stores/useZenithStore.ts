@@ -1295,18 +1295,26 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         });
       } catch (err: any) {
         set({ isConfirmSheetOpen: false });
-        executionSM.transitionTo('FAILED', { id: 'step-execute', status: 'ERROR' });
-
         const rawCode = err?.code || err?.info?.error?.code;
         const rawMsg = err?.reason || err?.message || String(err);
+        const isSimulationOrRevert =
+          err?.code === 'ZENITH_SIMULATION_FAILED' ||
+          err?.name === 'ZenithSimulationFailedError' ||
+          rawMsg.includes('ZENITH_SIMULATION_FAILED') ||
+          rawMsg.includes('TRANSFER_FAILED') ||
+          rawMsg.includes('TFROM_FAILED') ||
+          rawMsg.includes('ZENITH_APPROVAL_TARGET_MISMATCH') ||
+          rawMsg.includes('SIMULATION_REVERT');
+
         const isUserRejected =
-          rawCode === 4001 ||
-          rawCode === 'ACTION_REJECTED' ||
-          rawMsg.toLowerCase().includes('user rejected') ||
-          rawMsg.toLowerCase().includes('user denied') ||
-          rawMsg.toLowerCase().includes('user disapproved') ||
-          rawMsg.toLowerCase().includes('user cancelled') ||
-          rawMsg.toLowerCase().includes('user canceled');
+          !isSimulationOrRevert &&
+          (rawCode === 4001 ||
+            rawCode === 'ACTION_REJECTED' ||
+            rawMsg.toLowerCase().includes('user rejected') ||
+            rawMsg.toLowerCase().includes('user denied transaction') ||
+            rawMsg.toLowerCase().includes('user disapproved') ||
+            rawMsg.toLowerCase().includes('user canceled transaction') ||
+            rawMsg.toLowerCase().includes('user cancelled transaction'));
 
         if (isUserRejected) {
           get().addNotification({

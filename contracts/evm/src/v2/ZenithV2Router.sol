@@ -106,6 +106,40 @@ contract ZenithV2Router {
         _swap(amounts, path, feeBpsPath, to);
     }
 
+    function swapExactETHForTokens(
+        uint256 amountOutMin,
+        address[] calldata path,
+        uint24[] calldata feeBpsPath,
+        address to,
+        uint256 deadline
+    ) external payable virtual ensure(deadline) returns (uint256[] memory amounts) {
+        require(path[0] == WETH, "ZenithV2Router: INVALID_PATH");
+        require(path.length == feeBpsPath.length + 1, "ZenithV2Router: INVALID_PATH_LENGTHS");
+        amounts = getAmountsOut(factory, msg.value, path, feeBpsPath);
+        require(amounts[amounts.length - 1] >= amountOutMin, "ZenithV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
+        IWETH9(WETH).deposit{value: amounts[0]}();
+        assert(IWETH9(WETH).transfer(poolFor(factory, path[0], path[1], feeBpsPath[0]), amounts[0]));
+        _swap(amounts, path, feeBpsPath, to);
+    }
+
+    function swapExactTokensForETH(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        uint24[] calldata feeBpsPath,
+        address to,
+        uint256 deadline
+    ) external virtual ensure(deadline) returns (uint256[] memory amounts) {
+        require(path[path.length - 1] == WETH, "ZenithV2Router: INVALID_PATH");
+        require(path.length == feeBpsPath.length + 1, "ZenithV2Router: INVALID_PATH_LENGTHS");
+        amounts = getAmountsOut(factory, amountIn, path, feeBpsPath);
+        require(amounts[amounts.length - 1] >= amountOutMin, "ZenithV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
+        _safeTransferFrom(path[0], msg.sender, poolFor(factory, path[0], path[1], feeBpsPath[0]), amounts[0]);
+        _swap(amounts, path, feeBpsPath, address(this));
+        IWETH9(WETH).withdraw(amounts[amounts.length - 1]);
+        _safeTransferETH(to, amounts[amounts.length - 1]);
+    }
+
     function _swap(uint256[] memory amounts, address[] memory path, uint24[] memory feeBpsPath, address _to) internal virtual {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
@@ -170,5 +204,10 @@ contract ZenithV2Router {
     function _safeTransferFrom(address token, address from, address to, uint256 value) private {
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value));
         require(success && (data.length == 0 || abi.decode(data, (bool))), "ZenithV2Router: TRANSFER_FROM_FAILED");
+    }
+
+    function _safeTransferETH(address to, uint256 value) private {
+        (bool success, ) = to.call{value: value}("");
+        require(success, "ZenithV2Router: ETH_TRANSFER_FAILED");
     }
 }

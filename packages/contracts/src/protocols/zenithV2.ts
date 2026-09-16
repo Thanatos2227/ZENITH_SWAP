@@ -43,6 +43,8 @@ export const ZENITH_V2_ROUTER_ABI = [
   'function addLiquidity(address tokenA, address tokenB, uint24 feeBps, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB, uint256 liquidity)',
   'function removeLiquidity(address tokenA, address tokenB, uint24 feeBps, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB)',
   'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, uint24[] calldata feeBpsPath, address to, uint256 deadline) external returns (uint256[] memory amounts)',
+  'function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, uint24[] calldata feeBpsPath, address to, uint256 deadline) external payable returns (uint256[] memory amounts)',
+  'function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] calldata path, uint24[] calldata feeBpsPath, address to, uint256 deadline) external returns (uint256[] memory amounts)',
   'function getAmountsOut(address factory, uint256 amountIn, address[] memory path, uint24[] memory feeBpsPath) external view returns (uint256[] memory amounts)'
 ];
 

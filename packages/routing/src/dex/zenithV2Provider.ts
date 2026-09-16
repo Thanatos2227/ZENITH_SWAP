@@ -89,24 +89,50 @@ export class ZenithV2Provider implements DEXProvider {
     const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
 
     const isNativeIn = isNativeToken(quote.tokenIn.address) || Boolean(quote.tokenIn.isNative);
+    const isNativeOut = isNativeToken(quote.tokenOut.address) || Boolean(quote.tokenOut.isNative);
 
-    const calldata = iface.encodeFunctionData('swapExactTokensForTokens', [
-      quote.amountIn,
-      quote.minimumAmountOut,
-      [tokenInAddr, tokenOutAddr],
-      [quote.feeTierBps || 30],
-      recipient,
-      swapDeadline
-    ]);
+    let calldata: string;
+    let value = '0';
+    let approvalTarget = routerAddress;
+
+    if (isNativeIn) {
+      calldata = iface.encodeFunctionData('swapExactETHForTokens', [
+        quote.minimumAmountOut,
+        [tokenInAddr, tokenOutAddr],
+        [quote.feeTierBps || 30],
+        recipient,
+        swapDeadline
+      ]);
+      value = quote.amountIn.toString();
+      approvalTarget = CANONICAL_NATIVE_ADDRESS;
+    } else if (isNativeOut) {
+      calldata = iface.encodeFunctionData('swapExactTokensForETH', [
+        quote.amountIn,
+        quote.minimumAmountOut,
+        [tokenInAddr, tokenOutAddr],
+        [quote.feeTierBps || 30],
+        recipient,
+        swapDeadline
+      ]);
+    } else {
+      calldata = iface.encodeFunctionData('swapExactTokensForTokens', [
+        quote.amountIn,
+        quote.minimumAmountOut,
+        [tokenInAddr, tokenOutAddr],
+        [quote.feeTierBps || 30],
+        recipient,
+        swapDeadline
+      ]);
+    }
 
     return {
       to: routerAddress,
       data: calldata,
-      value: isNativeIn ? quote.amountIn.toString() : '0',
+      value,
       chainId: chainIdNum,
       gasLimit: quote.gasEstimate.toString(),
       gasEstimateUnits: quote.gasEstimate,
-      approvalTarget: isNativeIn ? CANONICAL_NATIVE_ADDRESS : routerAddress,
+      approvalTarget,
       approvalAmount: isNativeIn ? '0' : quote.amountIn.toString(),
       requiredAllowanceRaw: isNativeIn ? '0' : quote.amountIn.toString()
     };

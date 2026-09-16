@@ -343,3 +343,14 @@ export class ZenithLiquidityInsufficientError extends Error {
   }
 }
 
+export class ZenithApprovalTargetMismatchError extends Error {
+  public readonly code = 'ZENITH_APPROVAL_TARGET_MISMATCH';
+  constructor(approvalSpender: string, executionTarget: string) {
+    super(
+      `ZENITH_APPROVAL_TARGET_MISMATCH: Approval target/spender (${approvalSpender}) does not match execution router (${executionTarget}). Swap aborted for user safety.`
+    );
+    this.name = 'ZenithApprovalTargetMismatchError';
+    Object.setPrototypeOf(this, ZenithApprovalTargetMismatchError.prototype);
+  }
+}
+

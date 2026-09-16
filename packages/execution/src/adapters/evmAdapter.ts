@@ -8,7 +8,8 @@ import {
   validateTokenAddress,
   InvalidCalldataError,
   ZenithSimulationFailedError,
-  ZenithRouteExecutionMismatchError
+  ZenithRouteExecutionMismatchError,
+  ZenithApprovalTargetMismatchError
 } from '@zenith/contracts';
 import {
   defaultDEXAggregator,
@@ -163,6 +164,10 @@ export class EVMExecutionAdapter {
     }
 
     if (!isNativeIn && approvalTarget !== CANONICAL_NATIVE_ADDRESS) {
+      if (!isCrossChain && approvalTarget.toLowerCase() !== executionTo.toLowerCase()) {
+        throw new ZenithApprovalTargetMismatchError(approvalTarget, executionTo);
+      }
+
       const validatedTokenIn = validateTokenAddress(tokenIn.address, quote.request.sourceChainId);
       const tokenContract = new Contract(validatedTokenIn, ERC20_ABI, signer);
 
@@ -229,6 +234,20 @@ export class EVMExecutionAdapter {
       value: executionValue
     };
 
+    const diagTrace = {
+      chainId: quote.request.sourceChainId,
+      from: authoritativeTx.from,
+      to: authoritativeTx.to,
+      value: authoritativeTx.value.toString(),
+      tokenIn: `${tokenIn.symbol} (${tokenIn.address})`,
+      tokenOut: `${quote.request.tokenOut.symbol} (${quote.request.tokenOut.address})`,
+      amountIn: quote.amountInRaw,
+      amountOut: quote.amountOutRaw,
+      amountOutMinimum: quote.minimumReceivedRaw,
+      router: executionTo,
+      calldata: authoritativeTx.data
+    };
+
     params.onStatusChange?.('SIMULATING');
 
     // 4. Pre-Flight Simulation Step 1: eth_call
@@ -243,7 +262,10 @@ export class EVMExecutionAdapter {
         });
       } catch (callErr: any) {
         const revertReason = callErr?.reason || callErr?.data || callErr?.message || String(callErr);
-        console.error('[ZENITH EVMAdapter] Pre-flight eth_call reverted:', callErr);
+        console.error('[ZENITH EVMAdapter] Pre-flight eth_call reverted:', {
+          ...diagTrace,
+          revertReason
+        });
         throw new ZenithSimulationFailedError(
           `On-chain simulation (eth_call) reverted. Target rejected execution.`,
           revertReason
@@ -266,7 +288,10 @@ export class EVMExecutionAdapter {
       }
     } catch (gasErr: any) {
       const revertReason = gasErr?.reason || gasErr?.data || gasErr?.message || String(gasErr);
-      console.error('[ZENITH EVMAdapter] Pre-flight estimateGas failed:', gasErr);
+      console.error('[ZENITH EVMAdapter] Pre-flight estimateGas failed:', {
+        ...diagTrace,
+        revertReason
+      });
       throw new ZenithSimulationFailedError(
         `Gas estimation (eth_estimateGas) failed. Transaction is predicted to revert on-chain.`,
         revertReason
