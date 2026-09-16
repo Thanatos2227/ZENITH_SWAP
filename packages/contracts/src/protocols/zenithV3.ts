@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 
+import { getZenithDeployment } from '../deployments';
+
 export const ZENITH_V3_FACTORY_ABI = [
   'function owner() external view returns (address)',
   'function feeAmountTickSpacing(uint24) external view returns (int24)',
@@ -46,45 +48,17 @@ export const ZENITH_V3_POSITION_MANAGER_ABI = [
   'function collect(uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max) external returns (uint256 amount0, uint256 amount1)'
 ];
 
-export const ZENITH_V3_FACTORIES: Record<number, string> = {
-  1: '0x5000000000000000000000000000000000000001',
-  10: '0x5000000000000000000000000000000000000010',
-  56: '0x5000000000000000000000000000000000000056',
-  137: '0x5000000000000000000000000000000000000137',
-  8453: '0x5000000000000000000000000000000000008453',
-  42161: '0x5000000000000000000000000000000000042161',
-  43114: '0x5000000000000000000000000000000000043114'
-};
-
-export const ZENITH_V3_ROUTERS: Record<number, string> = {
-  1: '0x6000000000000000000000000000000000000001',
-  10: '0x6000000000000000000000000000000000000010',
-  56: '0x6000000000000000000000000000000000000056',
-  137: '0x6000000000000000000000000000000000000137',
-  8453: '0x6000000000000000000000000000000000008453',
-  42161: '0x6000000000000000000000000000000000042161',
-  43114: '0x6000000000000000000000000000000000043114'
-};
-
-export const ZENITH_V3_POSITION_MANAGERS: Record<number, string> = {
-  1: '0x7000000000000000000000000000000000000001',
-  10: '0x7000000000000000000000000000000000000010',
-  56: '0x7000000000000000000000000000000000000056',
-  137: '0x7000000000000000000000000000000000000137',
-  8453: '0x7000000000000000000000000000000000008453',
-  42161: '0x7000000000000000000000000000000000042161',
-  43114: '0x7000000000000000000000000000000000043114'
-};
-
 export function getZenithV3Factory(chainId: number): string | undefined {
-  return ZENITH_V3_FACTORIES[chainId];
+  const deployment = getZenithDeployment(chainId);
+  return deployment?.v3Factory || undefined;
 }
 
 export function getZenithV3Router(chainId: number): string | undefined {
-  return ZENITH_V3_ROUTERS[chainId];
+  const deployment = getZenithDeployment(chainId);
+  return deployment?.v3Router || undefined;
 }
 
 export function getZenithV3PositionManager(chainId: number): string | undefined {
-  return ZENITH_V3_POSITION_MANAGERS[chainId];
+  const deployment = getZenithDeployment(chainId);
+  return deployment?.v3PositionManager || undefined;
 }
-

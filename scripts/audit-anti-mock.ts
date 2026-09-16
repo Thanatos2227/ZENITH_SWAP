@@ -48,6 +48,11 @@ const FORBIDDEN_PATTERNS: Array<{
     description: 'Do not use fake dead addresses as protocol targets'
   },
   {
+    regex: /0x[1-8]00000000000000000000000000000000000/i,
+    category: 'Synthetic Placeholder Address',
+    description: 'Synthetic sequential placeholder addresses (0x1000... - 0x8000...) must not be used in production configurations'
+  },
+  {
     regex: /isSimulated\s*:\s*true/i,
     category: 'Simulated Execution Flag',
     description: 'Simulated execution flags must not bypass real execution pipelines'

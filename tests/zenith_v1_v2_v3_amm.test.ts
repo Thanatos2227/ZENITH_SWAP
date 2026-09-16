@@ -10,9 +10,18 @@ import {
 import { zenithV1Provider } from '@zenith/routing/src/dex/zenithV1Provider';
 import { zenithV2Provider } from '@zenith/routing/src/dex/zenithV2Provider';
 import { zenithV3Provider } from '@zenith/routing/src/dex/zenithV3Provider';
+import { registerZenithDeployment } from '@zenith/contracts';
 import { Token } from '@zenith/types';
 
 describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
+  // Register test deployment addresses for isolated test suite execution
+  registerZenithDeployment(137, {
+    v1Router: '0x1111111111111111111111111111111111111111',
+    v2Router: '0x2222222222222222222222222222222222222222',
+    v3Router: '0x3333333333333333333333333333333333333333',
+    v3PositionManager: '0x4444444444444444444444444444444444444444'
+  });
+
   const tokenUSDC: Token = {
     address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     chainId: 137,

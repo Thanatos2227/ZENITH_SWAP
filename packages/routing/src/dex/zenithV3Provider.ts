@@ -4,8 +4,7 @@ import { Interface } from 'ethers';
 import {
   ZENITH_V3_ROUTER_ABI,
   CANONICAL_NATIVE_ADDRESS,
-  getZenithV3Router,
-  ZENITH_V3_ROUTERS
+  getZenithV3Router
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
 import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
@@ -27,7 +26,10 @@ export class ZenithV3Provider implements DEXProvider {
     }
 
     try {
-      const routerAddress = getZenithV3Router(params.chainId) || ZENITH_V3_ROUTERS[137];
+      const routerAddress = getZenithV3Router(params.chainId);
+      if (!routerAddress) {
+        return null;
+      }
 
       const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
 
@@ -83,7 +85,10 @@ export class ZenithV3Provider implements DEXProvider {
     deadline?: number
   ): Promise<DEXExecution> {
     const chainIdNum = typeof quote.chainId === 'number' ? quote.chainId : Number(quote.chainId);
-    const routerAddress = ZENITH_V3_ROUTERS[chainIdNum] || ZENITH_V3_ROUTERS[137];
+    const routerAddress = getZenithV3Router(chainIdNum);
+    if (!routerAddress) {
+      throw new Error(`Zenith V3 Router not configured for chain ${chainIdNum}`);
+    }
     const iface = new Interface(ZENITH_V3_ROUTER_ABI);
     const recipient = recipientAddress || userAddress;
     const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200;
@@ -121,4 +126,3 @@ export class ZenithV3Provider implements DEXProvider {
 }
 
 export const zenithV3Provider = new ZenithV3Provider();
-

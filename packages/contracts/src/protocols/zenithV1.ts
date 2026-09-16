@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 
+import { getZenithDeployment } from '../deployments';
+
 export const ZENITH_V1_FACTORY_ABI = [
   'function feeTo() external view returns (address)',
   'function feeToSetter() external view returns (address)',
@@ -49,31 +51,12 @@ export const ZENITH_V1_ROUTER_ABI = [
   'function getAmountsIn(address factory, uint256 amountOut, address[] memory path) external view returns (uint256[] memory amounts)'
 ];
 
-export const ZENITH_V1_FACTORIES: Record<number, string> = {
-  1: '0x1000000000000000000000000000000000000001',
-  10: '0x1000000000000000000000000000000000000010',
-  56: '0x1000000000000000000000000000000000000056',
-  137: '0x1000000000000000000000000000000000000137',
-  8453: '0x1000000000000000000000000000000000008453',
-  42161: '0x1000000000000000000000000000000000042161',
-  43114: '0x1000000000000000000000000000000000043114'
-};
-
-export const ZENITH_V1_ROUTERS: Record<number, string> = {
-  1: '0x2000000000000000000000000000000000000001',
-  10: '0x2000000000000000000000000000000000000010',
-  56: '0x2000000000000000000000000000000000000056',
-  137: '0x2000000000000000000000000000000000000137',
-  8453: '0x2000000000000000000000000000000000008453',
-  42161: '0x2000000000000000000000000000000000042161',
-  43114: '0x2000000000000000000000000000000000043114'
-};
-
 export function getZenithV1Factory(chainId: number): string | undefined {
-  return ZENITH_V1_FACTORIES[chainId];
+  const deployment = getZenithDeployment(chainId);
+  return deployment?.v1Factory || undefined;
 }
 
 export function getZenithV1Router(chainId: number): string | undefined {
-  return ZENITH_V1_ROUTERS[chainId];
+  const deployment = getZenithDeployment(chainId);
+  return deployment?.v1Router || undefined;
 }
-

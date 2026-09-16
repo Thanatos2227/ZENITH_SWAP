@@ -3,8 +3,9 @@ import assert from 'node:assert';
 import {
   ZENITH_TREASURY_ABI,
   ZENITH_FEE_CONTROLLER_ABI,
-  ZENITH_TREASURY,
-  ZENITH_FEE_CONTROLLERS,
+  ZENITH_DEPLOYMENTS,
+  getZenithDeployment,
+  registerZenithDeployment,
   getZenithTreasuryAddress,
   getZenithFeeController
 } from '@zenith/contracts';
@@ -17,13 +18,21 @@ describe('ZENITH SWAP — Sovereign Protocol Treasury & Fee Controller Test Suit
   describe('1. Non-Custodial Invariant & Architecture', () => {
     it('only tracks accrued protocol fees, not user custody balances', () => {
       // Check ABI exposes exact fee tracking functions and not generic deposit-pool custody
-      const depositFeeFrag = treasuryInterface.getFunction('depositFee');
+      const depositERC20FeeFrag = treasuryInterface.getFunction('depositERC20Fee');
+      const depositNativeFeeFrag = treasuryInterface.getFunction('depositNativeFee');
       const getTreasuryBalanceFrag = treasuryInterface.getFunction('getTreasuryBalance');
+      const getCollectedFeesFrag = treasuryInterface.getFunction('getCollectedFees');
       const rescueTokenFrag = treasuryInterface.getFunction('rescueToken');
+      const setFeeCollectorFrag = treasuryInterface.getFunction('setFeeCollector');
+      const isAuthorizedCollectorFrag = treasuryInterface.getFunction('isAuthorizedCollector');
 
-      assert.ok(depositFeeFrag, 'depositFee must exist on treasury interface');
+      assert.ok(depositERC20FeeFrag, 'depositERC20Fee must exist on treasury interface');
+      assert.ok(depositNativeFeeFrag, 'depositNativeFee must exist on treasury interface');
       assert.ok(getTreasuryBalanceFrag, 'getTreasuryBalance must exist on treasury interface');
+      assert.ok(getCollectedFeesFrag, 'getCollectedFees must exist on treasury interface');
       assert.ok(rescueTokenFrag, 'rescueToken must exist for emergency governance recovery');
+      assert.ok(setFeeCollectorFrag, 'setFeeCollector must exist for collector authorization');
+      assert.ok(isAuthorizedCollectorFrag, 'isAuthorizedCollector must exist for collector queries');
     });
 
     it('has 2-step governance handover ABI functions', () => {
@@ -49,11 +58,19 @@ describe('ZENITH SWAP — Sovereign Protocol Treasury & Fee Controller Test Suit
     it('defines protocol fee and cross-chain fee control methods', () => {
       const setProtocolFee = feeControllerInterface.getFunction('setProtocolFeeBps');
       const setCrossChainFee = feeControllerInterface.getFunction('setCrossChainFeeBps');
-      const protocolFeeBps = feeControllerInterface.getFunction('protocolFeeBps');
+      const setV1TotalFee = feeControllerInterface.getFunction('setV1TotalFeeBps');
+      const configV2Tier = feeControllerInterface.getFunction('configureV2FeeTier');
+      const configV3Tier = feeControllerInterface.getFunction('configureV3FeeTier');
+      const calcProtocolFee = feeControllerInterface.getFunction('calculateProtocolFee');
+      const calcCrossChainFee = feeControllerInterface.getFunction('calculateCrossChainFee');
 
       assert.ok(setProtocolFee, 'setProtocolFeeBps must exist');
       assert.ok(setCrossChainFee, 'setCrossChainFeeBps must exist');
-      assert.ok(protocolFeeBps, 'protocolFeeBps getter must exist');
+      assert.ok(setV1TotalFee, 'setV1TotalFeeBps must exist');
+      assert.ok(configV2Tier, 'configureV2FeeTier must exist');
+      assert.ok(configV3Tier, 'configureV3FeeTier must exist');
+      assert.ok(calcProtocolFee, 'calculateProtocolFee must exist');
+      assert.ok(calcCrossChainFee, 'calculateCrossChainFee must exist');
     });
 
     it('encodes setProtocolFeeBps calldata accurately', () => {
@@ -64,11 +81,21 @@ describe('ZENITH SWAP — Sovereign Protocol Treasury & Fee Controller Test Suit
       assert.strictEqual(Number(decoded[0]), 5);
     });
 
-    it('registers fee controllers across EVM chains', () => {
-      assert.ok(ZENITH_FEE_CONTROLLERS[1], 'Ethereum fee controller configured');
-      assert.ok(ZENITH_FEE_CONTROLLERS[137], 'Polygon fee controller configured');
-      assert.ok(ZENITH_FEE_CONTROLLERS[8453], 'Base fee controller configured');
-      assert.ok(ZENITH_FEE_CONTROLLERS[42161], 'Arbitrum fee controller configured');
+    it('fails closed when deployments are unconfigured and allows dynamic registration', () => {
+      // Production chains without active on-chain deployments throw ConfigurationError
+      assert.throws(() => {
+        getZenithTreasuryAddress(1);
+      }, /ZENITH Treasury address is not configured/);
+      assert.strictEqual(getZenithFeeController(1), undefined);
+
+      // Register local devnet deployment
+      registerZenithDeployment(31337, {
+        treasury: '0x0123456789012345678901234567890123456789',
+        feeController: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+      });
+
+      assert.strictEqual(getZenithTreasuryAddress(31337), '0x0123456789012345678901234567890123456789');
+      assert.strictEqual(getZenithFeeController(31337), '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd');
     });
   });
 });

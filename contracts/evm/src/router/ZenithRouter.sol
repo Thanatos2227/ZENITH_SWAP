@@ -121,7 +121,8 @@ contract ZenithRouter {
         address actualTokenIn = isNativeIn ? WETH9 : params.tokenIn;
 
         if (protocolFee > 0) {
-            _safeTransfer(actualTokenIn, address(treasury), protocolFee);
+            _safeApprove(actualTokenIn, address(treasury), protocolFee);
+            treasury.depositERC20Fee(actualTokenIn, protocolFee);
         }
 
         // Route to the designated Zenith AMM tier

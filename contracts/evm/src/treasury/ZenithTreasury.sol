@@ -2,108 +2,173 @@
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
+import "./interfaces/IZenithTreasury.sol";
 
 /**
  * @title ZenithTreasury
- * @notice Sovereign Protocol Treasury Vault for ZENITH SWAP.
- * @dev Non-custodial for users: receives strictly protocol-owned fee revenue.
- *      Protected by 2-step governance access control and explicit withdrawal limits.
+ * @notice Sovereign Protocol Revenue Treasury Vault for ZENITH SWAP.
+ * @dev Non-custodial for users: receives strictly protocol-owned fee revenue from authorized collectors.
+ *      Does NOT custody normal user swap principal. Protected by two-step governance access control,
+ *      reentrancy guards, explicit fee collector authorization, and emergency controls.
  */
-contract ZenithTreasury {
-    address public governance;
-    address public pendingGovernance;
-    bool public isEmergencyPaused;
+contract ZenithTreasury is IZenithTreasury {
+    address public override governance;
+    address public override pendingGovernance;
+    bool public override isEmergencyPaused;
 
-    // Accounting
-    mapping(address => uint256) public cumulativeFeesCollected;
+    // Authorized Fee Collectors Mapping
+    mapping(address => bool) public override authorizedCollector;
 
-    // Events
-    event FeeReceived(address indexed token, address indexed from, uint256 amount);
-    event TreasuryWithdrawal(address indexed token, address indexed recipient, uint256 amount);
-    event EmergencyPaused(address indexed actor);
-    event EmergencyUnpaused(address indexed actor);
-    event EmergencyTokenRescue(address indexed token, address indexed recipient, uint256 amount);
-    event OwnershipTransferInitiated(address indexed currentOwner, address indexed pendingOwner);
-    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+    // Historical Cumulative Accounting (Token -> Total Raw Fees Received)
+    mapping(address => uint256) public override cumulativeFeesCollected;
+
+    // Reentrancy Guard
+    uint256 private _status = 1;
+    modifier nonReentrant() {
+        if (_status != 1) revert("ZenithTreasury: REENTRANCY");
+        _status = 2;
+        _;
+        _status = 1;
+    }
 
     modifier onlyGovernance() {
-        require(msg.sender == governance, "ZenithTreasury: Only governance");
+        if (msg.sender != governance) revert OnlyGovernance();
         _;
     }
 
     modifier whenNotPaused() {
-        require(!isEmergencyPaused, "ZenithTreasury: Protocol paused");
+        if (isEmergencyPaused) revert ProtocolPaused();
+        _;
+    }
+
+    modifier onlyAuthorizedCollector() {
+        if (!authorizedCollector[msg.sender]) revert UnauthorizedCollector(msg.sender);
         _;
     }
 
     constructor(address _governance) {
-        require(_governance != address(0), "ZenithTreasury: Zero governance address");
+        if (_governance == address(0)) revert ZeroAddress();
         governance = _governance;
     }
 
-    /// @notice Allows protocol contracts to deposit native fees
+    /**
+     * @notice Allows direct native transfers without falsifying cumulative protocol fee accounting.
+     */
     receive() external payable {
         if (msg.value > 0) {
-            cumulativeFeesCollected[address(0)] += msg.value;
-            emit FeeReceived(address(0), msg.sender, msg.value);
+            emit DirectNativeReceived(msg.sender, msg.value);
         }
     }
 
-    /// @notice Explicit entrypoint for smart contracts depositing ERC20 protocol fees
-    function depositFee(address token, uint256 amount) external whenNotPaused {
-        require(token != address(0), "ZenithTreasury: Use native transfer for native asset");
-        require(amount > 0, "ZenithTreasury: Zero amount");
+    /**
+     * @notice Deposit ERC20 protocol fees into the treasury.
+     * @dev Only callable by governance-authorized protocol collectors (e.g. ZenithRouters).
+     * @param token Address of the ERC20 token to deposit.
+     * @param amount Token amount to transfer into the treasury.
+     */
+    function depositERC20Fee(address token, uint256 amount)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        onlyAuthorizedCollector
+    {
+        if (token == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
 
         cumulativeFeesCollected[token] += amount;
         emit FeeReceived(token, msg.sender, amount);
 
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSelector(IERC20.transferFrom.selector, msg.sender, address(this), amount)
-        );
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "ZenithTreasury: TransferFrom failed");
+        _safeTransferFrom(token, msg.sender, address(this), amount);
     }
 
-    /// @notice Withdraws protocol revenue to a governance-approved destination
+    /**
+     * @notice Deposit native gas token protocol fees into the treasury.
+     * @dev Only callable by governance-authorized protocol collectors.
+     */
+    function depositNativeFee()
+        external
+        payable
+        override
+        nonReentrant
+        whenNotPaused
+        onlyAuthorizedCollector
+    {
+        if (msg.value == 0) revert ZeroAmount();
+
+        cumulativeFeesCollected[address(0)] += msg.value;
+        emit FeeReceived(address(0), msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Withdraws protocol revenue to a governance-approved recipient.
+     * @param token Token address (address(0) for native asset).
+     * @param recipient Target address to receive the withdrawn funds.
+     * @param amount Quantity of tokens/native currency to withdraw.
+     */
     function withdraw(
         address token,
         address payable recipient,
         uint256 amount
-    ) external onlyGovernance whenNotPaused {
-        require(recipient != address(0), "ZenithTreasury: Zero recipient");
-        require(amount > 0, "ZenithTreasury: Zero amount");
+    ) external override onlyGovernance whenNotPaused nonReentrant {
+        if (recipient == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
 
         if (token == address(0)) {
-            require(address(this).balance >= amount, "ZenithTreasury: Insufficient native balance");
+            uint256 nativeBalance = address(this).balance;
+            if (nativeBalance < amount) revert InsufficientBalance(nativeBalance, amount);
             emit TreasuryWithdrawal(address(0), recipient, amount);
+
             (bool success, ) = recipient.call{value: amount}("");
-            require(success, "ZenithTreasury: Native transfer failed");
+            if (!success) revert TransferFailed();
         } else {
-            uint256 balance = IERC20(token).balanceOf(address(this));
-            require(balance >= amount, "ZenithTreasury: Insufficient ERC20 balance");
+            uint256 tokenBalance = IERC20(token).balanceOf(address(this));
+            if (tokenBalance < amount) revert InsufficientBalance(tokenBalance, amount);
             emit TreasuryWithdrawal(token, recipient, amount);
 
-            (bool success, bytes memory data) = token.call(
-                abi.encodeWithSelector(IERC20.transfer.selector, recipient, amount)
-            );
-            require(success && (data.length == 0 || abi.decode(data, (bool))), "ZenithTreasury: ERC20 transfer failed");
+            _safeTransfer(token, recipient, amount);
         }
     }
 
-    /// @notice Returns active on-chain balance for a specified token (address(0) for native)
-    function getTreasuryBalance(address token) external view returns (uint256) {
+    /**
+     * @notice Authorizes or deauthorizes a protocol contract to deposit fees.
+     * @param collector Address of the collector (e.g. ZenithRouter, ZenithCrossChainRouter).
+     * @param authorized True to authorize, false to revoke.
+     */
+    function setFeeCollector(address collector, bool authorized) external override onlyGovernance {
+        if (collector == address(0)) revert ZeroAddress();
+        authorizedCollector[collector] = authorized;
+        emit FeeCollectorUpdated(collector, authorized);
+    }
+
+    /**
+     * @notice Helper to check collector authorization status.
+     */
+    function isAuthorizedCollector(address collector) external view override returns (bool) {
+        return authorizedCollector[collector];
+    }
+
+    /**
+     * @notice Returns active on-chain balance for a specified token (address(0) for native).
+     */
+    function getTreasuryBalance(address token) external view override returns (uint256) {
         if (token == address(0)) {
             return address(this).balance;
         }
         return IERC20(token).balanceOf(address(this));
     }
 
-    /// @notice Returns lifetime cumulative fees received by the treasury for a token
-    function getCollectedFees(address token) external view returns (uint256) {
+    /**
+     * @notice Returns lifetime cumulative fees received by the treasury for a token.
+     */
+    function getCollectedFees(address token) external view override returns (uint256) {
         return cumulativeFeesCollected[token];
     }
 
-    /// @notice Emergency control
-    function setEmergencyPause(bool _paused) external onlyGovernance {
+    /**
+     * @notice Emergency pause for fee deposits and normal treasury withdrawals.
+     */
+    function setEmergencyPause(bool _paused) external override onlyGovernance {
         isEmergencyPaused = _paused;
         if (_paused) {
             emit EmergencyPaused(msg.sender);
@@ -112,39 +177,67 @@ contract ZenithTreasury {
         }
     }
 
-    /// @notice Emergency token rescue for non-protocol tokens mistakenly transferred to the contract
+    /**
+     * @notice Emergency token rescue for non-protocol tokens mistakenly transferred to the contract.
+     */
     function rescueToken(
         address token,
         address payable recipient,
         uint256 amount
-    ) external onlyGovernance {
-        require(recipient != address(0), "ZenithTreasury: Zero recipient");
-        require(amount > 0, "ZenithTreasury: Zero amount");
+    ) external override onlyGovernance nonReentrant {
+        if (recipient == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
 
         emit EmergencyTokenRescue(token, recipient, amount);
 
         if (token == address(0)) {
+            uint256 nativeBalance = address(this).balance;
+            if (nativeBalance < amount) revert InsufficientBalance(nativeBalance, amount);
             (bool success, ) = recipient.call{value: amount}("");
-            require(success, "ZenithTreasury: Native rescue failed");
+            if (!success) revert TransferFailed();
         } else {
-            (bool success, bytes memory data) = token.call(
-                abi.encodeWithSelector(IERC20.transfer.selector, recipient, amount)
-            );
-            require(success && (data.length == 0 || abi.decode(data, (bool))), "ZenithTreasury: Token rescue failed");
+            uint256 tokenBalance = IERC20(token).balanceOf(address(this));
+            if (tokenBalance < amount) revert InsufficientBalance(tokenBalance, amount);
+            _safeTransfer(token, recipient, amount);
         }
     }
 
-    // Two-Step Safe Governance Handover
-    function transferGovernance(address _newGovernance) external onlyGovernance {
-        require(_newGovernance != address(0), "ZenithTreasury: Zero new governance");
+    /**
+     * @notice Initiates two-step governance transfer.
+     */
+    function transferGovernance(address _newGovernance) external override onlyGovernance {
+        if (_newGovernance == address(0)) revert ZeroAddress();
         pendingGovernance = _newGovernance;
-        emit OwnershipTransferInitiated(governance, _newGovernance);
+        emit GovernanceTransferInitiated(governance, _newGovernance);
     }
 
-    function acceptGovernance() external {
-        require(msg.sender == pendingGovernance, "ZenithTreasury: Caller is not pending governance");
-        emit OwnershipTransferred(governance, pendingGovernance);
+    /**
+     * @notice Accepts pending governance transfer.
+     */
+    function acceptGovernance() external override {
+        if (msg.sender != pendingGovernance) revert NotPendingGovernance();
+        emit GovernanceTransferred(governance, pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);
+    }
+
+    // --- Internal Safe Transfer Helpers ---
+
+    function _safeTransfer(address token, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
+        );
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+            revert TransferFailed();
+        }
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value)
+        );
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+            revert TransferFailed();
+        }
     }
 }

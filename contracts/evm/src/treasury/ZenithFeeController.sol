@@ -1,48 +1,46 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "./interfaces/IZenithFeeController.sol";
+
 /**
  * @title ZenithFeeController
- * @notice Centralized, auditable protocol fee configuration for ZENITH SWAP (V1, V2, V3, and Cross-Chain).
+ * @notice Centralized, auditable protocol fee and pool tier configuration for ZENITH SWAP (V1, V2, V3, and Cross-Chain).
  * @dev Enforces strict protocol fee ceilings (max 30 BPS / 0.30%) to prevent governance fee manipulation.
+ *      Does NOT custody any protocol revenue; solely manages configuration and authorized collector roles.
  */
-contract ZenithFeeController {
-    address public governance;
-    address public pendingGovernance;
-    address public treasury;
+contract ZenithFeeController is IZenithFeeController {
+    address public override governance;
+    address public override pendingGovernance;
+    address public override treasury;
 
-    // Protocol Fee Configuration (in Basis Points, 1 BPS = 0.01%)
+    // Protocol Fee Ceilings (in Basis Points, 1 BPS = 0.01%)
     uint256 public constant MAX_PROTOCOL_FEE_BPS = 30; // Max 0.30%
-    uint256 public protocolFeeBps = 5;                  // Default 0.05%
-    uint256 public crossChainFeeBps = 5;                // Default 0.05%
+    uint256 public constant MAX_CROSS_CHAIN_FEE_BPS = 30; // Max 0.30%
 
-    // V1 Default Swap Fee
-    uint256 public v1TotalFeeBps = 30;                  // 0.30%
+    uint256 public override protocolFeeBps = 5;      // Default 0.05%
+    uint256 public override crossChainFeeBps = 5;    // Default 0.05%
+    uint256 public override v1TotalFeeBps = 30;      // Default 0.30%
 
     // V2 Allowed Fee Tiers (in BPS)
-    mapping(uint24 => bool) public isV2FeeTierAllowed;
+    mapping(uint24 => bool) public override isV2FeeTierAllowed;
 
-    // V3 Allowed Fee Tiers (in hundredths of a pip: 100 = 0.01%, 500 = 0.05%, 3000 = 0.30%, 10000 = 1.00%)
-    mapping(uint24 => bool) public isV3FeeTierAllowed;
-    mapping(uint24 => int24) public v3TickSpacings;
+    // V3 Allowed Fee Tiers (in hundredths of a pip) & Tick Spacings
+    mapping(uint24 => bool) public override isV3FeeTierAllowed;
+    mapping(uint24 => int24) public override v3TickSpacings;
 
-    // Events
-    event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
-    event CrossChainFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
-    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
-    event GovernanceTransferInitiated(address indexed currentGovernance, address indexed newGovernance);
-    event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
-    event V2FeeTierConfigured(uint24 indexed feeTierBps, bool allowed);
-    event V3FeeTierConfigured(uint24 indexed feeTier, int24 tickSpacing, bool allowed);
+    // Authorized Protocol Fee Collectors
+    mapping(address => bool) public override isFeeCollector;
 
     modifier onlyGovernance() {
-        require(msg.sender == governance, "ZenithFeeController: Only governance");
+        if (msg.sender != governance) revert OnlyGovernance();
         _;
     }
 
     constructor(address _governance, address _treasury) {
-        require(_governance != address(0), "ZenithFeeController: Zero governance address");
-        require(_treasury != address(0), "ZenithFeeController: Zero treasury address");
+        if (_governance == address(0)) revert ZeroAddress();
+        if (_treasury == address(0)) revert ZeroAddress();
+
         governance = _governance;
         treasury = _treasury;
 
@@ -64,33 +62,59 @@ contract ZenithFeeController {
         emit V3FeeTierConfigured(feeTier, tickSpacing, true);
     }
 
-    function setProtocolFeeBps(uint256 _newFeeBps) external onlyGovernance {
-        require(_newFeeBps <= MAX_PROTOCOL_FEE_BPS, "ZenithFeeController: Protocol fee exceeds maximum ceiling");
+    /**
+     * @notice Computes sovereign protocol fee from gross swap input.
+     */
+    function calculateProtocolFee(uint256 amount) public view override returns (uint256 feeAmount) {
+        return (amount * protocolFeeBps) / 10000;
+    }
+
+    /**
+     * @notice Computes sovereign cross-chain protocol fee from gross bridge amount.
+     */
+    function calculateCrossChainFee(uint256 amount) public view override returns (uint256 feeAmount) {
+        return (amount * crossChainFeeBps) / 10000;
+    }
+
+    function setProtocolFeeBps(uint256 _newFeeBps) external override onlyGovernance {
+        if (_newFeeBps > MAX_PROTOCOL_FEE_BPS) revert FeeExceedsMaxCeiling(_newFeeBps, MAX_PROTOCOL_FEE_BPS);
         emit ProtocolFeeUpdated(protocolFeeBps, _newFeeBps);
         protocolFeeBps = _newFeeBps;
     }
 
-    function setCrossChainFeeBps(uint256 _newFeeBps) external onlyGovernance {
-        require(_newFeeBps <= MAX_PROTOCOL_FEE_BPS, "ZenithFeeController: Cross-chain fee exceeds ceiling");
+    function setCrossChainFeeBps(uint256 _newFeeBps) external override onlyGovernance {
+        if (_newFeeBps > MAX_CROSS_CHAIN_FEE_BPS) revert FeeExceedsMaxCeiling(_newFeeBps, MAX_CROSS_CHAIN_FEE_BPS);
         emit CrossChainFeeUpdated(crossChainFeeBps, _newFeeBps);
         crossChainFeeBps = _newFeeBps;
     }
 
-    function setTreasury(address _newTreasury) external onlyGovernance {
-        require(_newTreasury != address(0), "ZenithFeeController: Zero treasury address");
+    function setV1TotalFeeBps(uint256 _newFeeBps) external override onlyGovernance {
+        if (_newFeeBps > 1000) revert FeeExceedsMaxCeiling(_newFeeBps, 1000);
+        emit V1TotalFeeUpdated(v1TotalFeeBps, _newFeeBps);
+        v1TotalFeeBps = _newFeeBps;
+    }
+
+    function setTreasury(address _newTreasury) external override onlyGovernance {
+        if (_newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, _newTreasury);
         treasury = _newTreasury;
     }
 
-    function configureV2FeeTier(uint24 feeTierBps, bool allowed) external onlyGovernance {
-        require(feeTierBps <= 500, "ZenithFeeController: V2 fee tier too high");
+    function setFeeCollector(address collector, bool authorized) external override onlyGovernance {
+        if (collector == address(0)) revert ZeroAddress();
+        isFeeCollector[collector] = authorized;
+        emit FeeCollectorUpdated(collector, authorized);
+    }
+
+    function configureV2FeeTier(uint24 feeTierBps, bool allowed) external override onlyGovernance {
+        if (feeTierBps > 500) revert FeeExceedsMaxCeiling(feeTierBps, 500);
         isV2FeeTierAllowed[feeTierBps] = allowed;
         emit V2FeeTierConfigured(feeTierBps, allowed);
     }
 
-    function configureV3FeeTier(uint24 feeTier, int24 tickSpacing, bool allowed) external onlyGovernance {
-        require(feeTier <= 20000, "ZenithFeeController: V3 fee tier exceeds 2%");
-        require(tickSpacing > 0 && tickSpacing <= 16384, "ZenithFeeController: Invalid tick spacing");
+    function configureV3FeeTier(uint24 feeTier, int24 tickSpacing, bool allowed) external override onlyGovernance {
+        if (feeTier > 20000) revert FeeExceedsMaxCeiling(feeTier, 20000);
+        if (allowed && (tickSpacing <= 0 || tickSpacing > 16384)) revert InvalidTickSpacing(tickSpacing);
         isV3FeeTierAllowed[feeTier] = allowed;
         if (allowed) {
             v3TickSpacings[feeTier] = tickSpacing;
@@ -99,14 +123,14 @@ contract ZenithFeeController {
     }
 
     // Two-Step Safe Governance Handover
-    function transferGovernance(address _newGovernance) external onlyGovernance {
-        require(_newGovernance != address(0), "ZenithFeeController: Zero new governance");
+    function transferGovernance(address _newGovernance) external override onlyGovernance {
+        if (_newGovernance == address(0)) revert ZeroAddress();
         pendingGovernance = _newGovernance;
         emit GovernanceTransferInitiated(governance, _newGovernance);
     }
 
-    function acceptGovernance() external {
-        require(msg.sender == pendingGovernance, "ZenithFeeController: Caller is not pending governance");
+    function acceptGovernance() external override {
+        if (msg.sender != pendingGovernance) revert NotPendingGovernance();
         emit GovernanceTransferred(governance, pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);

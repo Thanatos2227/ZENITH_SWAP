@@ -1,9 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { ZenithSDK, zenithSDK } from '../packages/sdk/src/zenithSdk';
+import { registerZenithDeployment } from '@zenith/contracts';
 import { Token } from '@zenith/types';
 
 describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
+  // Register test deployment addresses for isolated test suite execution
+  registerZenithDeployment(137, {
+    v1Router: '0x1111111111111111111111111111111111111111',
+    v2Router: '0x2222222222222222222222222222222222222222',
+    v3Router: '0x3333333333333333333333333333333333333333',
+    v3PositionManager: '0x4444444444444444444444444444444444444444'
+  });
+
   const tokenIn: Token = {
     address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
     chainId: 137,

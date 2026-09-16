@@ -3,19 +3,23 @@ pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/ZenithCircuitBreaker.sol";
-import "../src/ZenithFeeManager.sol";
+import "../src/treasury/ZenithTreasury.sol";
+import "../src/treasury/ZenithFeeController.sol";
 import "../src/ZenithCrossChainRouter.sol";
 import "../src/interfaces/IERC20.sol";
 
-contract MockERC20 is IERC20 {
+contract MockUSDT is IERC20 {
     string public name = "Mock USDT";
     string public symbol = "USDT";
     uint8 public decimals = 6;
+    uint256 public override totalSupply;
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public override allowance;
 
     function mint(address to, uint256 amount) external {
+        totalSupply += amount;
         balanceOf[to] += amount;
+        emit Transfer(address(0), to, amount);
     }
 
     function transfer(address to, uint256 amount) external override returns (bool) {
@@ -34,8 +38,10 @@ contract MockERC20 is IERC20 {
 
     function transferFrom(address from, address to, uint256 amount) external override returns (bool) {
         require(balanceOf[from] >= amount, "ERC20: Insufficient balance");
-        require(allowance[from][msg.sender] >= amount, "ERC20: Insufficient allowance");
-        allowance[from][msg.sender] -= amount;
+        if (allowance[from][msg.sender] != type(uint256).max) {
+            require(allowance[from][msg.sender] >= amount, "ERC20: Insufficient allowance");
+            allowance[from][msg.sender] -= amount;
+        }
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
         emit Transfer(from, to, amount);
@@ -45,26 +51,33 @@ contract MockERC20 is IERC20 {
 
 contract ZenithCrossChainRouterTest is Test {
     ZenithCircuitBreaker public circuitBreaker;
-    ZenithFeeManager public feeManager;
+    ZenithTreasury public treasury;
+    ZenithFeeController public feeController;
     ZenithCrossChainRouter public crossChainRouter;
-    MockERC20 public mockUsdt;
+    MockUSDT public mockUsdt;
 
     address public governance = address(0x1000);
     address public guardian = address(0x2000);
-    address public treasury = address(0x3000);
     address public user = address(0x4000);
     address public solver = address(0x5000);
     address public recipient = address(0x6000);
 
     function setUp() public {
         circuitBreaker = new ZenithCircuitBreaker(governance, guardian);
-        feeManager = new ZenithFeeManager(governance, treasury);
+        treasury = new ZenithTreasury(governance);
+        feeController = new ZenithFeeController(governance, address(treasury));
+
         crossChainRouter = new ZenithCrossChainRouter(
-            address(feeManager),
+            address(treasury),
+            address(feeController),
             address(circuitBreaker),
             address(0)
         );
-        mockUsdt = new MockERC20();
+
+        vm.prank(governance);
+        treasury.setFeeCollector(address(crossChainRouter), true);
+
+        mockUsdt = new MockUSDT();
         mockUsdt.mint(user, 1000 * 10**6);
         mockUsdt.mint(solver, 1000 * 10**6);
         vm.deal(user, 100 ether);
@@ -97,6 +110,7 @@ contract ZenithCrossChainRouterTest is Test {
         assertEq(order.user, user);
         assertEq(order.recipient, recipient);
         assertEq(order.amountIn, amountIn - order.feePaid);
+        assertEq(address(treasury).balance, order.feePaid);
     }
 
     function testInitiateERC20CrossChainSwap() public {
@@ -126,6 +140,7 @@ contract ZenithCrossChainRouterTest is Test {
         IZenithCrossChainRouter.CrossChainOrder memory order = crossChainRouter.getOrder(orderId);
         assertEq(order.sourceToken, address(mockUsdt));
         assertEq(order.user, user);
+        assertEq(mockUsdt.balanceOf(address(treasury)), order.feePaid);
     }
 
     function testFulfillCrossChainOrder() public {
