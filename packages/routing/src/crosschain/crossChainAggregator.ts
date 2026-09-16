@@ -290,9 +290,16 @@ export class CrossChainAggregator {
       return [];
     }
 
+    const outDecimals = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
+    const sortedQuotes = [...quotes].sort((a, b) => {
+      const outA = Number(formatTokenUnits(a.destinationAmountRaw, outDecimals));
+      const outB = Number(formatTokenUnits(b.destinationAmountRaw, outDecimals));
+      return outB - outA;
+    });
+
     const routes: SwapRoute[] = [];
 
-    for (const quote of quotes) {
+    for (const quote of sortedQuotes) {
       const quoteAny = quote as any;
 
       const hops: RouteHop[] = [];

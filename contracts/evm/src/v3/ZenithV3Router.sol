@@ -53,7 +53,9 @@ contract ZenithV3Router is IZenithV3SwapCallback {
         bytes calldata data
     ) external override {
         require(amount0Delta > 0 || amount1Delta > 0, "ZenithV3Router: CALLBACK_INVALID");
-        (address tokenIn, address payer) = abi.decode(data, (address, address));
+        (address tokenIn, address tokenOut, uint24 fee, address payer) = abi.decode(data, (address, address, uint24, address));
+        address expectedPool = ZenithV3Factory(factory).getPool(tokenIn, tokenOut, fee);
+        require(msg.sender == expectedPool, "ZenithV3Router: UNAUTHORIZED_CALLBACK");
 
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
         if (payer == address(this)) {
@@ -91,7 +93,7 @@ contract ZenithV3Router is IZenithV3SwapCallback {
             zeroForOne,
             int256(params.amountIn),
             sqrtPriceLimitX96,
-            abi.encode(params.tokenIn, payer)
+            abi.encode(params.tokenIn, params.tokenOut, params.fee, payer)
         );
 
         amountOut = uint256(-(zeroForOne ? amount1 : amount0));

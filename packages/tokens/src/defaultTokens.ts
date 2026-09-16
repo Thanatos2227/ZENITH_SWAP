@@ -984,6 +984,18 @@ const TOKEN_CONFIG: Token[] = [
     logoURI: '/tokens/pol.png'
   },
   {
+    address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    chainId: 'polygon',
+    name: 'Wrapped POL',
+    symbol: 'WPOL',
+    decimals: 18,
+    priceUSD: 0.0972,
+    change24hUSD: 1.8,
+    volume24hUSD: 11783024,
+    verificationTier: 'VERIFIED_CANONICAL',
+    logoURI: '/tokens/pol.png'
+  },
+  {
     address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     chainId: 'polygon',
     name: 'USD Coin',
@@ -2451,16 +2463,23 @@ const VERIFIED_ADDITIONAL_TOKENS: Token[] = [
   }
 ];
 
-const WRAPPED_SYMBOLS = new Set(['WETH', 'WPOL', 'WMATIC', 'WBNB', 'WAVAX', 'WCELO', 'WMNT']);
+const CANONICAL_WRAPPED_MAP: Record<string, string> = {
+  POL: 'WPOL',
+  MATIC: 'WMATIC',
+  ETH: 'WETH',
+  BNB: 'WBNB',
+  AVAX: 'WAVAX',
+  CELO: 'WCELO',
+  MNT: 'WMNT'
+};
 
 const NORMALIZED_TOKENS: Token[] = TOKEN_CONFIG.map((token) => {
   const wrappedToken = token.isNative
-    ? TOKEN_CONFIG.find(
-        (candidate) =>
-          candidate.chainId === token.chainId &&
-          !candidate.isNative &&
-          WRAPPED_SYMBOLS.has(candidate.symbol)
-      )
+    ? TOKEN_CONFIG.find((candidate) => {
+        if (candidate.chainId !== token.chainId || candidate.isNative) return false;
+        const targetSymbol = CANONICAL_WRAPPED_MAP[token.symbol] || `W${token.symbol}`;
+        return candidate.symbol === targetSymbol || (token.symbol === 'POL' && candidate.symbol === 'WMATIC');
+      }) || (token.chainId === 'polygon' ? { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' } as any : undefined)
     : undefined;
 
   return {

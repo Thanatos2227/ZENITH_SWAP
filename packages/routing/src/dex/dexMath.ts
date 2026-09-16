@@ -1,5 +1,4 @@
 import { Token } from '@zenith/types';
-import { parseTokenUnits } from '../tokenDecimals';
 
 export function isNativeToken(address: string | undefined | null): boolean {
   if (!address) return false;
@@ -17,7 +16,8 @@ export const WRAPPED_NATIVE_ADDRESSES: Record<number, string> = {
   8453: '0x4200000000000000000000000000000000000006',
   10: '0x4200000000000000000000000000000000000006',
   56: '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',
-  43114: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
+  43114: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+  31337: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 };
 
 export function resolvePoolTokenAddress(token: Token, chainId: number): string {
@@ -96,17 +96,14 @@ export function calculateConstantProductOutput(params: {
 }
 
 export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
-
-  137: [
-
+  31337: [
     {
-      token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
-      token1: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-      reserve0: 10_000_000n * 10n ** 18n,
-      reserve1: 1_000_000n * 10n ** 6n,
+      token0: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      token1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      reserve0: 50_000n * 10n ** 18n,
+      reserve1: 125_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
       token1: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
@@ -114,7 +111,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 1_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
       token1: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
@@ -122,7 +118,37 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 1_000_000n * 10n ** 6n,
       feeBps: 30
     },
+    {
+      token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+      token1: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+      reserve0: 10_000_000n * 10n ** 18n,
+      reserve1: 1_000_000n * 10n ** 6n,
+      feeBps: 30
+    }
+  ],
 
+  137: [
+    {
+      token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+      token1: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+      reserve0: 10_000_000n * 10n ** 18n,
+      reserve1: 1_000_000n * 10n ** 6n,
+      feeBps: 30
+    },
+    {
+      token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+      token1: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+      reserve0: 10_000_000n * 10n ** 18n,
+      reserve1: 1_000_000n * 10n ** 6n,
+      feeBps: 30
+    },
+    {
+      token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+      token1: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      reserve0: 10_000_000n * 10n ** 18n,
+      reserve1: 1_000_000n * 10n ** 6n,
+      feeBps: 30
+    },
     {
       token0: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
       token1: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
@@ -130,7 +156,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 50_000_000n * 10n ** 6n,
       feeBps: 5
     },
-
     {
       token0: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
       token1: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
@@ -138,7 +163,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 10_000n * 10n ** 18n,
       feeBps: 30
     },
-
     {
       token0: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
       token1: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
@@ -146,7 +170,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 10_000n * 10n ** 18n,
       feeBps: 30
     },
-
     {
       token0: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
       token1: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
@@ -157,7 +180,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   1: [
-
     {
       token0: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
       token1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -165,7 +187,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 125_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
       token1: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -173,7 +194,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 125_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
       token1: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -181,7 +201,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 100_000_000n * 10n ** 6n,
       feeBps: 5
     },
-
     {
       token0: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
       token1: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -189,7 +208,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 2_500n * 10n ** 18n,
       feeBps: 30
     },
-
     {
       token0: '0x514910771af9ca656af840dff83e8264ecf986ca',
       token1: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -200,7 +218,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   42161: [
-
     {
       token0: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
       token1: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
@@ -208,7 +225,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 100_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
       token1: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
@@ -216,7 +232,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 100_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x912CE59144191C1204E64559FE8253a0e49E6548',
       token1: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
@@ -224,7 +239,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 25_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
       token1: '0x912CE59144191C1204E64559FE8253a0e49E6548',
@@ -235,7 +249,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   8453: [
-
     {
       token0: '0x4200000000000000000000000000000000000006',
       token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
@@ -243,7 +256,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 75_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x4200000000000000000000000000000000000006',
       token1: '0x940181a94A35A4569E4529A3CDfB74e38FD98631',
@@ -254,7 +266,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   10: [
-
     {
       token0: '0x4200000000000000000000000000000000000006',
       token1: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
@@ -262,7 +273,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 62_500_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x4200000000000000000000000000000000000042',
       token1: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
@@ -270,7 +280,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 30_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0x4200000000000000000000000000000000000006',
       token1: '0x4200000000000000000000000000000000000042',
@@ -281,7 +290,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   56: [
-
     {
       token0: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
       token1: '0x55d398326f99059fF775485246999027B3197955',
@@ -289,7 +297,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 60_000_000n * 10n ** 18n,
       feeBps: 25
     },
-
     {
       token0: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
       token1: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
@@ -297,7 +304,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 60_000_000n * 10n ** 18n,
       feeBps: 25
     },
-
     {
       token0: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
       token1: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
@@ -308,7 +314,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ],
 
   43114: [
-
     {
       token0: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
       token1: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
@@ -316,7 +321,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 15_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
       token1: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
@@ -324,7 +328,6 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       reserve1: 15_000_000n * 10n ** 6n,
       feeBps: 30
     },
-
     {
       token0: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7',
       token1: '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd',
@@ -335,9 +338,10 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
   ]
 };
 
-function normalizeAddress(tokenAddress: string, chainId: number): string {
+function normalizeAddress(tokenAddress: string, chainId: number, wrappedAddress?: string): string {
   const lower = (tokenAddress || '').trim().toLowerCase();
   if (isNativeToken(lower)) {
+    if (wrappedAddress) return wrappedAddress.toLowerCase();
     switch (chainId) {
       case 137:
         return '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
@@ -353,6 +357,8 @@ function normalizeAddress(tokenAddress: string, chainId: number): string {
         return '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c';
       case 43114:
         return '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7';
+      case 31337:
+        return '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
       default:
         return lower;
     }
@@ -363,13 +369,15 @@ function normalizeAddress(tokenAddress: string, chainId: number): string {
 export function findVerifiedPool(
   chainId: number,
   tokenInAddress: string,
-  tokenOutAddress: string
+  tokenOutAddress: string,
+  tokenInWrapped?: string,
+  tokenOutWrapped?: string
 ): { reserveIn: bigint; reserveOut: bigint; feeBps: number } | null {
   const pools = VERIFIED_DEX_POOLS[chainId];
   if (!pools || pools.length === 0) return null;
 
-  const inNorm = normalizeAddress(tokenInAddress, chainId);
-  const outNorm = normalizeAddress(tokenOutAddress, chainId);
+  const inNorm = normalizeAddress(tokenInAddress, chainId, tokenInWrapped);
+  const outNorm = normalizeAddress(tokenOutAddress, chainId, tokenOutWrapped);
 
   for (const pool of pools) {
     const t0 = pool.token0.toLowerCase();
@@ -391,6 +399,22 @@ export function findVerifiedPool(
     }
   }
 
+  // Also check if tokenIn or tokenOut has alternate wrapped (e.g. WPOL vs WETH on local testnet)
+  if (chainId === 31337 || chainId === 137) {
+    const altIn = tokenInWrapped ? tokenInWrapped.toLowerCase() : inNorm;
+    const altOut = tokenOutWrapped ? tokenOutWrapped.toLowerCase() : outNorm;
+    for (const pool of pools) {
+      const t0 = pool.token0.toLowerCase();
+      const t1 = pool.token1.toLowerCase();
+      if ((t0 === altIn && t1 === altOut) || (t0 === inNorm && t1 === altOut) || (t0 === altIn && t1 === outNorm)) {
+        return { reserveIn: pool.reserve0, reserveOut: pool.reserve1, feeBps: pool.feeBps };
+      }
+      if ((t1 === altIn && t0 === altOut) || (t1 === inNorm && t0 === altOut) || (t1 === altIn && t0 === outNorm)) {
+        return { reserveIn: pool.reserve1, reserveOut: pool.reserve0, feeBps: pool.feeBps };
+      }
+    }
+  }
+
   return null;
 }
 
@@ -401,6 +425,8 @@ export function calculateDEXLiquidityOutput(params: {
   amountIn: bigint;
   feeTierBps?: number;
   slippageToleranceBps: number;
+  customReserveIn?: bigint;
+  customReserveOut?: bigint;
 }): {
   amountOut: bigint;
   minimumAmountOut: bigint;
@@ -408,48 +434,33 @@ export function calculateDEXLiquidityOutput(params: {
   feeTierBps: number;
   priceImpactPercent: number;
 } | null {
-  const { chainId, tokenIn, tokenOut, amountIn, feeTierBps, slippageToleranceBps } = params;
+  const { chainId, tokenIn, tokenOut, amountIn, feeTierBps, slippageToleranceBps, customReserveIn, customReserveOut } = params;
 
   if (amountIn <= 0n) return null;
 
-  const pool = findVerifiedPool(chainId, tokenIn.address, tokenOut.address);
   let reserveIn: bigint;
   let reserveOut: bigint;
   let effectiveFeeBps: number;
 
-  if (pool) {
+  if (customReserveIn !== undefined && customReserveOut !== undefined) {
+    if (customReserveIn <= 0n || customReserveOut <= 0n) return null;
+    reserveIn = customReserveIn;
+    reserveOut = customReserveOut;
+    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
+  } else {
+    const pool = findVerifiedPool(
+      chainId,
+      tokenIn.address,
+      tokenOut.address,
+      tokenIn.wrappedAddress,
+      tokenOut.wrappedAddress
+    );
+    if (!pool || pool.reserveIn <= 0n || pool.reserveOut <= 0n) {
+      return null;
+    }
     reserveIn = pool.reserveIn;
     reserveOut = pool.reserveOut;
     effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : pool.feeBps;
-
-    if (tokenIn.priceUSD && tokenOut.priceUSD && tokenIn.priceUSD > 0 && tokenOut.priceUSD > 0) {
-      const marketRatio = tokenIn.priceUSD / tokenOut.priceUSD;
-      const inDec = tokenIn.decimals !== undefined ? tokenIn.decimals : 18;
-      const outDec = tokenOut.decimals !== undefined ? tokenOut.decimals : 18;
-      const baseReserveInUnits = 10_000_000;
-      reserveIn = BigInt(baseReserveInUnits) * 10n ** BigInt(inDec);
-      const expectedOutUnits = baseReserveInUnits * marketRatio;
-      const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDec, 8)), outDec);
-      if (BigInt(outRawStr) > 0n) {
-        reserveOut = BigInt(outRawStr);
-      }
-    }
-  } else {
-    const priceIn = (tokenIn.priceUSD && tokenIn.priceUSD > 0) ? tokenIn.priceUSD : (tokenIn.symbol === 'USDC' || tokenIn.symbol === 'USDT' ? 1.0 : 2500.0);
-    const priceOut = (tokenOut.priceUSD && tokenOut.priceUSD > 0) ? tokenOut.priceUSD : (tokenOut.symbol === 'USDC' || tokenOut.symbol === 'USDT' ? 1.0 : 2500.0);
-    const marketRatio = priceIn / priceOut;
-    const inDec = tokenIn.decimals !== undefined ? tokenIn.decimals : 18;
-    const outDec = tokenOut.decimals !== undefined ? tokenOut.decimals : 18;
-    const baseReserveInUnits = 10_000_000;
-    reserveIn = BigInt(baseReserveInUnits) * 10n ** BigInt(inDec);
-    const expectedOutUnits = baseReserveInUnits * marketRatio;
-    const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDec, 8)), outDec);
-    if (BigInt(outRawStr) > 0n) {
-      reserveOut = BigInt(outRawStr);
-    } else {
-      return null;
-    }
-    effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
   }
 
   const result = calculateConstantProductOutput({

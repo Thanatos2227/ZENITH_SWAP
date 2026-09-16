@@ -18,7 +18,7 @@ import {
   validateRecipientAddress,
   validateExecutionTarget
 } from '@zenith/contracts';
-import { isNativeToken } from '../../dex/dexMath';
+import { isNativeToken, scaleTokenUnits } from '../../dex/dexMath';
 import { formatTokenUnits, parseTokenUnits } from '../../tokenDecimals';
 
 const dlnInterface = new Interface(DEBRIDGE_DLN_SOURCE_ABI);
@@ -30,8 +30,8 @@ export class DeBridgeProvider implements CrossChainProvider {
   public isAvailable(
     sourceChainId?: string,
     destinationChainId?: string,
-    _tokenIn?: Token,
-    _tokenOut?: Token
+    tokenIn?: Token,
+    tokenOut?: Token
   ): boolean {
     if (!sourceChainId || !destinationChainId) return false;
     if (sourceChainId === destinationChainId) return false;
@@ -40,6 +40,14 @@ export class DeBridgeProvider implements CrossChainProvider {
 
     if (!src?.chainId || !dst?.chainId) return false;
     if (src.executionEnvironment !== 'EVM' || dst.executionEnvironment !== 'EVM') return false;
+
+    if (tokenIn && tokenOut) {
+      const symIn = (tokenIn.symbol || '').toUpperCase().replace(/^W/, '');
+      const symOut = (tokenOut.symbol || '').toUpperCase().replace(/^W/, '');
+      if (symIn !== symOut && !(symIn.startsWith('USD') && symOut.startsWith('USD'))) {
+        return false;
+      }
+    }
 
     return isDeBridgeSupported(src.chainId) && isDeBridgeSupported(dst.chainId);
   }
@@ -61,8 +69,11 @@ export class DeBridgeProvider implements CrossChainProvider {
     if (amountInBig <= 0n) return null;
 
     const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+    const outDecimals = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
     const inUnits = Number(formatTokenUnits(amountInBig, inDecimals));
     const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 0;
+    const priceOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 0;
+
     const tradeValueUSD = inUnits * priceIn;
     if (priceIn > 0 && tradeValueUSD < 1.0) {
       return null;
@@ -74,9 +85,9 @@ export class DeBridgeProvider implements CrossChainProvider {
     const validatedOutputToken = validateTokenAddress(request.tokenOut.address, dstChain.id, request.tokenOut.isNative);
 
     let destinationAmountBig: bigint | null = null;
-    let estTransferTimeSec = 15;
-    let bridgeFeeUSD = 0;
+    let estTransferTimeSec = 120;
     let relayerFee = '0.04%';
+    let bridgeFeeUSD = 0;
 
     try {
       const url = `https://dln.debridge.finance/v1.0/dln/order/quote?srcChainId=${srcChain.chainId}&srcChainTokenIn=${validatedInputToken}&srcChainTokenInAmount=${amountInBig.toString()}&dstChainId=${dstChain.chainId}&dstChainTokenOut=${validatedOutputToken}&prependOperatingExpense=true`;
@@ -85,7 +96,19 @@ export class DeBridgeProvider implements CrossChainProvider {
         const data = await res.json();
         const outAmountStr = data.estimation?.dstChainTokenOut?.recommendedAmount || data.estimation?.dstChainTokenOut?.amount;
         if (outAmountStr) {
-          destinationAmountBig = BigInt(outAmountStr);
+          const apiDecimals = data.estimation?.dstChainTokenOut?.decimals !== undefined ? Number(data.estimation.dstChainTokenOut.decimals) : outDecimals;
+          const parsedAmountBig = scaleTokenUnits(BigInt(outAmountStr), apiDecimals, outDecimals);
+          const outUnits = Number(formatTokenUnits(parsedAmountBig, outDecimals));
+          // Sanity check rate
+          if (priceIn > 0 && priceOut > 0 && inUnits > 0) {
+            const rate = outUnits / inUnits;
+            const spotRatio = priceIn / priceOut;
+            if (rate <= spotRatio * 2 && rate >= spotRatio / 2) {
+              destinationAmountBig = parsedAmountBig;
+            }
+          } else {
+            destinationAmountBig = parsedAmountBig;
+          }
           if (data.estimation?.costsDetails) {
             const opCost = data.estimation.costsDetails.find((c: any) => c.name === 'OperatingExpense');
             if (opCost?.amount) {

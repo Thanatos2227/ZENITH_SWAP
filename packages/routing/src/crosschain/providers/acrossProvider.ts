@@ -86,7 +86,22 @@ export class AcrossProvider implements CrossChainProvider {
       if (resp.ok) {
         const data = await resp.json();
         if (!data.isAmountTooLow && data.outputAmount) {
-          destinationAmountBig = BigInt(data.outputAmount);
+          const inDec = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+          const outDec = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
+          const inU = Number(formatTokenUnits(amountInBig, inDec));
+          const outU = Number(formatTokenUnits(BigInt(data.outputAmount), outDec));
+          const pIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 0;
+          const pOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 0;
+
+          if (pIn > 0 && pOut > 0 && inU > 0) {
+            const rate = outU / inU;
+            const spotRatio = pIn / pOut;
+            if (rate <= spotRatio * 2 && rate >= spotRatio / 2) {
+              destinationAmountBig = BigInt(data.outputAmount);
+            }
+          } else {
+            destinationAmountBig = BigInt(data.outputAmount);
+          }
           if (data.timestamp) quoteTimestampSec = Number(data.timestamp);
           if (data.fillDeadline) fillDeadlineSec = Number(data.fillDeadline);
           if (data.exclusiveRelayer) exclusiveRelayer = data.exclusiveRelayer;
