@@ -148,8 +148,13 @@ test('ZENITH SWAP — Polygon & Sovereign Execution Root-Cause Repair Suite', as
       tokenIn: { ...polygonPOL, chainId: '31337' },
       tokenOut: { ...polygonUSDC, chainId: '31337' },
       amountIn: 10n ** 18n, // 1 POL
-      slippageToleranceBps: 50
-    });
+      slippageToleranceBps: 50,
+      liquidity: 1000000000000000000n,
+      sqrtPriceX96: 79228162514264337593543950336n,
+      currentTick: 0,
+      tickSpacing: 60,
+      feeTierBps: 30
+    } as any);
 
     assert.ok(quote, 'Should generate a valid quote on deployed chain');
     assert.equal(quote.provider, 'ZENITH_V3');

@@ -427,8 +427,10 @@ test('SUITE 9: Integration Tests', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1000000000000000000',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
 
     assert.ok(quote.requestId);
     assert.ok(quote.effectiveExecutionScore > 50);
@@ -576,8 +578,10 @@ test('SUITE 14: Complete End-to-End User Journeys', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1000000000000000000',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
     assert.ok(quote);
 
     const stateMachine = new ExecutionStateMachine();
@@ -637,8 +641,10 @@ test('SUITE 15: Special & Extreme Edge-Case Tests', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
 
     assert.ok(!isNaN(dustQuote.executionPrice));
     assert.ok(dustQuote.amountOutFormatted !== undefined);

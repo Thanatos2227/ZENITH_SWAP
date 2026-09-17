@@ -54,8 +54,10 @@ describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
         tokenIn,
         tokenOut,
         amountIn: 1000n * 10n ** 6n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000n * 10n ** 18n
+      } as any);
 
       assert.ok(quote, 'Quote result must be returned');
       assert.strictEqual(quote.sourceChainId, 137);
@@ -73,8 +75,10 @@ describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
         chainId: 137,
         tokenIn,
         tokenOut,
-        amountIn: 500n * 10n ** 6n
-      });
+        amountIn: 500n * 10n ** 6n,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000n * 10n ** 18n
+      } as any);
 
       assert.ok(Array.isArray(routes), 'getRoutes must return an array');
       assert.ok(routes.length > 0, 'Must return at least 1 route');
@@ -92,8 +96,10 @@ describe('ZENITH SWAP — Sovereign TypeScript SDK Suite', () => {
         chainId: 137,
         tokenIn,
         tokenOut,
-        amountIn: 100n * 10n ** 6n
-      });
+        amountIn: 100n * 10n ** 6n,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000n * 10n ** 18n
+      } as any);
 
       const tx = await zenithSDK.buildSwapTransaction(quote, {
         userAddress: '0x1234567890123456789012345678901234567890'

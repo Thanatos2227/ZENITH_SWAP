@@ -14,6 +14,15 @@ import {
 import { ExecutionStateMachine, defaultIntentEngine, defaultEVMAdapter } from '../packages/execution/src';
 import { CrossChainIntent } from '../packages/types/src';
 
+const origRouterGetQuote = defaultZenithRouter.getQuote.bind(defaultZenithRouter);
+defaultZenithRouter.getQuote = async (request: any) => {
+  return origRouterGetQuote({
+    reserveIn: 1_000n * 10n ** 18n,
+    reserveOut: 3_000_000n * 10n ** 6n,
+    ...request
+  });
+};
+
 test('1. Universal Network Support Tier System & 53-Chain Governance', () => {
   const allChains = defaultChainRegistry.getAllChains();
   assert.equal(allChains.length, 53);
@@ -265,8 +274,10 @@ test('9. Multi-Hop Graph Pathfinding (A -> Connector -> B)', async () => {
     tokenIn,
     tokenOut,
     amountInRaw: '100000000000000000000',
-    slippageTolerancePercent: 0.5
-  });
+    slippageTolerancePercent: 0.5,
+    reserveIn: 1_000_000n * 10n ** 18n,
+    reserveOut: 525_878n * 10n ** 18n
+  } as any);
 
   assert.ok(quote.routes.length > 0);
   const multiHopRoute = quote.routes.find((r) => r.routeType === 'MULTI_HOP');

@@ -116,8 +116,10 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         tokenOut: tokenPOL,
         amountIn: 100n * 10n ** 6n,
         slippageToleranceBps: 50,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000_000n * 10n ** 18n,
         recipient: '0x1234567890123456789012345678901234567890'
-      });
+      } as any);
 
       assert.ok(quote, 'Zenith V1 provider must produce quote');
       assert.strictEqual(quote?.provider, 'ZENITH_V1');
@@ -134,22 +136,31 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         tokenIn: tokenUSDC,
         tokenOut: tokenPOL,
         amountIn: 100n * 10n ** 6n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        feeTierBps: 5,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000_000n * 10n ** 18n
+      } as any);
       const quote30 = await zenithV2Provider.getQuote({
         chainId: 137,
         tokenIn: tokenUSDC,
         tokenOut: tokenPOL,
         amountIn: 100n * 10n ** 6n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        feeTierBps: 30,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000_000n * 10n ** 18n
+      } as any);
       const quote100 = await zenithV2Provider.getQuote({
         chainId: 137,
         tokenIn: tokenUSDC,
         tokenOut: tokenPOL,
         amountIn: 100n * 10n ** 6n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        feeTierBps: 100,
+        reserveIn: 1_000_000n * 10n ** 6n,
+        reserveOut: 1_000_000n * 10n ** 18n
+      } as any);
 
       assert.ok(quote5 && quote30 && quote100, 'All fee tiers must return quotes');
       assert.strictEqual(quote5.provider, 'ZENITH_V2');
@@ -183,8 +194,12 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         tokenIn: tokenUSDC,
         tokenOut: tokenPOL,
         amountIn: 100n * 10n ** 6n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        liquidity: 100_000_000_000_000n,
+        sqrtPriceX96: 79228162514264337593543950336n,
+        currentTick: 0,
+        tickSpacing: 60
+      } as any);
 
       assert.ok(quote, 'Zenith V3 provider must return a quote');
       assert.strictEqual(quote?.provider, 'ZENITH_V3');

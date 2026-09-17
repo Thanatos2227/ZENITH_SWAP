@@ -85,6 +85,37 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
   const v3Provider = new ZenithV3Provider();
   const adapter = new EVMExecutionAdapter();
 
+  const origV1GetQuote = v1Provider.getQuote.bind(v1Provider);
+  v1Provider.getQuote = async (params: any) => {
+    return origV1GetQuote({
+      reserveIn: 1_000_000n * 10n ** 18n,
+      reserveOut: 420_000n * 10n ** 6n,
+      ...params
+    });
+  };
+
+  const origV2GetQuote = v2Provider.getQuote.bind(v2Provider);
+  v2Provider.getQuote = async (params: any) => {
+    return origV2GetQuote({
+      reserveIn: 1_000_000n * 10n ** 18n,
+      reserveOut: 420_000n * 10n ** 6n,
+      feeTierBps: 30,
+      ...params
+    });
+  };
+
+  const origV3GetQuote = v3Provider.getQuote.bind(v3Provider);
+  v3Provider.getQuote = async (params: any) => {
+    return origV3GetQuote({
+      liquidity: 100_000_000_000_000n,
+      sqrtPriceX96: 79228162514264337593543950336n,
+      currentTick: 0,
+      tickSpacing: 60,
+      feeTierBps: 30,
+      ...params
+    });
+  };
+
   await t.test('1. Native POL -> WPOL -> Zenith V1: swapExactETHForTokens Calldata & Native Value', async () => {
     const amountIn = 10n ** 18n; // 1 POL
     const quote = await v1Provider.getQuote({

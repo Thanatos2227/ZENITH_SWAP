@@ -144,8 +144,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_ETH,
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote, 'Quote should be generated');
       const execution = await uniProvider.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -160,8 +162,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_AVAX,
         tokenOut: USDC_AVAX,
         amountIn: 10000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote, 'Quote should be generated');
       const execution = await uniProvider.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -179,8 +183,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_ARB_ETH,
         tokenOut: USDC_ARB,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote);
       const execution = await camelot.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -199,8 +205,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_OP_ETH,
         tokenOut: USDC_OP,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote);
       const execution = await velo.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -235,8 +243,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: bscTokenIn,
         tokenOut: bscUsdt,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 18n
+      } as any);
 
       assert.ok(quote);
       const execution = await pancake.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -254,8 +264,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_AVAX,
         tokenOut: USDC_AVAX,
         amountIn: 5000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote);
       const execution = await traderJoe.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -273,8 +285,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_POL,
         tokenOut: USDC_POL,
         amountIn: 10000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote);
       const execution = await quick.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -294,8 +308,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_ETH,
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000n * 10n ** 18n,
+        reserveOut: 1000000n * 10n ** 6n
+      } as any);
       assert.ok(quote);
       const execution = await v1.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
       assert.ok(execution.data);
@@ -308,8 +324,10 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: USDC_ETH,
         tokenOut: NATIVE_ETH,
         amountIn: 1000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        reserveIn: 1000000n * 10n ** 6n,
+        reserveOut: 1000n * 10n ** 18n
+      } as any);
       assert.ok(quote);
       const execution = await v2.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
       assert.ok(execution.data);
@@ -322,8 +340,13 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenIn: NATIVE_ETH,
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
-        slippageToleranceBps: 50
-      });
+        slippageToleranceBps: 50,
+        liquidity: 1000000000000000000n,
+        sqrtPriceX96: 79228162514264337593543950336n,
+        currentTick: 0,
+        tickSpacing: 60,
+        feeTierBps: 30
+      } as any);
       assert.ok(quote);
       const execution = await v3.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
       assert.ok(execution.data);

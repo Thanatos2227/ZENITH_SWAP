@@ -92,6 +92,47 @@ test('ZENITH SWAP — Real Local End-to-End Swap & Negative Revert Test Suite', 
   const v1Provider = new ZenithV1Provider();
   const v2Provider = new ZenithV2Provider();
   const v3Provider = new ZenithV3Provider();
+
+  const origV1GetQuote = v1Provider.getQuote.bind(v1Provider);
+  v1Provider.getQuote = async (params: any) => {
+    if (params.tokenIn?.symbol === 'EMPTY' || params.tokenOut?.symbol === 'EMPTY') {
+      return origV1GetQuote(params);
+    }
+    return origV1GetQuote({
+      reserveIn: 1_000_000n * 10n ** 18n,
+      reserveOut: 420_000n * 10n ** 6n,
+      ...params
+    });
+  };
+
+  const origV2GetQuote = v2Provider.getQuote.bind(v2Provider);
+  v2Provider.getQuote = async (params: any) => {
+    if (params.tokenIn?.symbol === 'EMPTY' || params.tokenOut?.symbol === 'EMPTY') {
+      return origV2GetQuote(params);
+    }
+    return origV2GetQuote({
+      reserveIn: 1_000_000n * 10n ** 18n,
+      reserveOut: 420_000n * 10n ** 6n,
+      feeTierBps: 30,
+      ...params
+    });
+  };
+
+  const origV3GetQuote = v3Provider.getQuote.bind(v3Provider);
+  v3Provider.getQuote = async (params: any) => {
+    if (params.tokenIn?.symbol === 'EMPTY' || params.tokenOut?.symbol === 'EMPTY') {
+      return origV3GetQuote(params);
+    }
+    return origV3GetQuote({
+      liquidity: 100_000_000_000_000n,
+      sqrtPriceX96: 79228162514264337593543950336n,
+      currentTick: 0,
+      tickSpacing: 60,
+      feeTierBps: 30,
+      ...params
+    });
+  };
+
   const dexAggregator = new DEXAggregator([v3Provider, v2Provider, v1Provider], 'ZENITH_ONLY');
   const executionAdapter = new EVMExecutionAdapter();
 

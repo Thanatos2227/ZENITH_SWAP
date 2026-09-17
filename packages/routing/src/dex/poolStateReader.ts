@@ -1,8 +1,42 @@
 import { Contract, Provider, ZeroAddress } from 'ethers';
-import { ZENITH_V3_POOL_ABI, ZENITH_V3_FACTORY_ABI, getZenithV3Factory } from '@zenith/contracts';
+import {
+  ZENITH_V1_FACTORY_ABI,
+  ZENITH_V1_PAIR_ABI,
+  ZENITH_V2_FACTORY_ABI,
+  ZENITH_V2_POOL_ABI,
+  ZENITH_V3_FACTORY_ABI,
+  ZENITH_V3_POOL_ABI,
+  getZenithV1Factory,
+  getZenithV2Factory,
+  getZenithV3Factory
+} from '@zenith/contracts';
 import { TickInfo } from '../math/v3ExactMath';
 
+export interface ZenithV1LivePoolState {
+  chainId: number;
+  poolAddress: string;
+  token0: string;
+  token1: string;
+  reserve0: bigint;
+  reserve1: bigint;
+  blockTimestampLast: number;
+  blockNumber: number;
+}
+
+export interface ZenithV2LivePoolState {
+  chainId: number;
+  poolAddress: string;
+  token0: string;
+  token1: string;
+  feeBps: number;
+  reserve0: bigint;
+  reserve1: bigint;
+  blockTimestampLast: number;
+  blockNumber: number;
+}
+
 export interface ZenithV3LivePoolState {
+  chainId: number;
   poolAddress: string;
   token0: string;
   token1: string;
@@ -17,7 +51,150 @@ export interface ZenithV3LivePoolState {
 }
 
 export class PoolStateReader {
-  public static async getPoolAddress(
+  // ==========================================
+  // ZENITH V1 LIVE STATE
+  // ==========================================
+  public static async getV1PairAddress(
+    factoryAddress: string,
+    tokenA: string,
+    tokenB: string,
+    provider: Provider
+  ): Promise<string> {
+    const factory = new Contract(factoryAddress, ZENITH_V1_FACTORY_ABI, provider);
+    const pairAddress: string = await factory.getPair(tokenA, tokenB);
+    return pairAddress;
+  }
+
+  public static async readLiveV1PoolState(
+    chainId: number,
+    poolAddress: string,
+    provider: Provider
+  ): Promise<ZenithV1LivePoolState> {
+    if (!poolAddress || poolAddress === ZeroAddress) {
+      throw new Error(`Invalid Zenith V1 pair address: ${poolAddress}`);
+    }
+
+    const code = await provider.getCode(poolAddress);
+    if (!code || code === '0x') {
+      throw new Error(`Zenith V1 pair contract not deployed at ${poolAddress}`);
+    }
+
+    const pair = new Contract(poolAddress, ZENITH_V1_PAIR_ABI, provider);
+
+    const [token0, token1, reserves, blockNumber] = await Promise.all([
+      pair.token0(),
+      pair.token1(),
+      pair.getReserves(),
+      provider.getBlockNumber()
+    ]);
+
+    return {
+      chainId,
+      poolAddress,
+      token0,
+      token1,
+      reserve0: BigInt(reserves[0].toString()),
+      reserve1: BigInt(reserves[1].toString()),
+      blockTimestampLast: Number(reserves[2]),
+      blockNumber
+    };
+  }
+
+  public static async getLiveV1PoolStateForPair(
+    chainId: number,
+    tokenA: string,
+    tokenB: string,
+    provider: Provider
+  ): Promise<ZenithV1LivePoolState | null> {
+    const factoryAddress = getZenithV1Factory(chainId);
+    if (!factoryAddress) return null;
+
+    const pairAddress = await this.getV1PairAddress(factoryAddress, tokenA, tokenB, provider);
+    if (!pairAddress || pairAddress === ZeroAddress) return null;
+
+    try {
+      return await this.readLiveV1PoolState(chainId, pairAddress, provider);
+    } catch {
+      return null;
+    }
+  }
+
+  // ==========================================
+  // ZENITH V2 LIVE STATE
+  // ==========================================
+  public static async getV2PoolAddress(
+    factoryAddress: string,
+    tokenA: string,
+    tokenB: string,
+    feeBps: number,
+    provider: Provider
+  ): Promise<string> {
+    const factory = new Contract(factoryAddress, ZENITH_V2_FACTORY_ABI, provider);
+    const poolAddress: string = await factory.getPool(tokenA, tokenB, feeBps);
+    return poolAddress;
+  }
+
+  public static async readLiveV2PoolState(
+    chainId: number,
+    poolAddress: string,
+    provider: Provider
+  ): Promise<ZenithV2LivePoolState> {
+    if (!poolAddress || poolAddress === ZeroAddress) {
+      throw new Error(`Invalid Zenith V2 pool address: ${poolAddress}`);
+    }
+
+    const code = await provider.getCode(poolAddress);
+    if (!code || code === '0x') {
+      throw new Error(`Zenith V2 pool contract not deployed at ${poolAddress}`);
+    }
+
+    const pool = new Contract(poolAddress, ZENITH_V2_POOL_ABI, provider);
+
+    const [token0, token1, feeBps, reserves, blockNumber] = await Promise.all([
+      pool.token0(),
+      pool.token1(),
+      pool.feeBps(),
+      pool.getReserves(),
+      provider.getBlockNumber()
+    ]);
+
+    return {
+      chainId,
+      poolAddress,
+      token0,
+      token1,
+      feeBps: Number(feeBps),
+      reserve0: BigInt(reserves[0].toString()),
+      reserve1: BigInt(reserves[1].toString()),
+      blockTimestampLast: Number(reserves[2]),
+      blockNumber
+    };
+  }
+
+  public static async getLiveV2PoolStateForPair(
+    chainId: number,
+    tokenA: string,
+    tokenB: string,
+    feeBps: number,
+    provider: Provider
+  ): Promise<ZenithV2LivePoolState | null> {
+    const factoryAddress = getZenithV2Factory(chainId);
+    if (!factoryAddress) return null;
+
+    const poolAddress = await this.getV2PoolAddress(factoryAddress, tokenA, tokenB, feeBps, provider);
+    if (!poolAddress || poolAddress === ZeroAddress) return null;
+
+    try {
+      return await this.readLiveV2PoolState(chainId, poolAddress, provider);
+    } catch {
+      return null;
+    }
+  }
+
+  // ==========================================
+  // ZENITH V3 LIVE STATE
+  // ==========================================
+  public static async getV3PoolAddress(
     factoryAddress: string,
     tokenA: string,
     tokenB: string,
@@ -29,12 +206,18 @@ export class PoolStateReader {
     return poolAddress;
   }
 
-  public static async readLivePoolState(
+  public static async readLiveV3PoolState(
+    chainId: number,
     poolAddress: string,
     provider: Provider
   ): Promise<ZenithV3LivePoolState> {
     if (!poolAddress || poolAddress === ZeroAddress) {
       throw new Error(`Invalid Zenith V3 pool address: ${poolAddress}`);
+    }
+
+    const code = await provider.getCode(poolAddress);
+    if (!code || code === '0x') {
+      throw new Error(`Zenith V3 pool contract not deployed at ${poolAddress}`);
     }
 
     const pool = new Contract(poolAddress, ZENITH_V3_POOL_ABI, provider);
@@ -95,6 +278,7 @@ export class PoolStateReader {
     }
 
     return {
+      chainId,
       poolAddress,
       token0,
       token1,
@@ -109,7 +293,7 @@ export class PoolStateReader {
     };
   }
 
-  public static async getLivePoolStateForPair(
+  public static async getLiveV3PoolStateForPair(
     chainId: number,
     tokenA: string,
     tokenB: string,
@@ -119,11 +303,15 @@ export class PoolStateReader {
     const factoryAddress = getZenithV3Factory(chainId);
     if (!factoryAddress) return null;
 
-    const poolAddress = await this.getPoolAddress(factoryAddress, tokenA, tokenB, fee, provider);
+    const poolAddress = await this.getV3PoolAddress(factoryAddress, tokenA, tokenB, fee, provider);
     if (!poolAddress || poolAddress === ZeroAddress) {
       return null;
     }
 
-    return this.readLivePoolState(poolAddress, provider);
+    try {
+      return await this.readLiveV3PoolState(chainId, poolAddress, provider);
+    } catch {
+      return null;
+    }
   }
 }

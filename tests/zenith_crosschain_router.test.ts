@@ -198,8 +198,10 @@ test('Zenith Cross-Chain Router: POL (Polygon) -> USDC (Arbitrum) Multi-Hop Swap
     tokenOut: usdcToken,
     amountInRaw: '100000000000000000000',
     recipient: user,
-    slippageTolerancePercent: 0.5
-  });
+    slippageTolerancePercent: 0.5,
+    reserveIn: 1_000_000n * 10n ** 18n,
+    reserveOut: 100_000n * 10n ** 6n
+  } as any);
 
   assert.ok(quote, 'Quote must be returned for 100 POL -> USDC (Arbitrum)');
   assert.equal(quote.bestRoute.routeType, 'CROSS_CHAIN');

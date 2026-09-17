@@ -29,6 +29,10 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
     v3Factory: v3FactoryAddress
   });
 
+  const poolLiquidity = 1000000000000000000n;
+  const poolSqrtPriceX96 = 250541448375047927429120n;
+  const poolCurrentTick = -299000;
+
   const polToken: Token = {
     address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
     chainId: 'polygon',
@@ -75,10 +79,15 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       tokenIn: polToken,
       tokenOut: usdcToken,
       amountIn: 100n * 10n ** 18n, // 100 POL
-      slippageToleranceBps: 50 // 0.5%
+      slippageToleranceBps: 50, // 0.5%
+      liquidity: poolLiquidity,
+      sqrtPriceX96: poolSqrtPriceX96,
+      currentTick: poolCurrentTick,
+      tickSpacing: 60,
+      feeTierBps: 30
     };
 
-    const dQuote = await v3Provider.getQuote(quoteParams);
+    const dQuote = await v3Provider.getQuote(quoteParams as any);
     assert.ok(dQuote);
 
     const execution = await v3Provider.buildExecution(dQuote, userAddress);
@@ -393,8 +402,13 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       tokenIn: polToken,
       tokenOut: usdcToken,
       amountIn: 1n * 10n ** 18n, // 1 POL
-      slippageToleranceBps: 50
-    });
+      slippageToleranceBps: 50,
+      liquidity: poolLiquidity,
+      sqrtPriceX96: poolSqrtPriceX96,
+      currentTick: poolCurrentTick,
+      tickSpacing: 60,
+      feeTierBps: 30
+    } as any);
 
     assert.ok(dQuote);
     assert.equal(dQuote.provider, 'ZENITH_V3');

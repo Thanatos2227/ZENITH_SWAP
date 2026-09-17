@@ -28,12 +28,19 @@ export class VelodromeProvider implements DEXProvider {
 
     try {
       const routerAddress = getVelodromeRouter(params.chainId);
+      const reserveIn = (params as any).reserveIn || (params as any).customReserveIn;
+      const reserveOut = (params as any).reserveOut || (params as any).customReserveOut;
+      if (!reserveIn || !reserveOut || reserveIn <= 0n || reserveOut <= 0n) {
+        return null;
+      }
 
       const calculated = calculateDEXLiquidityOutput({
         chainId: params.chainId,
         tokenIn: params.tokenIn,
         tokenOut: params.tokenOut,
         amountIn: params.amountIn,
+        reserveIn,
+        reserveOut,
         slippageToleranceBps: params.slippageToleranceBps
       });
 

@@ -12,7 +12,7 @@ import {
   isNativeToken,
   resolvePoolTokenAddress
 } from './dexMath';
-import { PoolStateReader } from './poolStateReader';
+import { PoolStateReader, ZenithV3LivePoolState } from './poolStateReader';
 
 export class ZenithV3Provider implements DEXProvider {
   public readonly id: DEXProtocol = 'ZENITH_V3';
@@ -38,16 +38,20 @@ export class ZenithV3Provider implements DEXProvider {
 
     const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
 
-    let poolAddress: string | undefined = undefined;
-    let quoteBlockNumber: number | undefined = undefined;
-    let calculated: ReturnType<typeof calculateV3ConcentratedOutput> = null;
+    let poolAddress: string | undefined = (params as any).poolAddress;
+    let quoteBlockNumber: number | undefined = (params as any).quoteBlockNumber;
+    let liquidity: bigint | undefined = (params as any).liquidity || (params as any).customLiquidity;
+    let sqrtPriceX96: bigint | undefined = (params as any).sqrtPriceX96 || (params as any).customSqrtPriceX96;
+    let currentTick: number | undefined = (params as any).currentTick || (params as any).customCurrentTick;
+    let tickSpacing: number | undefined = (params as any).tickSpacing || (params as any).customTickSpacing;
+    let initializedTicks = (params as any).initializedTicks;
 
-    if ((params as any).provider) {
+    if ((!liquidity || !sqrtPriceX96) && (params as any).provider) {
       try {
         const inAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
         const outAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
         const feePips = effectiveFeeBps * 100;
-        const liveState = await PoolStateReader.getLivePoolStateForPair(
+        const liveState: ZenithV3LivePoolState | null = await PoolStateReader.getLiveV3PoolStateForPair(
           params.chainId,
           inAddr,
           outAddr,
@@ -55,45 +59,39 @@ export class ZenithV3Provider implements DEXProvider {
           (params as any).provider as Provider
         );
 
-        if (liveState) {
+        if (liveState && liveState.liquidity > 0n && liveState.sqrtPriceX96 > 0n) {
           poolAddress = liveState.poolAddress;
           quoteBlockNumber = liveState.blockNumber;
-          calculated = calculateV3ConcentratedOutput({
-            chainId: params.chainId,
-            tokenIn: params.tokenIn,
-            tokenOut: params.tokenOut,
-            amountIn: params.amountIn,
-            feeTierBps: effectiveFeeBps,
-            slippageToleranceBps: params.slippageToleranceBps || 50,
-            customLiquidity: liveState.liquidity,
-            customSqrtPriceX96: liveState.sqrtPriceX96,
-            customCurrentTick: liveState.tick,
-            customTickSpacing: liveState.tickSpacing,
-            initializedTicks: liveState.initializedTicks
-          });
+          liquidity = liveState.liquidity;
+          sqrtPriceX96 = liveState.sqrtPriceX96;
+          currentTick = liveState.tick;
+          tickSpacing = liveState.tickSpacing;
+          initializedTicks = liveState.initializedTicks;
         }
       } catch {
         // Fall back to parameters
       }
     }
 
-    if (!calculated) {
-      calculated = calculateV3ConcentratedOutput({
-        chainId: params.chainId,
-        tokenIn: params.tokenIn,
-        tokenOut: params.tokenOut,
-        amountIn: params.amountIn,
-        feeTierBps: effectiveFeeBps,
-        slippageToleranceBps: params.slippageToleranceBps || 50,
-        customReserveIn: (params as any).customReserveIn,
-        customReserveOut: (params as any).customReserveOut,
-        customLiquidity: (params as any).customLiquidity,
-        customSqrtPriceX96: (params as any).customSqrtPriceX96,
-        customCurrentTick: (params as any).customCurrentTick,
-        customTickSpacing: (params as any).customTickSpacing,
-        initializedTicks: (params as any).initializedTicks
-      });
+    if (!liquidity || !sqrtPriceX96 || liquidity <= 0n || sqrtPriceX96 <= 0n) {
+      return null;
     }
+
+    const calculated = calculateV3ConcentratedOutput({
+      chainId: params.chainId,
+      tokenIn: params.tokenIn,
+      tokenOut: params.tokenOut,
+      amountIn: params.amountIn,
+      liquidity,
+      sqrtPriceX96,
+      currentTick,
+      feeTierBps: effectiveFeeBps,
+      tickSpacing,
+      slippageToleranceBps: params.slippageToleranceBps || 50,
+      initializedTicks,
+      reserveIn: (params as any).reserveIn || (params as any).customReserveIn,
+      reserveOut: (params as any).reserveOut || (params as any).customReserveOut
+    });
 
     if (!calculated || calculated.amountOut <= 0n) {
       return null;

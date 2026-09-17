@@ -1,5 +1,5 @@
 import { DEXProtocol, Token } from '@zenith/types';
-import { Interface } from 'ethers';
+import { Interface, Provider } from 'ethers';
 import {
   ZENITH_V1_ROUTER_ABI,
   CANONICAL_NATIVE_ADDRESS,
@@ -8,6 +8,7 @@ import {
 } from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
 import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
+import { PoolStateReader, ZenithV1LivePoolState } from './poolStateReader';
 
 export class ZenithV1Provider implements DEXProvider {
   public readonly id: DEXProtocol = 'ZENITH_V1';
@@ -31,11 +32,42 @@ export class ZenithV1Provider implements DEXProvider {
       return null;
     }
 
+    const inAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
+    const outAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
+
+    let reserveIn: bigint | undefined = (params as any).reserveIn || (params as any).customReserveIn;
+    let reserveOut: bigint | undefined = (params as any).reserveOut || (params as any).customReserveOut;
+    let poolAddress: string | undefined = (params as any).poolAddress;
+    let quoteBlockNumber: number | undefined = (params as any).quoteBlockNumber;
+
+    if ((!reserveIn || !reserveOut) && (params as any).provider) {
+      const liveState: ZenithV1LivePoolState | null = await PoolStateReader.getLiveV1PoolStateForPair(
+        params.chainId,
+        inAddr,
+        outAddr,
+        (params as any).provider as Provider
+      );
+
+      if (liveState && liveState.reserve0 > 0n && liveState.reserve1 > 0n) {
+        poolAddress = liveState.poolAddress;
+        quoteBlockNumber = liveState.blockNumber;
+        const zeroForOne = inAddr.toLowerCase() === liveState.token0.toLowerCase();
+        reserveIn = zeroForOne ? liveState.reserve0 : liveState.reserve1;
+        reserveOut = zeroForOne ? liveState.reserve1 : liveState.reserve0;
+      }
+    }
+
+    if (!reserveIn || !reserveOut || reserveIn <= 0n || reserveOut <= 0n) {
+      return null;
+    }
+
     const calculated = calculateDEXLiquidityOutput({
       chainId: params.chainId,
       tokenIn: params.tokenIn,
       tokenOut: params.tokenOut,
       amountIn: params.amountIn,
+      reserveIn,
+      reserveOut,
       feeTierBps: 30,
       slippageToleranceBps: params.slippageToleranceBps || 50
     });
@@ -60,6 +92,8 @@ export class ZenithV1Provider implements DEXProvider {
       priceImpactPercent: calculated.priceImpactPercent,
       executionTarget: routerAddress,
       approvalTarget: routerAddress,
+      poolAddress,
+      quoteBlockNumber,
       gasEstimate: 110000n,
       gasCostUSD: 0.025,
       quoteTimestamp,
@@ -135,4 +169,3 @@ export class ZenithV1Provider implements DEXProvider {
 }
 
 export const zenithV1Provider = new ZenithV1Provider();
-

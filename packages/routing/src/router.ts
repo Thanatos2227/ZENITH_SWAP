@@ -195,8 +195,17 @@ export class ZenithRouter {
         amountIn: amountInBig,
         slippageToleranceBps: slippageBps,
         recipient: targetRecipient || undefined,
-        mode: reqMode
-      });
+        mode: reqMode,
+        provider: (request as any).provider,
+        poolState: (request as any).poolState,
+        reserveIn: (request as any).reserveIn || (request as any).customReserveIn,
+        reserveOut: (request as any).reserveOut || (request as any).customReserveOut,
+        liquidity: (request as any).liquidity || (request as any).customLiquidity,
+        sqrtPriceX96: (request as any).sqrtPriceX96 || (request as any).customSqrtPriceX96,
+        currentTick: (request as any).currentTick || (request as any).customCurrentTick,
+        tickSpacing: (request as any).tickSpacing || (request as any).customTickSpacing,
+        initializedTicks: (request as any).initializedTicks
+      } as any);
 
       for (const dQuote of dexQuotes) {
         let execution = undefined;
@@ -285,7 +294,8 @@ export class ZenithRouter {
           tokenOut: connectorToken,
           amountIn: amountInBig,
           slippageToleranceBps: Math.floor(slippageBps / 2),
-          recipient: targetRecipient || undefined
+          recipient: targetRecipient || undefined,
+          ...(request as any)
         });
 
         if (hop1Quotes.length > 0) {
@@ -296,7 +306,8 @@ export class ZenithRouter {
             tokenOut: effectiveTokenOut,
             amountIn: hop1Quote.amountOut,
             slippageToleranceBps: Math.floor(slippageBps / 2),
-            recipient: targetRecipient || undefined
+            recipient: targetRecipient || undefined,
+            ...(request as any)
           });
 
           if (hop2Quotes.length > 0) {

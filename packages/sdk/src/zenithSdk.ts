@@ -104,7 +104,9 @@ export class ZenithSDK {
       tradeType: 'EXACT_INPUT',
       slippageTolerancePercent: slippagePercent,
       recipientAddress: params.recipient,
-      userWalletAddress: params.recipient
+      userWalletAddress: params.recipient,
+      provider: this.providers.get(params.chainId) as any,
+      ...(params as any)
     };
 
     const rawQuote = await this.router.getQuote(quoteRequest);
@@ -163,7 +165,9 @@ export class ZenithSDK {
       amountInRaw,
       amountIn: amountInFormatted,
       tradeType: 'EXACT_INPUT',
-      slippageTolerancePercent: this.defaultSlippageBps / 100
+      slippageTolerancePercent: this.defaultSlippageBps / 100,
+      provider: this.providers.get(params.chainId) as any,
+      ...(params as any)
     };
 
     const rawQuote = await this.router.getQuote(quoteRequest);

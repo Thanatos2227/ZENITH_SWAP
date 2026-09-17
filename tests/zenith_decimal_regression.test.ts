@@ -66,8 +66,10 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
         tokenIn: polToken,
         tokenOut: usdtToken,
         amountInRaw: rawAmountIn,
-        slippageTolerancePercent: 0.5
-      });
+        slippageTolerancePercent: 0.5,
+        reserveIn: 1_000_000n * 10n ** 18n,
+        reserveOut: 100_000n * 10n ** 6n
+      } as any);
 
       assert.ok(quote, 'Quote must be successfully generated');
       assert.strictEqual(quote.amountInRaw, '1000000000000000000', 'amountInRaw must be 10^18');
@@ -100,8 +102,10 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
         tokenIn: polToken,
         tokenOut: usdtToken,
         amountInRaw: parseTokenUnits('0.1', 18),
-        slippageTolerancePercent: 0.5
-      });
+        slippageTolerancePercent: 0.5,
+        reserveIn: 1_000_000n * 10n ** 18n,
+        reserveOut: 100_000n * 10n ** 6n
+      } as any);
 
       const quote1 = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
@@ -109,8 +113,10 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
         tokenIn: polToken,
         tokenOut: usdtToken,
         amountInRaw: parseTokenUnits('1.0', 18),
-        slippageTolerancePercent: 0.5
-      });
+        slippageTolerancePercent: 0.5,
+        reserveIn: 1_000_000n * 10n ** 18n,
+        reserveOut: 100_000n * 10n ** 6n
+      } as any);
 
       const quote2 = await defaultZenithRouter.getQuote({
         sourceChainId: 'polygon',
@@ -118,8 +124,10 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
         tokenIn: polToken,
         tokenOut: usdtToken,
         amountInRaw: parseTokenUnits('2.0', 18),
-        slippageTolerancePercent: 0.5
-      });
+        slippageTolerancePercent: 0.5,
+        reserveIn: 1_000_000n * 10n ** 18n,
+        reserveOut: 100_000n * 10n ** 6n
+      } as any);
 
       const num01 = parseFloat(quote01.amountOutFormatted.replace(/,/g, ''));
       const num1 = parseFloat(quote1.amountOutFormatted.replace(/,/g, ''));

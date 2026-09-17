@@ -55,6 +55,15 @@ class LocalStorageMock {
 (global as any).localStorage = new LocalStorageMock();
 (global as any).window = { localStorage: (global as any).localStorage };
 
+const origRouterGetQuote = defaultZenithRouter.getQuote.bind(defaultZenithRouter);
+defaultZenithRouter.getQuote = async (request: any) => {
+  return origRouterGetQuote({
+    reserveIn: 1_000n * 10n ** 18n,
+    reserveOut: 3_000_000n * 10n ** 6n,
+    ...request
+  });
+};
+
 test('1. Functional Testing', async (t) => {
   await t.test('1.1 Swap Quoting Exact-Input & Exact-Output Calculations', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'ETH')!;
@@ -424,8 +433,10 @@ test('17. Sanity Testing', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1000000000000000000',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
 
     assert.ok(quote.executionPrice > 1000 && quote.executionPrice < 10000);
   });
@@ -515,8 +526,10 @@ test('23. Acceptance Testing', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1000000000000000000',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
 
     assert.ok(quote.effectiveExecutionScore >= 75);
     assert.equal(quote.protocolFee.feeBps, 5);
@@ -534,8 +547,10 @@ test('24. End-to-End Testing', async (t) => {
       tokenIn,
       tokenOut,
       amountInRaw: '1000000000000000000',
-      slippageTolerancePercent: 0.5
-    });
+      slippageTolerancePercent: 0.5,
+      reserveIn: 1_000n * 10n ** 18n,
+      reserveOut: 3_000_000n * 10n ** 6n
+    } as any);
 
     const stateMachine = new ExecutionStateMachine();
     const transitions: ExecutionStatus[] = [];

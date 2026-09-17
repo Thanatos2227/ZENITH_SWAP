@@ -83,8 +83,13 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
       tokenIn: polToken,
       tokenOut: usdcToken,
       amountIn,
-      slippageToleranceBps
-    });
+      slippageToleranceBps,
+      liquidity: poolLiquidity,
+      sqrtPriceX96: poolSqrtPriceX96,
+      currentTick: poolCurrentTick,
+      tickSpacing: poolTickSpacing,
+      feeTierBps: 30
+    } as any);
     assert.ok(quoteA, 'Quote A must be non-null');
     const A = quoteA.amountOut;
 
@@ -163,8 +168,13 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
         tokenIn: polToken,
         tokenOut: usdcToken,
         amountIn,
-        slippageToleranceBps: bps
-      });
+        slippageToleranceBps: bps,
+        liquidity: poolLiquidity,
+        sqrtPriceX96: poolSqrtPriceX96,
+        currentTick: poolCurrentTick,
+        tickSpacing: poolTickSpacing,
+        feeTierBps: 30
+      } as any);
       assert.ok(q);
 
       const expectedMin = (q.amountOut * (10000n - BigInt(bps))) / 10000n;
@@ -181,10 +191,15 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
       tokenIn: polToken,
       tokenOut: usdcToken,
       amountIn: 1n * 10n ** 18n, // 1 POL
-      slippageToleranceBps: 50
+      slippageToleranceBps: 50,
+      liquidity: poolLiquidity,
+      sqrtPriceX96: poolSqrtPriceX96,
+      currentTick: poolCurrentTick,
+      tickSpacing: poolTickSpacing,
+      feeTierBps: 30
     };
 
-    const dQuote = await v3Provider.getQuote(quoteParams);
+    const dQuote = await v3Provider.getQuote(quoteParams as any);
     assert.ok(dQuote);
 
     const execution = await v3Provider.buildExecution(dQuote, userAddress);
@@ -529,6 +544,7 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
     // Mock ethers provider returning on-chain contract state for deployed Zenith V3 pool
     const mockProvider = {
       getBlockNumber: async () => 12345678,
+      getCode: async () => '0x608060405234801561001057600080fd5b50',
       call: async (tx: any) => {
         const poolIface = new Interface(ZENITH_V3_POOL_ABI);
         const factoryIface = new Interface([
@@ -604,7 +620,11 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
         tokenOut: usdcToken,
         amountIn,
         slippageToleranceBps: 50,
-        feeTierBps: tier.bps
+        feeTierBps: tier.bps,
+        liquidity: poolLiquidity,
+        sqrtPriceX96: poolSqrtPriceX96,
+        currentTick: poolCurrentTick,
+        tickSpacing: 60
       } as any);
 
       assert.ok(q, `Quote for ${tier.bps} bps must exist`);

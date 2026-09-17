@@ -153,7 +153,8 @@ export class CrossChainAggregator {
             tokenOut: srcConnector,
             amountIn: amountInBig,
             slippageToleranceBps: 25,
-            recipient: request.recipientAddress || request.userWalletAddress
+            recipient: request.recipientAddress || request.userWalletAddress,
+            ...(request as any)
           });
           if (!dexQuotes || dexQuotes.length === 0) continue;
           sourceDexQuote = dexQuotes[0];
@@ -194,7 +195,8 @@ export class CrossChainAggregator {
             tokenOut: request.tokenOut,
             amountIn: BigInt(bestBridgeQuote.destinationAmountRaw),
             slippageToleranceBps: 25,
-            recipient: request.recipientAddress || request.userWalletAddress
+            recipient: request.recipientAddress || request.userWalletAddress,
+            ...(request as any)
           });
           if (!destDexQuotes || destDexQuotes.length === 0) continue;
           destDexQuote = destDexQuotes[0];
