@@ -32,5 +32,16 @@ jobs:
       - name: Protocol Test Suite (All Disciplines)
         run: npm test
 
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Solidity Build Gate
+        working-directory: contracts/evm
+        run: forge build --sizes
+
+      - name: Solidity Test Gate
+        working-directory: contracts/evm
+        run: forge test -vvv
+
       - name: Production Web Application Build Gate
         run: npm run build
