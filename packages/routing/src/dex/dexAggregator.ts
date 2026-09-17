@@ -12,8 +12,8 @@ import { PancakeSwapProvider } from './pancakeSwapProvider';
 import { TraderJoeProvider } from './traderJoeProvider';
 
 export type DEXAggregationMode = 'ZENITH_ONLY' | 'ZENITH_SOVEREIGN' | 'EXTERNAL_AGGREGATION';
-
 export const SOVEREIGN_ZENITH_PROTOCOLS: DEXProtocol[] = ['ZENITH_V1', 'ZENITH_V2', 'ZENITH_V3'];
+const ZENITH_V3_FEE_TIERS_BPS = [1, 5, 30, 100];
 
 export class DEXAggregator {
   private providers: Map<DEXProtocol, DEXProvider> = new Map();
@@ -21,16 +21,12 @@ export class DEXAggregator {
 
   constructor(customProviders?: DEXProvider[], mode: DEXAggregationMode = 'EXTERNAL_AGGREGATION') {
     this.mode = mode;
-
     if (customProviders && customProviders.length > 0) {
-      for (const p of customProviders) {
-        this.providers.set(p.protocol, p);
-      }
+      for (const p of customProviders) this.providers.set(p.protocol, p);
     } else {
       this.registerProvider(new ZenithV3Provider());
       this.registerProvider(new ZenithV2Provider());
       this.registerProvider(new ZenithV1Provider());
-
       this.registerProvider(new UniswapV3Provider());
       this.registerProvider(new QuickSwapProvider());
       this.registerProvider(new AerodromeProvider());
@@ -41,22 +37,10 @@ export class DEXAggregator {
     }
   }
 
-  public setExecutionMode(mode: DEXAggregationMode): void {
-    this.mode = mode;
-  }
-
-  public getExecutionMode(): DEXAggregationMode {
-    return this.mode;
-  }
-
-  public registerProvider(provider: DEXProvider): void {
-    this.providers.set(provider.protocol, provider);
-  }
-
-  public getProvider(protocol: DEXProtocol): DEXProvider | undefined {
-    return this.providers.get(protocol);
-  }
-
+  public setExecutionMode(mode: DEXAggregationMode): void { this.mode = mode; }
+  public getExecutionMode(): DEXAggregationMode { return this.mode; }
+  public registerProvider(provider: DEXProvider): void { this.providers.set(provider.protocol, provider); }
+  public getProvider(protocol: DEXProtocol): DEXProvider | undefined { return this.providers.get(protocol); }
   public isSovereignMode(mode?: DEXAggregationMode): boolean {
     const active = mode || this.mode;
     return active === 'ZENITH_ONLY' || active === 'ZENITH_SOVEREIGN';
@@ -73,33 +57,39 @@ export class DEXAggregator {
   }): Promise<DEXQuote[]> {
     const activeMode = params.mode || this.mode;
     const isSovereign = this.isSovereignMode(activeMode);
-
     const applicableProviders = Array.from(this.providers.values()).filter((p) => {
-      if (isSovereign && !SOVEREIGN_ZENITH_PROTOCOLS.includes(p.protocol)) {
-        return false;
-      }
+      if (isSovereign && !SOVEREIGN_ZENITH_PROTOCOLS.includes(p.protocol)) return false;
       return p.supportedChainIds.includes(params.chainId);
     });
+    if (applicableProviders.length === 0) return [];
 
-    if (applicableProviders.length === 0) {
-      return [];
-    }
-
-    const quotePromises = applicableProviders.map(async (provider) => {
-      try {
-        return await provider.getQuote(params);
-      } catch {
-        return null;
+    const quotePromises: Promise<DEXQuote | null>[] = [];
+    for (const provider of applicableProviders) {
+      if (provider.protocol === 'ZENITH_V3') {
+        for (const feeTierBps of ZENITH_V3_FEE_TIERS_BPS) {
+          quotePromises.push((async () => {
+            try {
+              return await provider.getQuote({ ...params, feeTierBps } as any);
+            } catch {
+              return null;
+            }
+          })());
+        }
+      } else {
+        quotePromises.push((async () => {
+          try {
+            return await provider.getQuote(params);
+          } catch {
+            return null;
+          }
+        })());
       }
-    });
+    }
 
     const results = await Promise.allSettled(quotePromises);
     const validQuotes: DEXQuote[] = [];
-
     for (const res of results) {
-      if (res.status === 'fulfilled' && res.value !== null) {
-        validQuotes.push(res.value);
-      }
+      if (res.status === 'fulfilled' && res.value !== null) validQuotes.push(res.value);
     }
 
     validQuotes.sort((a, b) => {
@@ -107,7 +97,6 @@ export class DEXAggregator {
       if (b.amountOut < a.amountOut) return -1;
       return 0;
     });
-
     return validQuotes;
   }
 
@@ -121,9 +110,6 @@ export class DEXAggregator {
     mode?: DEXAggregationMode;
   }): Promise<DEXQuote | null> {
     const quotes = await this.getQuotes(params);
-    if (quotes.length === 0 && this.isSovereignMode(params.mode)) {
-      return null;
-    }
     return quotes.length > 0 ? quotes[0] : null;
   }
 
@@ -136,15 +122,10 @@ export class DEXAggregator {
   ): Promise<DEXExecution> {
     const activeMode = mode || this.mode;
     if (this.isSovereignMode(activeMode) && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
-      throw new Error(
-        `ZENITH_EXTERNAL_EXECUTION_DETECTED: DEXAggregator is operating in sovereign ZENITH_ONLY mode / ZENITH_SOVEREIGN mode. External protocol execution (${quote.provider}) is strictly prohibited.`
-      );
+      throw new Error(`ZENITH_EXTERNAL_EXECUTION_DETECTED: external protocol ${quote.provider} is prohibited in sovereign mode`);
     }
-
     const provider = this.providers.get(quote.provider);
-    if (!provider) {
-      throw new Error(`No provider registered for DEX protocol: ${quote.provider}`);
-    }
+    if (!provider) throw new Error(`No provider registered for DEX protocol: ${quote.provider}`);
     return provider.buildExecution(quote, userAddress, recipientAddress, deadline);
   }
 }
