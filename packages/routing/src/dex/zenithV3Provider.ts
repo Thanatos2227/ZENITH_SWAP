@@ -27,79 +27,56 @@ export class ZenithV3Provider implements DEXProvider {
   }
 
   public async getQuote(params: DEXQuoteParams): Promise<DEXQuote | null> {
-    if (!this.supportedChainIds.includes(params.chainId)) {
-      return null;
-    }
+    if (!this.supportedChainIds.includes(params.chainId)) return null;
 
     const routerAddress = getZenithV3Router(params.chainId);
-    if (!routerAddress) {
+    if (!routerAddress) return null;
+
+    const provider = (params as any).provider as Provider | undefined;
+    if (!provider) return null;
+
+    const requestedFeeBps = (params as any).feeTierBps;
+    const feePips = (requestedFeeBps === undefined ? 30 : requestedFeeBps) * 100;
+
+    let liveState: ZenithV3LivePoolState | null;
+    try {
+      const inAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
+      const outAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
+      liveState = await PoolStateReader.getLiveV3PoolStateForPair(
+        params.chainId,
+        inAddr,
+        outAddr,
+        feePips,
+        provider
+      );
+    } catch {
       return null;
     }
 
-    const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
+    if (!liveState || !liveState.poolAddress || liveState.liquidity <= 0n || liveState.sqrtPriceX96 <= 0n) return null;
+    if (!liveState.unlocked) return null;
 
-    let poolAddress: string | undefined = (params as any).poolAddress;
-    let quoteBlockNumber: number | undefined = (params as any).quoteBlockNumber;
-    let liquidity: bigint | undefined = (params as any).liquidity || (params as any).customLiquidity;
-    let sqrtPriceX96: bigint | undefined = (params as any).sqrtPriceX96 || (params as any).customSqrtPriceX96;
-    let currentTick: number | undefined = (params as any).currentTick || (params as any).customCurrentTick;
-    let tickSpacing: number | undefined = (params as any).tickSpacing || (params as any).customTickSpacing;
-    let initializedTicks = (params as any).initializedTicks;
-
-    if ((!liquidity || !sqrtPriceX96) && (params as any).provider) {
-      try {
-        const inAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
-        const outAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
-        const feePips = effectiveFeeBps * 100;
-        const liveState: ZenithV3LivePoolState | null = await PoolStateReader.getLiveV3PoolStateForPair(
-          params.chainId,
-          inAddr,
-          outAddr,
-          feePips,
-          (params as any).provider as Provider
-        );
-
-        if (liveState && liveState.liquidity > 0n && liveState.sqrtPriceX96 > 0n) {
-          poolAddress = liveState.poolAddress;
-          quoteBlockNumber = liveState.blockNumber;
-          liquidity = liveState.liquidity;
-          sqrtPriceX96 = liveState.sqrtPriceX96;
-          currentTick = liveState.tick;
-          tickSpacing = liveState.tickSpacing;
-          initializedTicks = liveState.initializedTicks;
-        }
-      } catch {
-        // Fall back to parameters
-      }
-    }
-
-    if (!liquidity || !sqrtPriceX96 || liquidity <= 0n || sqrtPriceX96 <= 0n) {
-      return null;
-    }
+    const effectiveFeeBps = liveState.fee / 100;
+    if (!Number.isFinite(effectiveFeeBps) || effectiveFeeBps <= 0) return null;
 
     const calculated = calculateV3ConcentratedOutput({
       chainId: params.chainId,
       tokenIn: params.tokenIn,
       tokenOut: params.tokenOut,
       amountIn: params.amountIn,
-      liquidity,
-      sqrtPriceX96,
-      currentTick,
+      liquidity: liveState.liquidity,
+      sqrtPriceX96: liveState.sqrtPriceX96,
+      currentTick: liveState.tick,
       feeTierBps: effectiveFeeBps,
-      tickSpacing,
-      slippageToleranceBps: params.slippageToleranceBps || 50,
-      initializedTicks,
-      reserveIn: (params as any).reserveIn || (params as any).customReserveIn,
-      reserveOut: (params as any).reserveOut || (params as any).customReserveOut
+      tickSpacing: liveState.tickSpacing,
+      slippageToleranceBps: params.slippageToleranceBps,
+      initializedTicks: liveState.initializedTicks
     });
 
-    if (!calculated || calculated.amountOut <= 0n) {
-      return null;
-    }
+    if (!calculated || calculated.amountOut <= 0n) return null;
 
     const quoteTimestamp = Date.now();
-
-    return {
+    const quote: DEXQuote = {
       provider: 'ZENITH_V3',
       providerName: this.name,
       chainId: params.chainId,
@@ -113,14 +90,44 @@ export class ZenithV3Provider implements DEXProvider {
       priceImpactPercent: calculated.priceImpactPercent,
       executionTarget: routerAddress,
       approvalTarget: routerAddress,
-      poolAddress,
-      quoteBlockNumber,
-      gasEstimate: 160000n,
-      gasCostUSD: 0.04,
+      poolAddress: liveState.poolAddress,
+      quoteBlockNumber: liveState.blockNumber,
+      gasEstimate: 0n,
+      gasCostUSD: 0,
       quoteTimestamp,
       expiration: quoteTimestamp + 15000,
       routePath: [params.tokenIn.address, params.tokenOut.address]
     };
+
+    if (params.recipient) {
+      try {
+        const iface = new Interface(ZENITH_V3_ROUTER_ABI);
+        const tokenInAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
+        const tokenOutAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
+        const isNativeIn = isNativeToken(params.tokenIn.address) || Boolean(params.tokenIn.isNative);
+        const data = iface.encodeFunctionData('exactInputSingle', [[
+          tokenInAddr,
+          tokenOutAddr,
+          liveState.fee,
+          params.recipient,
+          Math.floor(Date.now() / 1000) + 1200,
+          params.amountIn,
+          calculated.minimumAmountOut,
+          0
+        ]]);
+        const gas = await provider.estimateGas({
+          to: routerAddress,
+          data,
+          value: isNativeIn ? params.amountIn : 0n
+        });
+        quote.gasEstimate = BigInt(gas.toString());
+        quote.gasEstimateUnits = quote.gasEstimate;
+      } catch {
+        // Never substitute a fabricated gas estimate.
+      }
+    }
+
+    return quote;
   }
 
   public async buildExecution(
@@ -131,30 +138,29 @@ export class ZenithV3Provider implements DEXProvider {
   ): Promise<DEXExecution> {
     const chainIdNum = typeof quote.chainId === 'number' ? quote.chainId : Number(quote.chainId);
     const routerAddress = getZenithV3Router(chainIdNum);
-    if (!routerAddress) {
-      throw new ZenithRouterNotDeployedError('ZENITH_V3', chainIdNum);
-    }
+    if (!routerAddress) throw new ZenithRouterNotDeployedError('ZENITH_V3', chainIdNum);
+    if (!quote.poolAddress) throw new Error('ZENITH_V3: quote is missing live pool address');
+    if (Date.now() > quote.expiration) throw new Error('ZENITH_V3: quote expired; request a fresh quote');
+    if (quote.minimumAmountOut <= 0n) throw new Error('ZENITH_V3: invalid minimum output');
+    if (quote.gasEstimate <= 0n) throw new Error('ZENITH_V3: gas estimation unavailable; refusing fabricated gas limit');
+
     const iface = new Interface(ZENITH_V3_ROUTER_ABI);
     const recipient = recipientAddress || userAddress;
     const swapDeadline = deadline || Math.floor(Date.now() / 1000) + 1200;
-
     const tokenInAddr = resolvePoolTokenAddress(quote.tokenIn, chainIdNum);
     const tokenOutAddr = resolvePoolTokenAddress(quote.tokenOut, chainIdNum);
-
     const isNativeIn = isNativeToken(quote.tokenIn.address) || Boolean(quote.tokenIn.isNative);
 
-    const calldata = iface.encodeFunctionData('exactInputSingle', [
-      [
-        tokenInAddr,
-        tokenOutAddr,
-        (quote.feeTierBps || 30) * 100,
-        recipient,
-        swapDeadline,
-        quote.amountIn,
-        quote.minimumAmountOut,
-        0
-      ]
-    ]);
+    const calldata = iface.encodeFunctionData('exactInputSingle', [[
+      tokenInAddr,
+      tokenOutAddr,
+      Math.round(quote.feeTierBps * 100),
+      recipient,
+      swapDeadline,
+      quote.amountIn,
+      quote.minimumAmountOut,
+      0
+    ]]);
 
     return {
       to: routerAddress,
