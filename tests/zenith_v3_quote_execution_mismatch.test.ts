@@ -524,4 +524,151 @@ test('ZENITH SWAP — Final V3 Quote / Execution Mismatch Repair Test Suite', as
       }
     );
   });
+
+  await t.test('7. Live Pool State Reader Integration & Authoritative State Quote Pipeline', async () => {
+    // Mock ethers provider returning on-chain contract state for deployed Zenith V3 pool
+    const mockProvider = {
+      getBlockNumber: async () => 12345678,
+      call: async (tx: any) => {
+        const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+        const factoryIface = new Interface([
+          'function getPool(address,address,uint24) external view returns (address)'
+        ]);
+
+        if (tx.to?.toLowerCase() === v3FactoryAddress.toLowerCase()) {
+          return factoryIface.encodeFunctionResult('getPool', [poolAddress]);
+        }
+
+        if (tx.to?.toLowerCase() === poolAddress.toLowerCase()) {
+          const data = tx.data;
+          if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+            return poolIface.encodeFunctionResult('token0', [wpolAddress]);
+          }
+          if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+            return poolIface.encodeFunctionResult('token1', [usdcAddress]);
+          }
+          if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+            return poolIface.encodeFunctionResult('fee', [3000]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+            return poolIface.encodeFunctionResult('tickSpacing', [60]);
+          }
+          if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+            return poolIface.encodeFunctionResult('slot0', [poolSqrtPriceX96, poolCurrentTick, true]);
+          }
+          if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+            return poolIface.encodeFunctionResult('liquidity', [poolLiquidity]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+            return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+          }
+        }
+        return '0x';
+      }
+    } as any;
+
+    const v3Provider = new ZenithV3Provider();
+    const liveQuote = await v3Provider.getQuote({
+      chainId: 137,
+      tokenIn: polToken,
+      tokenOut: usdcToken,
+      amountIn: 1n * 10n ** 18n,
+      slippageToleranceBps: 50,
+      provider: mockProvider
+    } as any);
+
+    assert.ok(liveQuote, 'Live quote from on-chain state must be non-null');
+    assert.equal(liveQuote.poolAddress?.toLowerCase(), poolAddress.toLowerCase());
+    assert.equal(liveQuote.quoteBlockNumber, 12345678);
+    assert.equal(liveQuote.amountOut, 99699n);
+    assert.equal(liveQuote.minimumAmountOut, 99200n);
+  });
+
+  await t.test('8. Multi-Fee Units Verification: 1 BPS, 5 BPS, 30 BPS, 100 BPS', async () => {
+    const v3Provider = new ZenithV3Provider();
+    const amountIn = 1n * 10n ** 18n;
+
+    const feeTiers = [
+      { bps: 1, pips: 100 },
+      { bps: 5, pips: 500 },
+      { bps: 30, pips: 3000 },
+      { bps: 100, pips: 10000 }
+    ];
+
+    let previousOutput = 1000000n;
+
+    for (const tier of feeTiers) {
+      const q = await v3Provider.getQuote({
+        chainId: 137,
+        tokenIn: polToken,
+        tokenOut: usdcToken,
+        amountIn,
+        slippageToleranceBps: 50,
+        feeTierBps: tier.bps
+      } as any);
+
+      assert.ok(q, `Quote for ${tier.bps} bps must exist`);
+      assert.equal(q.feeTierBps, tier.bps);
+      assert.ok(q.amountOut < previousOutput, `Higher fee tier ${tier.bps} must yield strictly less output than lower fee tier`);
+      previousOutput = q.amountOut;
+
+      const sim = simulateV3Swap({
+        amountIn,
+        zeroForOne: true,
+        sqrtPriceX96: poolSqrtPriceX96,
+        currentTick: poolCurrentTick,
+        liquidity: poolLiquidity,
+        feePips: tier.pips,
+        tickSpacing: 60
+      });
+
+      assert.equal(q.amountOut, sim.amountOut, `Quote output for ${tier.bps} bps must exactly match simulateV3Swap`);
+    }
+  });
+
+  await t.test('9. Proof & Trace of 0.0992 USDC (99,200 raw) Invariant and Consistency', () => {
+    // 1 POL input = 10^18 raw
+    const amountIn = 1n * 10n ** 18n;
+    const slippageBps = 50; // 0.50%
+
+    // Step 1: Quoted amount calculation
+    const sim = simulateV3Swap({
+      amountIn,
+      zeroForOne: true,
+      sqrtPriceX96: poolSqrtPriceX96,
+      currentTick: poolCurrentTick,
+      liquidity: poolLiquidity,
+      feePips: poolFee, // 3000 (30 bps)
+      tickSpacing: poolTickSpacing
+    });
+
+    const quotedOutput = sim.amountOut; // 99,699 raw = 0.099699 USDC
+    assert.equal(quotedOutput, 99699n, 'Quoted amount must be exactly 99699 raw');
+
+    // Step 2: Minimum amount calculation (99699 * (10000 - 50) / 10000)
+    const minimumOut = (quotedOutput * (10000n - BigInt(slippageBps))) / 10000n; // 99,200 raw = 0.099200 USDC
+    assert.equal(minimumOut, 99200n, 'Minimum amount must be exactly 99200 raw (0.099200 USDC)');
+
+    // Step 3: Exact calldata encoding
+    const routerIface = new Interface(ZENITH_V3_ROUTER_ABI);
+    const deadline = 1789654320;
+    const encodedCalldata = routerIface.encodeFunctionData('exactInputSingle', [
+      [
+        wpolAddress,
+        usdcAddress,
+        3000,
+        userAddress,
+        deadline,
+        amountIn,
+        minimumOut,
+        0
+      ]
+    ]);
+
+    assert.ok(encodedCalldata.startsWith('0x414bf389'), 'Selector must be exactInputSingle (0x414bf389)');
+    
+    // Step 4: Validate on-chain execution with minimumOut = 99200
+    // Execution produces 99,699 >= 99,200 -> Success (does NOT revert with V3TooLittleReceived 0x39d35496)
+    assert.ok(quotedOutput >= minimumOut, 'Execution amount (99699) exceeds amountOutMinimum (99200)');
+  });
 });

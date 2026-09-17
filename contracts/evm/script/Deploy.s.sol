@@ -32,6 +32,7 @@ contract DeployZenith is Script {
         address governance = vm.envOr("GOVERNANCE_MULTISIG", vm.addr(deployerPrivateKey));
         address emergencyGuardian = vm.envOr("EMERGENCY_GUARDIAN", vm.addr(deployerPrivateKey));
         address wethAddress = vm.envOr("WETH_ADDRESS", address(0));
+        require(wethAddress != address(0), "DeployZenith: WETH_ADDRESS cannot be zero address");
         address permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
 
         console.log("=== Deploying ZENITH SWAP Canonical Protocol Suite ===");
@@ -63,7 +64,7 @@ contract DeployZenith is Script {
         console.log("5. ZenithV2Factory:          ", v2FactoryAddr);
         console.log("6. ZenithV2Router:           ", v2RouterAddr);
 
-        ZenithV3Factory v3Factory = new ZenithV3Factory(governance, feeControllerAddr);
+        ZenithV3Factory v3Factory = new ZenithV3Factory(governance);
         v3FactoryAddr = address(v3Factory);
         ZenithV3Router v3Router = new ZenithV3Router(v3FactoryAddr, wethAddress);
         v3RouterAddr = address(v3Router);

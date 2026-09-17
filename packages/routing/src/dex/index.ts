@@ -10,4 +10,5 @@ export * from './velodromeProvider';
 export * from './camelotProvider';
 export * from './pancakeSwapProvider';
 export * from './traderJoeProvider';
+export * from './poolStateReader';
 export * from './dexAggregator';

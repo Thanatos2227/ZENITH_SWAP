@@ -1,5 +1,5 @@
 import { DEXProtocol, Token } from '@zenith/types';
-import { Interface } from 'ethers';
+import { Interface, Provider } from 'ethers';
 import {
   ZENITH_V3_ROUTER_ABI,
   CANONICAL_NATIVE_ADDRESS,
@@ -12,6 +12,7 @@ import {
   isNativeToken,
   resolvePoolTokenAddress
 } from './dexMath';
+import { PoolStateReader } from './poolStateReader';
 
 export class ZenithV3Provider implements DEXProvider {
   public readonly id: DEXProtocol = 'ZENITH_V3';
@@ -37,21 +38,62 @@ export class ZenithV3Provider implements DEXProvider {
 
     const effectiveFeeBps = (params as any).feeTierBps !== undefined ? (params as any).feeTierBps : 30;
 
-    const calculated = calculateV3ConcentratedOutput({
-      chainId: params.chainId,
-      tokenIn: params.tokenIn,
-      tokenOut: params.tokenOut,
-      amountIn: params.amountIn,
-      feeTierBps: effectiveFeeBps,
-      slippageToleranceBps: params.slippageToleranceBps || 50,
-      customReserveIn: (params as any).customReserveIn,
-      customReserveOut: (params as any).customReserveOut,
-      customLiquidity: (params as any).customLiquidity,
-      customSqrtPriceX96: (params as any).customSqrtPriceX96,
-      customCurrentTick: (params as any).customCurrentTick,
-      customTickSpacing: (params as any).customTickSpacing,
-      initializedTicks: (params as any).initializedTicks
-    });
+    let poolAddress: string | undefined = undefined;
+    let quoteBlockNumber: number | undefined = undefined;
+    let calculated: ReturnType<typeof calculateV3ConcentratedOutput> = null;
+
+    if ((params as any).provider) {
+      try {
+        const inAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
+        const outAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
+        const feePips = effectiveFeeBps * 100;
+        const liveState = await PoolStateReader.getLivePoolStateForPair(
+          params.chainId,
+          inAddr,
+          outAddr,
+          feePips,
+          (params as any).provider as Provider
+        );
+
+        if (liveState) {
+          poolAddress = liveState.poolAddress;
+          quoteBlockNumber = liveState.blockNumber;
+          calculated = calculateV3ConcentratedOutput({
+            chainId: params.chainId,
+            tokenIn: params.tokenIn,
+            tokenOut: params.tokenOut,
+            amountIn: params.amountIn,
+            feeTierBps: effectiveFeeBps,
+            slippageToleranceBps: params.slippageToleranceBps || 50,
+            customLiquidity: liveState.liquidity,
+            customSqrtPriceX96: liveState.sqrtPriceX96,
+            customCurrentTick: liveState.tick,
+            customTickSpacing: liveState.tickSpacing,
+            initializedTicks: liveState.initializedTicks
+          });
+        }
+      } catch {
+        // Fall back to parameters
+      }
+    }
+
+    if (!calculated) {
+      calculated = calculateV3ConcentratedOutput({
+        chainId: params.chainId,
+        tokenIn: params.tokenIn,
+        tokenOut: params.tokenOut,
+        amountIn: params.amountIn,
+        feeTierBps: effectiveFeeBps,
+        slippageToleranceBps: params.slippageToleranceBps || 50,
+        customReserveIn: (params as any).customReserveIn,
+        customReserveOut: (params as any).customReserveOut,
+        customLiquidity: (params as any).customLiquidity,
+        customSqrtPriceX96: (params as any).customSqrtPriceX96,
+        customCurrentTick: (params as any).customCurrentTick,
+        customTickSpacing: (params as any).customTickSpacing,
+        initializedTicks: (params as any).initializedTicks
+      });
+    }
 
     if (!calculated || calculated.amountOut <= 0n) {
       return null;
@@ -73,7 +115,9 @@ export class ZenithV3Provider implements DEXProvider {
       priceImpactPercent: calculated.priceImpactPercent,
       executionTarget: routerAddress,
       approvalTarget: routerAddress,
-      gasEstimate: 145000n,
+      poolAddress,
+      quoteBlockNumber,
+      gasEstimate: 160000n,
       gasCostUSD: 0.04,
       quoteTimestamp,
       expiration: quoteTimestamp + 15000,
@@ -129,4 +173,3 @@ export class ZenithV3Provider implements DEXProvider {
 }
 
 export const zenithV3Provider = new ZenithV3Provider();
-

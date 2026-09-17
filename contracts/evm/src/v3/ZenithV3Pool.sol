@@ -100,19 +100,17 @@ contract ZenithV3Pool {
         int24 tick
     );
 
-    constructor() {
+    constructor(
+        address _token0,
+        address _token1,
+        uint24 _fee,
+        int24 _tickSpacing
+    ) {
         factory = msg.sender;
-        (token0, token1, fee, tickSpacing) = (address(0), address(0), 0, 0);
-    }
-
-    function initializePool(address _token0, address _token1, uint24 _fee, int24 _tickSpacing) external {
-        require(msg.sender == factory, "ZenithV3Pool: FORBIDDEN");
-        assembly {
-            sstore(token0.slot, _token0)
-            sstore(token1.slot, _token1)
-            sstore(fee.slot, _fee)
-            sstore(tickSpacing.slot, _tickSpacing)
-        }
+        token0 = _token0;
+        token1 = _token1;
+        fee = _fee;
+        tickSpacing = _tickSpacing;
     }
 
     function initialize(uint160 sqrtPriceX96) external {

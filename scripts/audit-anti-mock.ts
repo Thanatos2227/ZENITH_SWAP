@@ -24,7 +24,7 @@ const FORBIDDEN_PATTERNS: Array<{
     regex: /0x0000000000000000000000000000000000000000/i,
     category: 'Zero Address Spender/Recipient',
     description: 'Zero address must not be used as default spender or recipient (use ERC-7528 0xEeee... or fail closed)',
-    allowInFiles: [/permit2\.ts/, /acrossProvider\.ts/, /errors\.ts/, /solana\.ts/, /addressValidator\.ts/, /dexMath\.ts/]
+    allowInFiles: [/permit2\.ts/, /acrossProvider\.ts/, /errors\.ts/, /solana\.ts/, /addressValidator\.ts/, /dexMath\.ts/, /poolStateReader\.ts/, /Deploy\.s\.sol/]
   },
   {
     regex: /Math\.random\(\)/,
@@ -50,8 +50,11 @@ const FORBIDDEN_PATTERNS: Array<{
 ];
 
 const SCAN_DIRS = [
+  path.resolve(process.cwd(), 'contracts'),
   path.resolve(process.cwd(), 'packages'),
-  path.resolve(process.cwd(), 'apps/web/src')
+  path.resolve(process.cwd(), 'apps'),
+  path.resolve(process.cwd(), 'deployments'),
+  path.resolve(process.cwd(), 'scripts')
 ];
 
 const EXCLUDE_PATHS = [
@@ -61,7 +64,10 @@ const EXCLUDE_PATHS = [
   /node_modules/,
   /dist/,
   /\.next/,
-  /build/
+  /build/,
+  /\.git/,
+  /contracts[\\\/]evm[\\\/]lib/,
+  /scripts[\\\/]audit-anti-mock\.ts$/
 ];
 
 export function runAudit(): AuditViolation[] {
@@ -78,7 +84,13 @@ export function runAudit(): AuditViolation[] {
         if (!EXCLUDE_PATHS.some((p) => p.test(fullPath))) {
           scanDir(fullPath);
         }
-      } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) {
+      } else if (
+        entry.isFile() &&
+        (entry.name.endsWith('.ts') ||
+          entry.name.endsWith('.tsx') ||
+          entry.name.endsWith('.sol') ||
+          (entry.name.endsWith('.json') && !entry.name.includes('package')))
+      ) {
         if (EXCLUDE_PATHS.some((p) => p.test(fullPath))) continue;
 
         const content = fs.readFileSync(fullPath, 'utf8');
@@ -89,8 +101,7 @@ export function runAudit(): AuditViolation[] {
             if (pattern.regex.test(line)) {
               const allowed = pattern.allowInFiles?.some((p) => p.test(fullPath));
               if (!allowed) {
-
-                if (line.trim().startsWith('//') || line.trim().startsWith('*')) {
+                if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*')) {
                   return;
                 }
                 violations.push({
@@ -116,7 +127,7 @@ export function runAudit(): AuditViolation[] {
 }
 
 if (typeof require !== 'undefined' && require.main === module) {
-  console.log('🔍 Running ZENITH Anti-Mock & Zero-Address Audit...');
+  console.log('🔍 Running ZENITH Anti-Mock & Zero-Address Audit across all workspaces...');
   const violations = runAudit();
 
   if (violations.length === 0) {

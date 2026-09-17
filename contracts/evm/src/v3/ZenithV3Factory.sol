@@ -53,16 +53,14 @@ contract ZenithV3Factory {
         require(tokenA != tokenB, "ZenithV3Factory: IDENTICAL_ADDRESSES");
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0), "ZenithV3Factory: ZERO_ADDRESS");
+        require(token1 != address(0), "ZenithV3Factory: ZERO_ADDRESS");
         int24 tickSpacing = feeAmountTickSpacing[fee];
         require(tickSpacing != 0, "ZenithV3Factory: FEE_NOT_ENABLED");
         require(getPool[token0][token1][fee] == address(0), "ZenithV3Factory: POOL_EXISTS");
 
-        bytes memory bytecode = type(ZenithV3Pool).creationCode;
-        bytes32 salt = keccak256(abi.encodePacked(token0, token1, fee));
-        assembly {
-            pool := create2(0, add(bytecode, 32), mload(bytecode), salt)
-        }
-        ZenithV3Pool(pool).initializePool(token0, token1, fee, tickSpacing);
+        bytes32 salt = keccak256(abi.encode(token0, token1, fee));
+        pool = address(new ZenithV3Pool{salt: salt}(token0, token1, fee, tickSpacing));
+        require(pool != address(0), "ZenithV3Factory: DEPLOY_FAILED");
 
         getPool[token0][token1][fee] = pool;
         getPool[token1][token0][fee] = pool;

@@ -11,7 +11,7 @@ import { CamelotProvider } from './camelotProvider';
 import { PancakeSwapProvider } from './pancakeSwapProvider';
 import { TraderJoeProvider } from './traderJoeProvider';
 
-export type DEXAggregationMode = 'ZENITH_ONLY' | 'EXTERNAL_AGGREGATION';
+export type DEXAggregationMode = 'ZENITH_ONLY' | 'ZENITH_SOVEREIGN' | 'EXTERNAL_AGGREGATION';
 
 export const SOVEREIGN_ZENITH_PROTOCOLS: DEXProtocol[] = ['ZENITH_V1', 'ZENITH_V2', 'ZENITH_V3'];
 
@@ -57,6 +57,11 @@ export class DEXAggregator {
     return this.providers.get(protocol);
   }
 
+  public isSovereignMode(mode?: DEXAggregationMode): boolean {
+    const active = mode || this.mode;
+    return active === 'ZENITH_ONLY' || active === 'ZENITH_SOVEREIGN';
+  }
+
   public async getQuotes(params: {
     chainId: number;
     tokenIn: Token;
@@ -67,8 +72,10 @@ export class DEXAggregator {
     mode?: DEXAggregationMode;
   }): Promise<DEXQuote[]> {
     const activeMode = params.mode || this.mode;
+    const isSovereign = this.isSovereignMode(activeMode);
+
     const applicableProviders = Array.from(this.providers.values()).filter((p) => {
-      if (activeMode === 'ZENITH_ONLY' && !SOVEREIGN_ZENITH_PROTOCOLS.includes(p.protocol)) {
+      if (isSovereign && !SOVEREIGN_ZENITH_PROTOCOLS.includes(p.protocol)) {
         return false;
       }
       return p.supportedChainIds.includes(params.chainId);
@@ -111,8 +118,12 @@ export class DEXAggregator {
     amountIn: bigint;
     slippageToleranceBps: number;
     recipient?: string;
+    mode?: DEXAggregationMode;
   }): Promise<DEXQuote | null> {
     const quotes = await this.getQuotes(params);
+    if (quotes.length === 0 && this.isSovereignMode(params.mode)) {
+      return null;
+    }
     return quotes.length > 0 ? quotes[0] : null;
   }
 
@@ -124,9 +135,9 @@ export class DEXAggregator {
     mode?: DEXAggregationMode
   ): Promise<DEXExecution> {
     const activeMode = mode || this.mode;
-    if (activeMode === 'ZENITH_ONLY' && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
+    if (this.isSovereignMode(activeMode) && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
       throw new Error(
-        `ZENITH_EXTERNAL_EXECUTION_DETECTED: DEXAggregator is operating in sovereign ZENITH_ONLY mode. External protocol execution (${quote.provider}) is strictly prohibited.`
+        `ZENITH_EXTERNAL_EXECUTION_DETECTED: DEXAggregator is operating in sovereign ZENITH_ONLY mode / ZENITH_SOVEREIGN mode. External protocol execution (${quote.provider}) is strictly prohibited.`
       );
     }
 
@@ -139,4 +150,3 @@ export class DEXAggregator {
 }
 
 export const defaultDEXAggregator = new DEXAggregator();
-
