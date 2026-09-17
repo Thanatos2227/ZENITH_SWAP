@@ -15,8 +15,6 @@ import {ZenithCrossChainRouter} from "../src/ZenithCrossChainRouter.sol";
 import {ZenithCircuitBreaker} from "../src/ZenithCircuitBreaker.sol";
 
 contract DeployZenith is Script {
-    address internal constant PROFESSIONAL_WALLET = 0x739B5579C5d617534803d5129F9563B30E42e3a8;
-
     function run() external returns (
         address treasuryAddr,
         address feeControllerAddr,
@@ -31,29 +29,32 @@ contract DeployZenith is Script {
         address crossChainRouterAddr
     ) {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address deployerGovernance = vm.addr(deployerPrivateKey);
-        address governance = vm.envOr("GOVERNANCE_MULTISIG", PROFESSIONAL_WALLET);
+        address deployer = vm.addr(deployerPrivateKey);
+
+        // Governance is an explicit deployment input. Never silently bind protocol
+        // administration to a hard-coded personal or test wallet address.
+        address governance = vm.envOr("GOVERNANCE_MULTISIG", address(0));
+        require(governance != address(0), "DeployZenith: GOVERNANCE_MULTISIG is required");
         address emergencyGuardian = vm.envOr("EMERGENCY_GUARDIAN", governance);
         address wethAddress = vm.envOr("WETH_ADDRESS", address(0));
         require(wethAddress != address(0), "DeployZenith: WETH_ADDRESS cannot be zero address");
         address permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
 
         console.log("=== Deploying ZENITH SWAP Canonical Protocol Suite ===");
-        console.log("Professional Governance: ", governance);
-        console.log("Deployment Operator:     ", deployerGovernance);
+        console.log("Governance:               ", governance);
+        console.log("Deployment Operator:     ", deployer);
         console.log("Emergency Guardian:      ", emergencyGuardian);
         console.log("WETH Address:            ", wethAddress);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Treasury and fee controller are bootstrapped under the deployer so the
-        // deployment can authorize protocol routers before handing governance to
-        // the professional wallet. No fabricated contract address is used.
-        ZenithTreasury treasury = new ZenithTreasury(deployerGovernance);
+        // Bootstrap mutable treasury administration under the deployment operator
+        // so collectors can be authorized before the final governance handover.
+        ZenithTreasury treasury = new ZenithTreasury(deployer);
         treasuryAddr = address(treasury);
         console.log("1. ZenithTreasury:          ", treasuryAddr);
 
-        ZenithFeeController feeController = new ZenithFeeController(deployerGovernance, treasuryAddr);
+        ZenithFeeController feeController = new ZenithFeeController(deployer, treasuryAddr);
         feeControllerAddr = address(feeController);
         console.log("2. ZenithFeeController:      ", feeControllerAddr);
 
@@ -104,14 +105,12 @@ contract DeployZenith is Script {
         console.log("11. ZenithCrossChainRouter:  ", crossChainRouterAddr);
 
         // Both routers call the treasury directly when collecting protocol fees.
-        // Authorize them before governance is handed to the professional wallet.
         treasury.setFeeCollector(unifiedRouterAddr, true);
         treasury.setFeeCollector(crossChainRouterAddr, true);
 
-        // Transfer administrative control of the treasury and fee controller to
-        // the supplied professional wallet. The wallet must call acceptGovernance()
-        // on each contract to complete the two-step ownership transfer.
-        if (governance != deployerGovernance) {
+        // Complete the administrative handover only when governance differs from
+        // the deployment operator. The target governance must accept explicitly.
+        if (governance != deployer) {
             treasury.transferGovernance(governance);
             feeController.transferGovernance(governance);
         }
