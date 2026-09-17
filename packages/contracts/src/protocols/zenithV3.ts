@@ -18,6 +18,8 @@ export const ZENITH_V3_POOL_ABI = [
   'function tickSpacing() external view returns (int24)',
   'function liquidity() external view returns (uint128)',
   'function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, bool unlocked)',
+  'function tickBitmap(int16 wordPosition) external view returns (uint256)',
+  'function ticks(int24 tick) external view returns (uint128 liquidityGross, int128 liquidityNet, uint256 feeGrowthOutside0X128, uint256 feeGrowthOutside1X128, bool initialized)',
   'function initialize(uint160 sqrtPriceX96) external',
   'function mint(address recipient, int24 tickLower, int24 tickUpper, uint128 amount, bytes calldata data) external returns (uint256 amount0, uint256 amount1)',
   'function collect(address recipient, int24 tickLower, int24 tickUpper, uint128 amount0Requested, uint128 amount1Requested) external returns (uint128 amount0, uint128 amount1)',

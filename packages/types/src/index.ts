@@ -286,6 +286,8 @@ export interface DEXQuote {
   calldata?: string;
   value?: string;
   quoteTimestamp: number;
+  quoteBlockNumber?: number;
+  poolAddress?: string;
   expiration: number;
   routePath?: string[];
   execution?: DEXExecution;
@@ -297,7 +299,10 @@ export interface DEXQuoteParams {
   tokenOut: Token;
   amountIn: bigint;
   slippageToleranceBps: number;
+  feeTierBps?: number;
   recipient?: string;
+  provider?: any;
+  rpcUrl?: string;
 }
 
 export interface DEXProvider {

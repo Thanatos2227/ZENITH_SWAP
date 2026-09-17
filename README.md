@@ -30,7 +30,6 @@
 5. [Supported Chains & Execution Topology](#-supported-chains--execution-topology)
 6. [Security, Risk Engine & Circuit Breaker](#-security-risk-engine--circuit-breaker)
 7. [Local Development & Testing](#-local-development--testing)
-8. [Documentation Links](#-documentation-links)
 
 ---
 
@@ -94,13 +93,7 @@ ZENITH/
 │   ├── types/                          # Shared TypeScript Types, Interfaces & Schemas
 │   └── ui/                             # Design System Tokens, Theme Definitions & Color Palettes
 │
-├── docs/                               # Architectural & Governance Documentation
-│   ├── TREASURY_ARCHITECTURE.md        # Sovereign Treasury & Fee Controller Topology
-│   ├── TREASURY_SECURITY_MODEL.md      # Security Invariants & Access Control Model
-│   ├── ARCHITECTURE.md                 # System Topology & Routing Formula
-│   └── KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md # Multisig & Emergency Response Runbook
-│
-├── tests/                              # Comprehensive Monorepo Test Suites (190 Tests)
+├── tests/                              # Comprehensive Monorepo Test Suites
 │
 ├── package.json                        # Root Workspace Configuration & Monorepo Scripts
 └── tsconfig.base.json                  # Monorepo TypeScript Compiler Base
@@ -189,7 +182,7 @@ forge script script/Deploy.s.sol:DeployZenith \
    ```
 
 2. **Multisig Governance Confirmation:**
-   Ensure governance permissions are transferred to the protocol's 4-of-7 Safe Multisig according to [§69 Key Ceremony Protocol](file:///e:/APEX/ZENITH/docs/KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md).
+   Ensure governance permissions are transferred to the protocol's 4-of-7 Safe Multisig governance structure.
 
 ---
 
@@ -287,7 +280,6 @@ Every asset undergoes pre-trade evaluation:
 ### Emergency Circuit Breaker Protocol
 - **Trigger:** Automated trigger on $>15\%$ oracle deviation or $>25\%$ pre-flight simulation reverts.
 - **Safe Failure Principle:** Emergency pause halts new routing on the contract level; user funds in wallets or balances are **never locked or confiscated**.
-- Full runbook details in [`KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md`](file:///e:/APEX/ZENITH/docs/KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md).
 
 ---
 
@@ -332,15 +324,6 @@ Outputs validation across:
 - Multi-Hop Cross-Chain Routing (Stargate Bridge)
 - Circuit Breaker Anomaly Thresholds
 - Execution State Machine Lifecycle
-
----
-
-## 📚 Documentation Links
-
-- [System Architecture Specification](file:///e:/APEX/ZENITH/docs/ARCHITECTURE.md)
-- [Application Security & Identity (CSP, RBAC)](file:///e:/APEX/ZENITH/docs/SECURITY_AND_IDENTITY.md)
-- [Key Ceremony Protocol & Incident Runbook](file:///e:/APEX/ZENITH/docs/KEY_CEREMONY_AND_INCIDENT_RUNBOOK.md)
-- [Compliance, Accessibility & Performance Budgets](file:///e:/APEX/ZENITH/docs/COMPLIANCE_AND_ACCESSIBILITY.md)
 
 ---
 
