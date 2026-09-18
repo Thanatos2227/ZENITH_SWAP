@@ -93,72 +93,72 @@ library TickMath {
 
         assembly {
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(63, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(62, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(61, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(60, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(59, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(58, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(57, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(56, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(55, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(54, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(53, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(52, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(51, f))
             r := shr(f, r)
 
             r := shr(127, mul(r, r))
-            let f := shr(128, r)
+            f := shr(128, r)
             log_2 := or(log_2, shl(50, f))
             r := shr(f, r)
         }
