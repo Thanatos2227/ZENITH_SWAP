@@ -126,7 +126,7 @@ contract ZenithRouterTest is Test {
         );
 
         vm.prank(governance);
-        treasury.setAuthorizedCollector(address(unifiedRouter), true);
+        treasury.setFeeCollector(address(unifiedRouter), true);
 
         tokenA = new MockERC20Router("Token A", "TKNA", 18);
         tokenB = new MockERC20Router("Token B", "TKNB", 18);
