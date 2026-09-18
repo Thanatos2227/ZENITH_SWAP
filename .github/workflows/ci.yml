@@ -2,7 +2,9 @@ name: ZENITH Protocol CI
 
 on:
   push:
-    branches: [ main ]
+    branches: 
+      - main
+      - fix/zenith-v3-execution
   pull_request:
     branches: [ main ]
 
