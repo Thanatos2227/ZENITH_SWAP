@@ -100,7 +100,9 @@ library SqrtPriceMath {
                     ? (amount << 96) / liquidity
                     : FullMath.mulDiv(amount, 1 << 96, liquidity)
             );
-            return uint160(uint256(sqrtPX96) + quotient);
+            uint256 nextSqrtP = uint256(sqrtPX96) + quotient;
+            require(nextSqrtP <= type(uint160).max, "SqrtPriceMath: PRICE_OVERFLOW");
+            return uint160(nextSqrtP);
         } else {
             uint256 quotient = FullMath.mulDivRoundingUp(amount, 1 << 96, liquidity);
             require(uint256(sqrtPX96) > quotient, "SqrtPriceMath: UNDERFLOW1");
