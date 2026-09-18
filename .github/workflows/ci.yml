@@ -37,7 +37,7 @@ jobs:
 
       - name: Solidity Build Gate
         working-directory: contracts/evm
-        run: 
+        run: |
           forge clean
           forge build --sizes
 
