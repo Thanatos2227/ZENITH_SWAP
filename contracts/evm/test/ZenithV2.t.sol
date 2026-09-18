@@ -113,7 +113,7 @@ contract ZenithV2Test is Test {
         assertTrue(pool100 != address(0));
         assertTrue(pool5 != pool30 && pool30 != pool100);
 
-        assertEq(ZenithV2Pool(pool5).fee(), 5);
+        assertEq(ZenithV2Pool(pool5).feeBps(), 5);
         assertEq(ZenithV2Pool(pool30).fee(), 30);
         assertEq(ZenithV2Pool(pool100).fee(), 100);
     }
