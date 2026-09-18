@@ -164,12 +164,12 @@ contract ZenithV3TickMathFuzzTest is Test {
 
     /// @notice Invariant: getNextSqrtPriceFromInput moves price monotonically in expected direction
     function testFuzz_getNextSqrtPriceFromInput_direction(
-        uint160 sqrtPX96,
+        uint160 sqrtP,
         uint128 liquidity,
         uint256 amountIn,
         bool zeroForOne
     ) public pure {
-        sqrtPX96 = uint160(bound(uint256(sqrtPX96), uint256(MIN_SQRT_RATIO) + 1000, uint256(MAX_SQRT_RATIO) - 1000));
+        sqrtP = uint160(bound(uint256(sqrtP), uint256(MIN_SQRT_RATIO) + 1000, uint256(MAX_SQRT_RATIO) - 1000));
         liquidity = uint128(bound(uint256(liquidity), 1e8, 1e26));
         amountIn = bound(amountIn, 1, 1e24);
 
