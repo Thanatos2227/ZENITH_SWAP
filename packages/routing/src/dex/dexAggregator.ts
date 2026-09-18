@@ -122,7 +122,7 @@ export class DEXAggregator {
   ): Promise<DEXExecution> {
     const activeMode = mode || this.mode;
     if (this.isSovereignMode(activeMode) && !SOVEREIGN_ZENITH_PROTOCOLS.includes(quote.provider)) {
-      throw new Error(`ZENITH_EXTERNAL_EXECUTION_DETECTED: external protocol ${quote.provider} is prohibited in sovereign mode`);
+      throw new Error(`ZENITH_EXTERNAL_EXECUTION_DETECTED: external protocol ${quote.provider} is prohibited in ZENITH_ONLY mode (sovereign mode)`);
     }
     const provider = this.providers.get(quote.provider);
     if (!provider) throw new Error(`No provider registered for DEX protocol: ${quote.provider}`);

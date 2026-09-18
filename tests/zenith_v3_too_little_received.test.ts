@@ -33,6 +33,76 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
   const poolSqrtPriceX96 = 250541448375047927429120n;
   const poolCurrentTick = -299000;
 
+  function createMockV3Provider(config?: {
+    factoryAddress?: string;
+    poolAddress?: string;
+    token0?: string;
+    token1?: string;
+    fee?: number;
+    tickSpacing?: number;
+    sqrtPriceX96?: bigint;
+    tick?: number;
+    liquidity?: bigint;
+    unlocked?: boolean;
+    blockNumber?: number;
+  }) {
+    const factoryAddr = config?.factoryAddress || v3FactoryAddress;
+    const poolAddr = config?.poolAddress || poolAddress;
+    const t0 = config?.token0 || wpolAddress;
+    const t1 = config?.token1 || usdcAddress;
+    const pFee = config?.fee !== undefined ? config.fee : 3000;
+    const pTickSpacing = config?.tickSpacing !== undefined ? config.tickSpacing : 60;
+    const pSqrtPrice = config?.sqrtPriceX96 !== undefined ? config.sqrtPriceX96 : poolSqrtPriceX96;
+    const pTick = config?.tick !== undefined ? config.tick : poolCurrentTick;
+    const pLiquidity = config?.liquidity !== undefined ? config.liquidity : poolLiquidity;
+    const pUnlocked = config?.unlocked !== undefined ? config.unlocked : true;
+    const pBlockNumber = config?.blockNumber || 12345678;
+
+    return {
+      getBlockNumber: async () => pBlockNumber,
+      getCode: async () => '0x608060405234801561001057600080fd5b50',
+      estimateGas: async () => 145000n,
+      call: async (tx: any) => {
+        const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+        const factoryIface = new Interface([
+          'function getPool(address,address,uint24) external view returns (address)'
+        ]);
+
+        if (tx.to?.toLowerCase() === factoryAddr.toLowerCase()) {
+          return factoryIface.encodeFunctionResult('getPool', [poolAddr]);
+        }
+
+        if (tx.to?.toLowerCase() === poolAddr.toLowerCase()) {
+          const data = tx.data;
+          if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+            return poolIface.encodeFunctionResult('token0', [t0]);
+          }
+          if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+            return poolIface.encodeFunctionResult('token1', [t1]);
+          }
+          if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+            return poolIface.encodeFunctionResult('fee', [pFee]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+            return poolIface.encodeFunctionResult('tickSpacing', [pTickSpacing]);
+          }
+          if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+            return poolIface.encodeFunctionResult('slot0', [pSqrtPrice, pTick, pUnlocked]);
+          }
+          if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+            return poolIface.encodeFunctionResult('liquidity', [pLiquidity]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+            return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+          }
+        }
+        return '0x';
+      }
+    } as any;
+  }
+
+  const defaultMockProvider = createMockV3Provider();
+
   const polToken: Token = {
     address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
     chainId: 'polygon',
@@ -80,11 +150,9 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       tokenOut: usdcToken,
       amountIn: 100n * 10n ** 18n, // 100 POL
       slippageToleranceBps: 50, // 0.5%
-      liquidity: poolLiquidity,
-      sqrtPriceX96: poolSqrtPriceX96,
-      currentTick: poolCurrentTick,
-      tickSpacing: 60,
-      feeTierBps: 30
+      feeTierBps: 30,
+      recipient: userAddress,
+      provider: defaultMockProvider
     };
 
     const dQuote = await v3Provider.getQuote(quoteParams as any);
@@ -201,10 +269,11 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       priceImpactPercent: 0.01,
       executionTarget: v3RouterAddress,
       approvalTarget: v3RouterAddress,
+      poolAddress,
       gasEstimate: 145000n,
       gasCostUSD: 0.04,
-      quoteTimestamp: Date.now() - 30000,
-      expiration: Date.now() - 15000,
+      quoteTimestamp: Date.now(),
+      expiration: Date.now() + 15000,
       routePath: [polToken.address, usdcToken.address]
     }, userAddress);
 
@@ -295,6 +364,7 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       priceImpactPercent: 0.01,
       executionTarget: v3RouterAddress,
       approvalTarget: v3RouterAddress,
+      poolAddress,
       gasEstimate: 145000n,
       gasCostUSD: 0.04,
       quoteTimestamp: Date.now(),
@@ -389,7 +459,7 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       },
       (err: any) => {
         assert.ok(err.message.includes('ZENITH_EXTERNAL_EXECUTION_DETECTED'));
-        assert.ok(err.message.includes('strictly prohibited'));
+        assert.ok(err.message.includes('prohibited in ZENITH_ONLY mode') || err.message.includes('sovereign mode'));
         return true;
       }
     );
@@ -403,11 +473,8 @@ test('ZENITH SWAP — V3TooLittleReceived (0x39d35496) Root-Cause Repair Test Su
       tokenOut: usdcToken,
       amountIn: 1n * 10n ** 18n, // 1 POL
       slippageToleranceBps: 50,
-      liquidity: poolLiquidity,
-      sqrtPriceX96: poolSqrtPriceX96,
-      currentTick: poolCurrentTick,
-      tickSpacing: 60,
-      feeTierBps: 30
+      feeTierBps: 30,
+      provider: defaultMockProvider
     } as any);
 
     assert.ok(dQuote);

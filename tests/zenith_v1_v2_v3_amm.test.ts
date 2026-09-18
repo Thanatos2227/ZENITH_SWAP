@@ -10,14 +10,28 @@ import {
 import { zenithV1Provider } from '@zenith/routing/src/dex/zenithV1Provider';
 import { zenithV2Provider } from '@zenith/routing/src/dex/zenithV2Provider';
 import { zenithV3Provider } from '@zenith/routing/src/dex/zenithV3Provider';
-import { registerZenithDeployment } from '@zenith/contracts';
+import {
+  registerZenithDeployment,
+  ZENITH_V1_PAIR_ABI,
+  ZENITH_V2_POOL_ABI,
+  ZENITH_V3_POOL_ABI
+} from '@zenith/contracts';
 import { Token } from '@zenith/types';
+import { Interface } from 'ethers';
 
 describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
 
+  const v1FactoryAddress = '0x1000000000000000000000000000000000000010';
+  const v2FactoryAddress = '0x2000000000000000000000000000000000000020';
+  const v3FactoryAddress = '0x3000000000000000000000000000000000000030';
+  const mockPoolAddress = '0x3000000000000000000000000000000000000099';
+
   registerZenithDeployment(137, {
+    v1Factory: v1FactoryAddress,
     v1Router: '0x1111111111111111111111111111111111111111',
+    v2Factory: v2FactoryAddress,
     v2Router: '0x2222222222222222222222222222222222222222',
+    v3Factory: v3FactoryAddress,
     v3Router: '0x3333333333333333333333333333333333333333',
     v3PositionManager: '0x4444444444444444444444444444444444444444'
   });
@@ -41,6 +55,61 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
     isNative: false,
     priceUSD: 0.10
   };
+
+  const mockProvider = {
+    getBlockNumber: async () => 50000000,
+    getCode: async () => '0x608060405234801561001057600080fd5b50',
+    estimateGas: async () => 145000n,
+    call: async (tx: any) => {
+      const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+      const v2PoolIface = new Interface(ZENITH_V2_POOL_ABI);
+      const v1PairIface = new Interface(ZENITH_V1_PAIR_ABI);
+      const factoryIface = new Interface([
+        'function getPool(address,address,uint24) external view returns (address)',
+        'function getPair(address,address) external view returns (address)'
+      ]);
+
+      const to = tx.to?.toLowerCase();
+      if (to === v1FactoryAddress.toLowerCase()) {
+        return factoryIface.encodeFunctionResult('getPair', [mockPoolAddress]);
+      }
+      if (to === v2FactoryAddress.toLowerCase() || to === v3FactoryAddress.toLowerCase()) {
+        return factoryIface.encodeFunctionResult('getPool', [mockPoolAddress]);
+      }
+
+      if (to === mockPoolAddress.toLowerCase()) {
+        const data = tx.data;
+        if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+          return poolIface.encodeFunctionResult('token0', [tokenUSDC.address]);
+        }
+        if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+          return poolIface.encodeFunctionResult('token1', [tokenPOL.address]);
+        }
+        if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+          return poolIface.encodeFunctionResult('fee', [3000]);
+        }
+        if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+          return poolIface.encodeFunctionResult('tickSpacing', [60]);
+        }
+        if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+          return poolIface.encodeFunctionResult('slot0', [79228162514264337593543950336n, 0, true]);
+        }
+        if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+          return poolIface.encodeFunctionResult('liquidity', [100000000000000000000000n]);
+        }
+        if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+          return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+        }
+        if (data.startsWith(v2PoolIface.getFunction('feeBps')!.selector)) {
+          return v2PoolIface.encodeFunctionResult('feeBps', [30]);
+        }
+        if (data.startsWith(v1PairIface.getFunction('getReserves')!.selector)) {
+          return v1PairIface.encodeFunctionResult('getReserves', [1_000_000n * 10n ** 6n, 1_000_000n * 10n ** 18n, 12345678]);
+        }
+      }
+      return '0x';
+    }
+  } as any;
 
   describe('1. Zenith V1 AMM (x * y = k Math & Invariants)', () => {
     it('correctly calculates output amount with 30 BPS (0.3%) fee', () => {
@@ -118,7 +187,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         slippageToleranceBps: 50,
         reserveIn: 1_000_000n * 10n ** 6n,
         reserveOut: 1_000_000n * 10n ** 18n,
-        recipient: '0x1234567890123456789012345678901234567890'
+        recipient: '0x1234567890123456789012345678901234567890',
+        provider: mockProvider
       } as any);
 
       assert.ok(quote, 'Zenith V1 provider must produce quote');
@@ -139,7 +209,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         slippageToleranceBps: 50,
         feeTierBps: 5,
         reserveIn: 1_000_000n * 10n ** 6n,
-        reserveOut: 1_000_000n * 10n ** 18n
+        reserveOut: 1_000_000n * 10n ** 18n,
+        provider: mockProvider
       } as any);
       const quote30 = await zenithV2Provider.getQuote({
         chainId: 137,
@@ -149,7 +220,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         slippageToleranceBps: 50,
         feeTierBps: 30,
         reserveIn: 1_000_000n * 10n ** 6n,
-        reserveOut: 1_000_000n * 10n ** 18n
+        reserveOut: 1_000_000n * 10n ** 18n,
+        provider: mockProvider
       } as any);
       const quote100 = await zenithV2Provider.getQuote({
         chainId: 137,
@@ -159,7 +231,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         slippageToleranceBps: 50,
         feeTierBps: 100,
         reserveIn: 1_000_000n * 10n ** 6n,
-        reserveOut: 1_000_000n * 10n ** 18n
+        reserveOut: 1_000_000n * 10n ** 18n,
+        provider: mockProvider
       } as any);
 
       assert.ok(quote5 && quote30 && quote100, 'All fee tiers must return quotes');
@@ -198,7 +271,8 @@ describe('ZENITH SWAP — Sovereign AMM Protocol Test Suite', () => {
         liquidity: 100_000_000_000_000n,
         sqrtPriceX96: 79228162514264337593543950336n,
         currentTick: 0,
-        tickSpacing: 60
+        tickSpacing: 60,
+        provider: mockProvider
       } as any);
 
       assert.ok(quote, 'Zenith V3 provider must return a quote');

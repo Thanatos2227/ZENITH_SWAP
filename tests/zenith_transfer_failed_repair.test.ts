@@ -15,7 +15,10 @@ import {
   CANONICAL_NATIVE_ADDRESS,
   ZenithSimulationFailedError,
   ZenithApprovalTargetMismatchError,
-  InvalidTokenAddressError
+  InvalidTokenAddressError,
+  ZENITH_V1_PAIR_ABI,
+  ZENITH_V2_POOL_ABI,
+  ZENITH_V3_POOL_ABI
 } from '../packages/contracts/src';
 import { EVMExecutionAdapter } from '../packages/execution/src/adapters/evmAdapter';
 import { Token, QuoteResponse } from '../packages/types/src';
@@ -80,6 +83,63 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
     verificationTier: 'VERIFIED_CANONICAL'
   };
 
+  const mockPoolAddress = '0x3000000000000000000000000000000000000099';
+  const mockTestProvider = {
+    getBlockNumber: async () => 50000000,
+    getCode: async (_addr: string) => '0x608060405234801561001057600080fd5b50',
+    estimateGas: async () => 145000n,
+    call: async (tx: any) => {
+      const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+      const v2PoolIface = new Interface(ZENITH_V2_POOL_ABI);
+      const v1PairIface = new Interface(ZENITH_V1_PAIR_ABI);
+      const factoryIface = new Interface([
+        'function getPool(address,address,uint24) external view returns (address)',
+        'function getPair(address,address) external view returns (address)'
+      ]);
+
+      const to = tx.to?.toLowerCase();
+      if (to === '0x1000000000000000000000000000000000000010'.toLowerCase()) {
+        return factoryIface.encodeFunctionResult('getPair', [mockPoolAddress]);
+      }
+      if (to === '0x2000000000000000000000000000000000000020'.toLowerCase() ||
+          to === '0x3000000000000000000000000000000000000030'.toLowerCase()) {
+        return factoryIface.encodeFunctionResult('getPool', [mockPoolAddress]);
+      }
+
+      if (to === mockPoolAddress.toLowerCase()) {
+        const data = tx.data;
+        if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+          return poolIface.encodeFunctionResult('token0', [wpolAddress]);
+        }
+        if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+          return poolIface.encodeFunctionResult('token1', [usdcAddress]);
+        }
+        if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+          return poolIface.encodeFunctionResult('fee', [3000]);
+        }
+        if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+          return poolIface.encodeFunctionResult('tickSpacing', [60]);
+        }
+        if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+          return poolIface.encodeFunctionResult('slot0', [79228162514264337593543950336n, 0, true]);
+        }
+        if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+          return poolIface.encodeFunctionResult('liquidity', [100000000000000000000000n]);
+        }
+        if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+          return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+        }
+        if (data.startsWith(v2PoolIface.getFunction('feeBps')!.selector)) {
+          return v2PoolIface.encodeFunctionResult('feeBps', [30]);
+        }
+        if (data.startsWith(v1PairIface.getFunction('getReserves')!.selector)) {
+          return v1PairIface.encodeFunctionResult('getReserves', [1_000_000n * 10n ** 18n, 420_000n * 10n ** 6n, 12345678]);
+        }
+      }
+      return '0x';
+    }
+  } as any;
+
   const v1Provider = new ZenithV1Provider();
   const v2Provider = new ZenithV2Provider();
   const v3Provider = new ZenithV3Provider();
@@ -88,8 +148,7 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
   const origV1GetQuote = v1Provider.getQuote.bind(v1Provider);
   v1Provider.getQuote = async (params: any) => {
     return origV1GetQuote({
-      reserveIn: 1_000_000n * 10n ** 18n,
-      reserveOut: 420_000n * 10n ** 6n,
+      provider: params.provider || mockTestProvider,
       ...params
     });
   };
@@ -97,9 +156,7 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
   const origV2GetQuote = v2Provider.getQuote.bind(v2Provider);
   v2Provider.getQuote = async (params: any) => {
     return origV2GetQuote({
-      reserveIn: 1_000_000n * 10n ** 18n,
-      reserveOut: 420_000n * 10n ** 6n,
-      feeTierBps: 30,
+      provider: params.provider || mockTestProvider,
       ...params
     });
   };
@@ -107,11 +164,7 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
   const origV3GetQuote = v3Provider.getQuote.bind(v3Provider);
   v3Provider.getQuote = async (params: any) => {
     return origV3GetQuote({
-      liquidity: 100_000_000_000_000n,
-      sqrtPriceX96: 79228162514264337593543950336n,
-      currentTick: 0,
-      tickSpacing: 60,
-      feeTierBps: 30,
+      provider: params.provider || mockTestProvider,
       ...params
     });
   };

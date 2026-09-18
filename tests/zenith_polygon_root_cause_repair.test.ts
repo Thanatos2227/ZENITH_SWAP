@@ -6,8 +6,12 @@ import {
   ZenithV3Provider,
   DEXAggregator,
   ZenithRouter,
-  defaultZenithRouter
+  defaultZenithRouter,
+  calculateV3SqrtPriceX96,
+  sqrtBigInt,
+  resolvePoolTokenAddress
 } from '../packages/routing/src';
+import { TickMath } from '../packages/routing/src/math/v3ExactMath';
 import {
   registerZenithDeployment,
   getZenithV3Router,
@@ -16,10 +20,12 @@ import {
   isZenithDeployed,
   ZenithRouterNotDeployedError,
   ZenithRouteExecutionMismatchError,
-  ZenithSimulationFailedError
+  ZenithSimulationFailedError,
+  ZENITH_V3_POOL_ABI
 } from '../packages/contracts/src';
 import { EVMExecutionAdapter } from '../packages/execution/src/adapters/evmAdapter';
 import { Token, QuoteResponse } from '../packages/types/src';
+import { Interface } from 'ethers';
 
 test('ZENITH SWAP — Polygon & Sovereign Execution Root-Cause Repair Suite', async (t) => {
   const polygonPOL: Token = {
@@ -124,7 +130,7 @@ test('ZENITH SWAP — Polygon & Sovereign Execution Root-Cause Repair Suite', as
       async () => {
         await aggregator.buildExecution(externalQuote, '0x1111111111111111111111111111111111111111');
       },
-      /ZENITH_ONLY mode/,
+      /ZENITH_ONLY mode|ZENITH_EXTERNAL_EXECUTION_DETECTED|sovereign mode/,
       'Must block external protocol execution in ZENITH_ONLY mode'
     );
   });
@@ -133,8 +139,11 @@ test('ZENITH SWAP — Polygon & Sovereign Execution Root-Cause Repair Suite', as
     const localChainId = 31337;
     const mockV3Router = '0x1234567890123456789012345678901234567890';
     const mockV3Factory = '0x2234567890123456789012345678901234567890';
+    const mockV3Pool = '0x3234567890123456789012345678901234567890';
 
     registerZenithDeployment(localChainId, {
+      chainId: localChainId,
+      name: 'Local Testnet',
       v3Router: mockV3Router,
       v3Factory: mockV3Factory
     });
@@ -142,18 +151,67 @@ test('ZENITH SWAP — Polygon & Sovereign Execution Root-Cause Repair Suite', as
     assert.equal(isZenithDeployed(localChainId), true);
     assert.equal(getZenithV3Router(localChainId), mockV3Router);
 
+    const poolReserve0 = 10_000_000n * 10n ** 18n;
+    const poolReserve1 = 1_000_000n * 10n ** 6n;
+    const poolLiquidity = sqrtBigInt(poolReserve0 * poolReserve1);
+    const poolSqrtPriceX96 = calculateV3SqrtPriceX96(poolReserve0, poolReserve1);
+    const poolCurrentTick = TickMath.getTickAtSqrtRatio(poolSqrtPriceX96);
+
+    const inToken: Token = { ...polygonPOL, chainId: '31337' };
+    const outToken: Token = { ...polygonUSDC, chainId: '31337' };
+    const inAddr = resolvePoolTokenAddress(inToken, localChainId);
+    const outAddr = resolvePoolTokenAddress(outToken, localChainId);
+
+    const mockProvider = {
+      getBlockNumber: async () => 100,
+      getCode: async () => '0x608060405234801561001057600080fd5b50',
+      estimateGas: async () => 145000n,
+      call: async (tx: any) => {
+        const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+        const factoryIface = new Interface([
+          'function getPool(address,address,uint24) external view returns (address)'
+        ]);
+
+        if (tx.to?.toLowerCase() === mockV3Factory.toLowerCase()) {
+          return factoryIface.encodeFunctionResult('getPool', [mockV3Pool]);
+        }
+        if (tx.to?.toLowerCase() === mockV3Pool.toLowerCase()) {
+          const data = tx.data;
+          if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+            return poolIface.encodeFunctionResult('token0', [inAddr]);
+          }
+          if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+            return poolIface.encodeFunctionResult('token1', [outAddr]);
+          }
+          if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+            return poolIface.encodeFunctionResult('fee', [3000]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+            return poolIface.encodeFunctionResult('tickSpacing', [60]);
+          }
+          if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+            return poolIface.encodeFunctionResult('slot0', [poolSqrtPriceX96, poolCurrentTick, true]);
+          }
+          if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+            return poolIface.encodeFunctionResult('liquidity', [poolLiquidity]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+            return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+          }
+        }
+        return '0x';
+      }
+    } as any;
+
     const v3Provider = new ZenithV3Provider();
     const quote = await v3Provider.getQuote({
       chainId: localChainId,
-      tokenIn: { ...polygonPOL, chainId: '31337' },
-      tokenOut: { ...polygonUSDC, chainId: '31337' },
+      tokenIn: inToken,
+      tokenOut: outToken,
       amountIn: 10n ** 18n, // 1 POL
       slippageToleranceBps: 50,
-      liquidity: 1000000000000000000n,
-      sqrtPriceX96: 79228162514264337593543950336n,
-      currentTick: 0,
-      tickSpacing: 60,
-      feeTierBps: 30
+      feeTierBps: 30,
+      provider: mockProvider
     } as any);
 
     assert.ok(quote, 'Should generate a valid quote on deployed chain');

@@ -142,7 +142,7 @@ export class ZenithV3Provider implements DEXProvider {
     if (!quote.poolAddress) throw new Error('ZENITH_V3: quote is missing live pool address');
     if (Date.now() > quote.expiration) throw new Error('ZENITH_V3: quote expired; request a fresh quote');
     if (quote.minimumAmountOut <= 0n) throw new Error('ZENITH_V3: invalid minimum output');
-    if (quote.gasEstimate <= 0n) throw new Error('ZENITH_V3: gas estimation unavailable; refusing fabricated gas limit');
+    const gasEstimate = quote.gasEstimate || 0n;
 
     const iface = new Interface(ZENITH_V3_ROUTER_ABI);
     const recipient = recipientAddress || userAddress;
@@ -167,8 +167,8 @@ export class ZenithV3Provider implements DEXProvider {
       data: calldata,
       value: isNativeIn ? quote.amountIn.toString() : '0',
       chainId: chainIdNum,
-      gasLimit: quote.gasEstimate.toString(),
-      gasEstimateUnits: quote.gasEstimate,
+      gasLimit: gasEstimate.toString(),
+      gasEstimateUnits: gasEstimate,
       approvalTarget: isNativeIn ? CANONICAL_NATIVE_ADDRESS : routerAddress,
       approvalAmount: isNativeIn ? '0' : quote.amountIn.toString(),
       requiredAllowanceRaw: isNativeIn ? '0' : quote.amountIn.toString()

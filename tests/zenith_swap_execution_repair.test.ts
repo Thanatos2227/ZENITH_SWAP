@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Token } from '@zenith/types';
+import { Interface } from 'ethers';
 import {
   UniswapV3Provider,
   CamelotProvider,
@@ -14,6 +15,12 @@ import {
   resolvePoolTokenAddress,
   WRAPPED_NATIVE_ADDRESSES
 } from '../packages/routing/src/dex';
+import {
+  registerZenithDeployment,
+  ZENITH_V1_PAIR_ABI,
+  ZENITH_V2_POOL_ABI,
+  ZENITH_V3_POOL_ABI
+} from '../packages/contracts/src';
 import { defaultEVMAdapter } from '../packages/execution/src/adapters/evmAdapter';
 import { defaultExecutionCoordinator } from '../packages/execution/src/executionCoordinator';
 import { ExecutionStateMachine } from '../packages/execution/src/stateMachine';
@@ -298,6 +305,79 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
   });
 
   describe('8. Sovereign Zenith AMMs (V1, V2, V3) Calldata Generation', () => {
+    const v1FactoryAddress = '0x1000000000000000000000000000000000000010';
+    const v1RouterAddress = '0x1000000000000000000000000000000000000001';
+    const v2FactoryAddress = '0x2000000000000000000000000000000000000020';
+    const v2RouterAddress = '0x2000000000000000000000000000000000000002';
+    const v3FactoryAddress = '0x3000000000000000000000000000000000000030';
+    const v3RouterAddress = '0x3000000000000000000000000000000000000003';
+    const mockPoolAddress = '0x3000000000000000000000000000000000000099';
+
+    registerZenithDeployment(31337, {
+      v1Factory: v1FactoryAddress,
+      v1Router: v1RouterAddress,
+      v2Factory: v2FactoryAddress,
+      v2Router: v2RouterAddress,
+      v3Factory: v3FactoryAddress,
+      v3Router: v3RouterAddress
+    });
+
+    const mockProvider = {
+      getBlockNumber: async () => 100000,
+      getCode: async () => '0x608060405234801561001057600080fd5b50',
+      estimateGas: async () => 145000n,
+      call: async (tx: any) => {
+        const poolIface = new Interface(ZENITH_V3_POOL_ABI);
+        const v2PoolIface = new Interface(ZENITH_V2_POOL_ABI);
+        const v1PairIface = new Interface(ZENITH_V1_PAIR_ABI);
+        const factoryIface = new Interface([
+          'function getPool(address,address,uint24) external view returns (address)',
+          'function getPair(address,address) external view returns (address)'
+        ]);
+
+        const to = tx.to?.toLowerCase();
+        if (to === v1FactoryAddress.toLowerCase()) {
+          return factoryIface.encodeFunctionResult('getPair', [mockPoolAddress]);
+        }
+        if (to === v2FactoryAddress.toLowerCase() || to === v3FactoryAddress.toLowerCase()) {
+          return factoryIface.encodeFunctionResult('getPool', [mockPoolAddress]);
+        }
+
+        if (to === mockPoolAddress.toLowerCase()) {
+          const data = tx.data;
+          const weth = WRAPPED_NATIVE_ADDRESSES[31337] || '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+          if (data.startsWith(poolIface.getFunction('token0')!.selector)) {
+            return poolIface.encodeFunctionResult('token0', [weth]);
+          }
+          if (data.startsWith(poolIface.getFunction('token1')!.selector)) {
+            return poolIface.encodeFunctionResult('token1', [USDC_ETH.address]);
+          }
+          if (data.startsWith(poolIface.getFunction('fee')!.selector)) {
+            return poolIface.encodeFunctionResult('fee', [3000]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickSpacing')!.selector)) {
+            return poolIface.encodeFunctionResult('tickSpacing', [60]);
+          }
+          if (data.startsWith(poolIface.getFunction('slot0')!.selector)) {
+            return poolIface.encodeFunctionResult('slot0', [79228162514264337593543950336n, 0, true]);
+          }
+          if (data.startsWith(poolIface.getFunction('liquidity')!.selector)) {
+            return poolIface.encodeFunctionResult('liquidity', [1000000000000000000n]);
+          }
+          if (data.startsWith(poolIface.getFunction('tickBitmap')!.selector)) {
+            return poolIface.encodeFunctionResult('tickBitmap', [0n]);
+          }
+          if (data.startsWith(v2PoolIface.getFunction('feeBps')!.selector)) {
+            return v2PoolIface.encodeFunctionResult('feeBps', [30]);
+          }
+          if (data.startsWith(v1PairIface.getFunction('getReserves')!.selector)) {
+            return v1PairIface.encodeFunctionResult('getReserves', [1000n * 10n ** 18n, 1000000n * 10n ** 6n, 12345678]);
+          }
+        }
+        return '0x';
+      }
+    } as any;
+
     const v1 = new ZenithV1Provider();
     const v2 = new ZenithV2Provider();
     const v3 = new ZenithV3Provider();
@@ -309,8 +389,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
         slippageToleranceBps: 50,
-        reserveIn: 1000n * 10n ** 18n,
-        reserveOut: 1000000n * 10n ** 6n
+        provider: mockProvider
       } as any);
       assert.ok(quote);
       const execution = await v1.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -325,8 +404,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenOut: NATIVE_ETH,
         amountIn: 1000000000n,
         slippageToleranceBps: 50,
-        reserveIn: 1000000n * 10n ** 6n,
-        reserveOut: 1000n * 10n ** 18n
+        provider: mockProvider
       } as any);
       assert.ok(quote);
       const execution = await v2.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
@@ -341,11 +419,7 @@ describe('ZENITH SWAP — Swap Execution Pipeline & Provider Repair Suite', () =
         tokenOut: USDC_ETH,
         amountIn: 1000000000000000000n,
         slippageToleranceBps: 50,
-        liquidity: 1000000000000000000n,
-        sqrtPriceX96: 79228162514264337593543950336n,
-        currentTick: 0,
-        tickSpacing: 60,
-        feeTierBps: 30
+        provider: mockProvider
       } as any);
       assert.ok(quote);
       const execution = await v3.buildExecution(quote, MOCK_USER, MOCK_RECIPIENT);
