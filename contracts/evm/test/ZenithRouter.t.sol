@@ -111,7 +111,7 @@ contract ZenithRouterTest is Test {
         v2Factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
         v2Router = new ZenithV2Router(address(v2Factory), address(weth));
 
-        v3Factory = new ZenithV3Factory(governance, address(feeController));
+        v3Factory = new ZenithV3Factory(governance);
         v3Router = new ZenithV3Router(address(v3Factory), address(weth));
         v3PositionManager = new ZenithV3PositionManager(address(v3Factory), address(weth));
 

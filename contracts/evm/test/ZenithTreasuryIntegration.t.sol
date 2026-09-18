@@ -19,14 +19,17 @@ contract MockWETH is IWETH9 {
     uint8 public decimals = 18;
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public override allowance;
+    uint256 public override totalSupply;
 
     function deposit() public payable override {
         balanceOf[msg.sender] += msg.value;
+        totalSupply += msg.value;
     }
 
     function withdraw(uint256 amount) public override {
         require(balanceOf[msg.sender] >= amount, "INSUFFICIENT_WETH");
         balanceOf[msg.sender] -= amount;
+        totalSupply -= amount;
         (bool ok, ) = msg.sender.call{value: amount}("");
         require(ok, "ETH_TRANSFER_FAILED");
     }
@@ -62,6 +65,7 @@ contract IntegrationMockERC20 is IERC20 {
     uint256 public override totalSupply;
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public override allowance;
+
 
     constructor(string memory _name, string memory _symbol) {
         name = _name;
@@ -139,7 +143,7 @@ contract ZenithTreasuryIntegrationTest is Test {
         v2Factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
         v2Router = new ZenithV2Router(address(v2Factory), address(weth));
 
-        v3Factory = new ZenithV3Factory(governance, address(feeController));
+        v3Factory = new ZenithV3Factory(governance);
         v3Router = new ZenithV3Router(address(v3Factory), address(weth));
 
         unifiedRouter = new ZenithRouter(
