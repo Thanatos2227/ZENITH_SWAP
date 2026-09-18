@@ -1,0 +1,10 @@
+[profile.default]
+src = "contracts/evm/src"
+test = "contracts/evm/test"
+out = "contracts/evm/out"
+libs = ["contracts/evm/lib"]
+
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
