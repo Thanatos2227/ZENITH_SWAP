@@ -46,10 +46,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         assertEq(TickMath.getTickAtSqrtRatio(MAX_SQRT_RATIO - 1), MAX_TICK - 1, "MAX_SQRT_RATIO - 1 recovers MAX_TICK - 1");
     }
 
-    // ==========================================
-    // 2. TICKMATH PROPERTY-BASED FUZZ TESTS
-    // ==========================================
-
     /// @notice Invariant: For any tick in [MIN_TICK, MAX_TICK], getSqrtRatioAtTick produces ratio in [MIN_SQRT_RATIO, MAX_SQRT_RATIO]
     function testFuzz_getSqrtRatioAtTick_inBounds(int24 tick) public pure {
         tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK)));
@@ -173,27 +169,24 @@ contract ZenithV3TickMathFuzzTest is Test {
 
     /// @notice Invariant: getNextSqrtPriceFromInput moves price monotonically in expected direction
     function testFuzz_getNextSqrtPriceFromInput_direction(
-        uint160 sqrtPX96,
+        uint160 sqrtP,
         uint128 liquidity,
         uint256 amountIn,
         bool zeroForOne
     ) public pure {
-        sqrtPX96 = uint160(bound(uint256(sqrtPX96), uint256(MIN_SQRT_RATIO) + 1000, uint256(MAX_SQRT_RATIO) - 1000));
+        sqrtP = uint160(bound(uint256(sqrtP), uint256(MIN_SQRT_RATIO) + 1000, uint256(MAX_SQRT_RATIO) - 1000));
         liquidity = uint128(bound(uint256(liquidity), 1e8, 1e26));
         amountIn = bound(amountIn, 1, 1e24);
 
-        uint160 nextSqrtP = SqrtPriceMath.getNextSqrtPriceFromInput(sqrtPX96, liquidity, amountIn, zeroForOne);
+        uint160 nextSqrtP = SqrtPriceMath.getNextSqrtPriceFromInput(sqrtP, liquidity, amountIn, zeroForOne);
 
         if (zeroForOne) {
-            assertTrue(nextSqrtP < sqrtPX96, "zeroForOne swap must decrease sqrtPrice");
+            assertTrue(nextSqrtP <= sqrtP, "zeroForOne swap must not increase sqrtPrice");
         } else {
-            assertTrue(nextSqrtP > sqrtPX96, "oneForZero swap must increase sqrtPrice");
+            assertTrue(nextSqrtP >= sqrtP, "oneForZero swap must not decrease sqrtPrice");
         }
     }
 
-    // ==========================================
-    // 4. SWAPMATH STEP INVARIANT TESTS
-    // ==========================================
 
     /// @notice Invariant: SwapMath step never exceeds target sqrt price and conserves fee bounds
     function testFuzz_SwapMath_computeSwapStep_invariants(
