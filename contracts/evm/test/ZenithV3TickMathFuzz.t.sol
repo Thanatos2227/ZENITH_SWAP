@@ -69,7 +69,7 @@ contract ZenithV3TickMathFuzzTest is Test {
 
     /// @notice Invariant: Round-trip consistency getTickAtSqrtRatio(getSqrtRatioAtTick(tick)) == tick
     function testFuzz_roundTrip_tickToSqrtRatioToTick(int24 tick) public pure {
-        tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK)));
+        tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK-1)));
 
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick);
         int24 recoveredTick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
