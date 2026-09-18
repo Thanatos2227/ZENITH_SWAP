@@ -37,7 +37,9 @@ jobs:
 
       - name: Solidity Build Gate
         working-directory: contracts/evm
-        run: forge build --sizes
+        run: 
+          forge clean
+          forge build --sizes
 
       - name: Solidity Test Gate
         working-directory: contracts/evm
@@ -45,3 +47,5 @@ jobs:
 
       - name: Production Web Application Build Gate
         run: npm run build
+
+        
