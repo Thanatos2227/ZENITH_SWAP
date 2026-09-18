@@ -1,9 +1,9 @@
 pragma solidity 0.8.24;
 
 import "../interfaces/IERC20.sol";
-import "../../libraries/FullMath.sol";
-import "../../libraries/SqrtPriceMath.sol";
-import "../../libraries/TickMath.sol";
+import "../libraries/FullMath.sol";
+import "../libraries/SqrtPriceMath.sol";
+import "../libraries/TickMath.sol";
 import "./libraries/SwapMath.sol";
 import "./libraries/TickBitmap.sol";
 import "./libraries/LiquidityMath.sol";
