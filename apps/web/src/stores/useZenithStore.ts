@@ -222,6 +222,14 @@ const cleanupWalletListeners = () => {
   activeChainChangedListener = null;
 };
 
+// Architecture distinction:
+// 1. Wallet/injected provider (BrowserProvider / JsonRpcSigner) is used exclusively
+//    for user authorization, signing, and transaction dispatch. Read-only JsonRpcProvider
+//    cannot sign transactions.
+// 2. ZENITH RPC registry (JsonRpcProvider) is used for independent state reads,
+//    token discovery, and resilient receipt verification across fallback RPCs.
+// 3. Transaction confirmation does not depend exclusively on the wallet's internal RPC,
+//    as ZENITH execution adapters verify transaction receipts against configured public RPC fallbacks.
 const getChainRpcProvider = (
   chainIdStr: string,
   activeChainId: number | null,
@@ -240,7 +248,11 @@ const getChainRpcProvider = (
     const rpcUrl = defaultChainRegistry.getHealthyRPC(chain.id);
     return new JsonRpcProvider(rpcUrl, chain.chainId ? { chainId: chain.chainId, name: chain.id } : undefined);
   } catch (err) {
-    console.warn(`[useZenithStore] Fallback to default RPC for ${chainIdStr}:`, err);
+    console.warn(`[useZenithStore] Fallback to candidate RPC for ${chainIdStr}:`, err);
+    const candidates = defaultChainRegistry.getCandidateRPCs(chain.id);
+    if (candidates.length > 0) {
+      return new JsonRpcProvider(candidates[0], chain.chainId ? { chainId: chain.chainId, name: chain.id } : undefined);
+    }
     return injectedProvider || new JsonRpcProvider('https://eth.llamarpc.com');
   }
 };
@@ -1330,7 +1342,44 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         }
 
         let errMsg = rawMsg;
+        let notifTitle = 'Execution Failed';
+        let notifType: 'ERROR' | 'WARNING' | 'INFO' = 'ERROR';
+
         if (
+          rawMsg.includes('submission timed out') ||
+          rawMsg.includes('Transaction submission timed out')
+        ) {
+          notifTitle = 'Submission Timeout';
+          notifType = 'WARNING';
+          errMsg = rawMsg;
+        } else if (
+          rawMsg.includes('confirmation timed out') ||
+          rawMsg.includes('still pending on-chain')
+        ) {
+          notifTitle = 'Confirmation Pending';
+          notifType = 'WARNING';
+          errMsg = rawMsg;
+        } else if (
+          rawMsg.includes('RPC provider unavailable') ||
+          rawMsg.includes('RPC temporarily unavailable')
+        ) {
+          notifTitle = 'RPC Provider Unavailable';
+          notifType = 'WARNING';
+          errMsg = rawMsg;
+        } else if (
+          rawMsg.includes('Cross-chain settlement timed out') ||
+          rawMsg.includes('settlement tracking timed out')
+        ) {
+          notifTitle = 'Bridge Tracking Timeout';
+          notifType = 'WARNING';
+          errMsg = rawMsg;
+        } else if (
+          rawMsg.includes('Token approval') ||
+          rawMsg.includes('approval transaction')
+        ) {
+          notifTitle = 'Approval Failed';
+          errMsg = rawMsg;
+        } else if (
           rawMsg.includes('STF') ||
           err?.revert?.args?.[0] === 'STF' ||
           err?.data?.includes('535446')
@@ -1356,9 +1405,9 @@ export const useZenithStore = create<ZenithState>((set, get) => {
         }
 
         get().addNotification({
-          title: 'Execution Failed',
+          title: notifTitle,
           message: errMsg || 'Transaction could not be executed on-chain.',
-          type: 'ERROR'
+          type: notifType
         });
       } finally {
         set({ isExecutingTrade: false });

@@ -152,6 +152,13 @@ export class ChainRegistry {
     return chain.operationalStatus === 'HEALTHY' || chain.operationalStatus === 'PARTIALLY_AVAILABLE';
   }
 
+  // The registry stores multiple RPC endpoints for redundancy and resilience.
+  // Each endpoint has a priority rank (priority: 1 is preferred first, then 2, 3...).
+  // Selecting a single RPC endpoint from static configuration does NOT guarantee that the
+  // endpoint is currently responsive, un-throttled, or synced to the latest block.
+  // When an RPC request fails (e.g. rate-limiting, network timeout, dropped socket),
+  // callers must be able to fail over to subsequent candidate RPCs rather than assuming
+  // that the user's blockchain transaction itself failed.
   public getHealthyRPC(chainKey: string): string {
     const chain = this.getChain(chainKey);
     if (!chain || chain.rpcEndpoints.length === 0) {
@@ -167,6 +174,37 @@ export class ChainRegistry {
     }
 
     return healthy[0].url;
+  }
+
+  // Returns all configured RPC endpoints for a chain ordered by priority for runtime fallback.
+  // If the primary endpoint fails (RPC #1 -> failure), the caller falls back to RPC #2, then RPC #3.
+  // An RPC communication error is strictly an infrastructure failure and must NEVER be conflated
+  // with a blockchain transaction reversion or submission failure.
+  public getCandidateRPCs(chainKey: string, excludeUrl?: string): string[] {
+    const chain = this.getChain(chainKey);
+    if (!chain || chain.rpcEndpoints.length === 0) {
+      return [];
+    }
+
+    // Sort endpoints by priority (ascending: 1 is highest priority, followed by 2, 3, etc.)
+    const sorted = [...chain.rpcEndpoints].sort((a, b) => a.priority - b.priority);
+    const healthy = sorted.filter((rpc) => rpc.status !== 'UNAVAILABLE').map((r) => r.url);
+    const all = sorted.map((r) => r.url);
+
+    const candidates = healthy.length > 0 ? healthy : all;
+    // Deduplicate candidate URLs while preserving priority ordering
+    const unique = Array.from(new Set(candidates));
+
+    if (!excludeUrl) {
+      return unique;
+    }
+
+    // If an excludeUrl (currently failing endpoint) is specified, place it at the end of the candidate list
+    // so it is only retried as a last resort, allowing immediate fallback to other healthy endpoints.
+    const normalizedExclude = excludeUrl.trim().toLowerCase();
+    const filtered = unique.filter((u) => u.trim().toLowerCase() !== normalizedExclude);
+    const matched = unique.filter((u) => u.trim().toLowerCase() === normalizedExclude);
+    return [...filtered, ...matched];
   }
 
   public isJurisdictionAllowed(chainKey: string, userCountryCode?: string): boolean {

@@ -228,6 +228,7 @@ export class StargateProvider implements CrossChainProvider {
   public async getStatus(sourceTxHash: string, _quote: CrossChainQuote): Promise<CrossChainStatus> {
     try {
       const url = `https://api-mainnet.layerzero-scan.com/tx/${sourceTxHash}`;
+      // Preserve bounded 4-second request timeout so network hangs do not stall polling
       const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
       if (res.ok) {
         const data = await res.json();
@@ -254,7 +255,10 @@ export class StargateProvider implements CrossChainProvider {
         }
       }
     } catch {
-
+      // API timeout ≠ bridge transaction failure.
+      // A temporary LayerZero status API outage or timeout falls through
+      // to return 'FULFILLING' so that subsequent polling attempts can proceed,
+      // rather than falsely declaring the blockchain bridge transaction as failed.
     }
 
     return {

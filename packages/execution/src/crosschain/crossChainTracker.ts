@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Network } from 'ethers';
+import { JsonRpcProvider, Network, FetchRequest } from 'ethers';
 import {
   CrossChainQuote,
   SettlementState
@@ -25,6 +25,29 @@ export interface ActiveCrossChainOrder {
 export class CrossChainTracker {
   private activeOrders: Map<string, ActiveCrossChainOrder> = new Map();
   private aggregator: CrossChainAggregator;
+  // Reusable provider cache to avoid recreating JsonRpcProviders on every destination verification polling cycle
+  private providerCache: Map<string, { provider: JsonRpcProvider; fetchReq: FetchRequest; activeInflight: FetchRequest | null }> = new Map();
+
+  private getOrCreateProviderEntry(url: string, network: Network) {
+    let entry = this.providerCache.get(url);
+    if (!entry) {
+      const fetchReq = new FetchRequest(url);
+      fetchReq.timeout = 6000;
+      const newEntry = {
+        fetchReq,
+        activeInflight: null as FetchRequest | null,
+        provider: null as any
+      };
+      fetchReq.preflightFunc = async function (req) {
+        newEntry.activeInflight = this;
+        return req;
+      };
+      newEntry.provider = new JsonRpcProvider(fetchReq, network, { staticNetwork: network });
+      this.providerCache.set(url, newEntry);
+      entry = newEntry;
+    }
+    return entry;
+  }
 
   constructor(aggregator = defaultCrossChainAggregator) {
     this.aggregator = aggregator;
@@ -106,8 +129,24 @@ export class CrossChainTracker {
               destinationTxHash: status.destinationTxHash,
               receipt: destVerification.receipt
             };
-          } else {
+          } else if (destVerification.reason?.includes('reverted on-chain')) {
+            // Receipt confirmed that the destination transaction reverted on-chain
+            currentOrder.status = 'FAILED';
+            currentOrder.errorMessage = destVerification.reason;
+            this.activeOrders.set(order.orderId, currentOrder);
 
+            onStateChange?.('FAILED', { error: destVerification.reason });
+            stateMachine?.transitionTo('FAILED', {
+              id: 'step-intent-fulfill',
+              status: 'ERROR',
+              error: destVerification.reason
+            });
+
+            return { isSuccess: false, error: destVerification.reason };
+          } else {
+            // Destination transaction receipt is still pending in mempool/block or RPC is temporarily unavailable.
+            // Continue polling instead of terminating early.
+            console.log(`[CrossChainTracker] Destination settlement pending verification: ${destVerification.reason || 'waiting for receipt'}`);
           }
         } else if (status.isFailed) {
           currentOrder.status = 'FAILED';
@@ -123,17 +162,23 @@ export class CrossChainTracker {
 
           return { isSuccess: false, error: status.errorMessage || 'Cross-chain fulfillment failed' };
         } else {
-
           onStateChange?.('FULFILLING');
         }
       } catch (err: any) {
-        console.warn(`[CrossChainTracker] Polling note for order ${order.orderId}:`, err?.message || err);
+        // Distinguish temporary RPC/API outages from bridge failures.
+        // A transient network/API error in getStatus does not fail the order;
+        // it logs a warning and continues the existing polling loop.
+        console.warn(`[CrossChainTracker] Bridge status RPC/API temporarily unavailable for order ${order.orderId}:`, err?.message || err);
       }
 
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
-    const timeoutErr = `Cross-chain settlement timed out after ${Math.round(maxPollDurationMs / 1000)} seconds.`;
+    // This timeout limits how long ZENITH actively tracks the bridge.
+    // It does not cancel or invalidate a blockchain transaction.
+    // A tracking timeout means ZENITH could not confirm settlement
+    // within the configured tracking window.
+    const timeoutErr = `Cross-chain settlement timed out after ${Math.round(maxPollDurationMs / 1000)} seconds. This tracking window expired without on-chain confirmation; please inspect the bridge explorer to check delivery.`;
     currentOrder.status = 'FAILED';
     currentOrder.errorMessage = timeoutErr;
     this.activeOrders.set(order.orderId, currentOrder);
@@ -144,6 +189,15 @@ export class CrossChainTracker {
     return { isSuccess: false, error: timeoutErr };
   }
 
+  // Inspect destination receipt verification logic using a bounded mechanism across candidate RPCs.
+  // If the primary RPC fails, try another existing configured RPC.
+  // If receipt exists:
+  //   status === 1 (success) -> destination confirmed
+  //   status === 0 (reverted) -> destination failed / reverted
+  // If receipt does not exist:
+  //   destination may still be pending on-chain
+  // If RPC fails:
+  //   do not automatically classify destination transaction as reverted.
   public async verifyDestinationSettlement(params: {
     destinationChainId: string;
     destinationTxHash: string;
@@ -155,23 +209,72 @@ export class CrossChainTracker {
     }
 
     if (destChain.executionEnvironment === 'EVM') {
-      try {
-        const rpcUrl = defaultChainRegistry.getHealthyRPC(destChain.id);
-        const chainNumeric = Number(destChain.chainId || 1);
-        const network = Network.from(chainNumeric);
-        const provider = new JsonRpcProvider(rpcUrl, network, { staticNetwork: network });
-        const receipt = await provider.getTransactionReceipt(params.destinationTxHash);
+      const candidateUrls = defaultChainRegistry.getCandidateRPCs(destChain.id);
+      const chainNumeric = Number(destChain.chainId || 1);
+      const network = Network.from(chainNumeric);
 
-        if (receipt && receipt.status === 1) {
-          return { isVerified: true, receipt };
-        }
-        if (receipt && receipt.status === 0) {
-          return { isVerified: false, receipt, reason: 'Destination transaction reverted on-chain' };
-        }
-      } catch (err: any) {
+      let lastRpcError: string | null = null;
 
-        return { isVerified: false, reason: err?.message || 'Destination RPC query pending' };
+      for (let i = 0; i < candidateUrls.length; i++) {
+        const rpcUrl = candidateUrls[i];
+        // Reuse cached provider to prevent recreating JsonRpcProvider on every polling cycle
+        const entry = this.getOrCreateProviderEntry(rpcUrl, network);
+        let rpcTimer: ReturnType<typeof setTimeout> | null = null;
+
+        try {
+          const fetchReceiptPromise = entry.provider.getTransactionReceipt(params.destinationTxHash);
+          const rpcTimeoutPromise = new Promise<never>((_, reject) => {
+            rpcTimer = setTimeout(() => {
+              // Abort the RPC request when the timeout is reached so the old request
+              // does not continue running while another RPC request is started.
+              if (entry.activeInflight) {
+                try {
+                  entry.activeInflight.cancel();
+                } catch {
+                  // Ignore if already completed
+                }
+                entry.activeInflight = null;
+              }
+              reject(new Error('Destination RPC timeout'));
+            }, 6000);
+          });
+
+          const receipt = await Promise.race([fetchReceiptPromise, rpcTimeoutPromise]);
+          if (rpcTimer) {
+            clearTimeout(rpcTimer);
+            rpcTimer = null;
+          }
+          entry.activeInflight = null;
+
+          if (receipt && receipt.status === 1) {
+            return { isVerified: true, receipt };
+          }
+          if (receipt && receipt.status === 0) {
+            return { isVerified: false, receipt, reason: 'Destination transaction reverted on-chain' };
+          }
+
+          if (receipt === null) {
+            // Receipt is null -> destination transaction has not yet been included in a block
+            return { isVerified: false, reason: 'Destination transaction pending on-chain' };
+          }
+        } catch (err: any) {
+          if (rpcTimer) {
+            clearTimeout(rpcTimer);
+            rpcTimer = null;
+          }
+          entry.activeInflight = null;
+          lastRpcError = err?.message || String(err);
+          console.warn(`[CrossChainTracker] Destination RPC ${i + 1} (${rpcUrl}) note: ${lastRpcError}. Trying next candidate RPC...`);
+        } finally {
+          if (rpcTimer) {
+            clearTimeout(rpcTimer);
+            rpcTimer = null;
+          }
+        }
       }
+
+      // If all candidate RPCs timed out or failed with network errors, do NOT classify as reverted!
+      return { isVerified: false, reason: lastRpcError ? `Destination RPC temporarily unavailable (${lastRpcError})` : 'Destination RPC query pending' };
     }
 
     return { isVerified: true };

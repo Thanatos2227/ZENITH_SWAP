@@ -270,7 +270,11 @@ export class DeBridgeProvider implements CrossChainProvider {
         const orderIds = await res.json();
         const orderId = orderIds?.[0];
         if (orderId) {
-          const statusRes = await fetch(`https://dln.debridge.finance/v1.0/dln/order/${orderId}/status`);
+          // Bound this external status request so a provider/API outage cannot
+          // block the entire cross-chain tracking loop indefinitely.
+          const statusRes = await fetch(`https://dln.debridge.finance/v1.0/dln/order/${orderId}/status`, {
+            signal: AbortSignal.timeout(4000)
+          });
           if (statusRes.ok) {
             const statusData = await statusRes.json();
             if (statusData.state === 'Fulfilled') {
