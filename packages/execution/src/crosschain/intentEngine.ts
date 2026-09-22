@@ -1,5 +1,6 @@
-import { CrossChainIntent, SettlementState, SolverFillQuote } from '@zenith/types';
+import { CrossChainIntent, SettlementState, SolverFillQuote, PersistentIntent } from '@zenith/types';
 import { defaultCrossChainAggregator, CrossChainAggregator } from '@zenith/routing';
+import { CrossChainStateRepository, defaultInMemoryRepository } from '../persistence/repository';
 
 export interface SolverProfile {
   id: string;
@@ -12,12 +13,21 @@ export interface SolverProfile {
 
 export class CrossChainIntentEngine {
   private aggregator: CrossChainAggregator;
+  private repository: CrossChainStateRepository;
   private intentStore: Map<string, CrossChainIntent> = new Map();
   private processedNonces: Set<string> = new Set();
   private processedOrderIds: Set<string> = new Set();
 
-  constructor(aggregator = defaultCrossChainAggregator) {
+  constructor(
+    aggregator = defaultCrossChainAggregator,
+    repository: CrossChainStateRepository = defaultInMemoryRepository
+  ) {
     this.aggregator = aggregator;
+    this.repository = repository;
+  }
+
+  public getRepository(): CrossChainStateRepository {
+    return this.repository;
   }
 
   public async getCompetitiveQuotes(intent: CrossChainIntent): Promise<SolverFillQuote[]> {
@@ -75,6 +85,28 @@ export class CrossChainIntentEngine {
     this.processedNonces.add(nonceKey);
     this.processedOrderIds.add(intent.orderId);
     this.intentStore.set(intent.orderId, { ...intent, status: 'CREATED' });
+
+    const persistent: PersistentIntent = {
+      intentId: intent.orderId,
+      userAddress: intent.recipient,
+      sourceChainId: intent.sourceChainId,
+      destinationChainId: intent.destinationChainId,
+      sourceTokenAddress: intent.sourceToken.address,
+      sourceTokenSymbol: intent.sourceToken.symbol,
+      destinationTokenAddress: intent.destinationToken.address,
+      destinationTokenSymbol: intent.destinationToken.symbol,
+      amountInRaw: intent.sourceAmountRaw,
+      expectedAmountOutRaw: intent.minDestinationAmountRaw || '0',
+      minAmountOutRaw: intent.minDestinationAmountRaw || '0',
+      provider: intent.solverId || 'ACROSS',
+      routeId: `route-${intent.orderId}`,
+      nonce: String(intent.nonce),
+      deadline: deadlineMs,
+      status: 'CREATED',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    this.repository.createIntent(persistent).catch(() => {});
   }
 
   public updateIntentState(
@@ -98,6 +130,13 @@ export class CrossChainIntentEngine {
     };
 
     this.intentStore.set(orderId, updated);
+    this.repository.updateIntent(orderId, {
+      status: newState,
+      solverId: meta?.solverId,
+      sourceTxHash: meta?.txHashSource,
+      destinationTxHash: meta?.txHashDestination
+    }).catch(() => {});
+
     return updated;
   }
 
@@ -129,7 +168,7 @@ export class CrossChainIntentEngine {
       SIGNED: ['SUBMITTED', 'CANCELLED', 'EXPIRED'],
       SUBMITTED: ['ACCEPTED', 'REJECTED', 'FAILED', 'EXPIRED', 'FULFILLING'],
       ACCEPTED: ['FULFILLING', 'FAILED', 'REFUND_PENDING'],
-      FULFILLING: ['FULFILLING', 'DESTINATION_FILLED', 'FAILED', 'REFUND_PENDING', 'SETTLED'],
+      FULFILLING: ['FULFILLING', 'DESTINATION_FILLED', 'FAILED', 'REFUND_PENDING', 'SETTLED', 'TRACKING_TIMEOUT', 'TRACKING_UNAVAILABLE'],
       DESTINATION_FILLED: ['VERIFIED', 'SETTLING', 'SETTLED', 'FAILED', 'REFUND_PENDING'],
       VERIFIED: ['SETTLING', 'SETTLED', 'FAILED', 'REFUND_PENDING'],
       SETTLING: ['SETTLED', 'FAILED'],
@@ -139,7 +178,9 @@ export class CrossChainIntentEngine {
       REFUNDED: [],
       CANCELLED: [],
       EXPIRED: ['REFUND_PENDING', 'REFUNDED'],
-      REJECTED: ['REFUND_PENDING', 'REFUNDED']
+      REJECTED: ['REFUND_PENDING', 'REFUNDED'],
+      TRACKING_TIMEOUT: ['FULFILLING', 'DESTINATION_FILLED', 'SETTLED', 'FAILED', 'REFUND_PENDING', 'REFUNDED'],
+      TRACKING_UNAVAILABLE: ['FULFILLING', 'DESTINATION_FILLED', 'SETTLED', 'FAILED', 'REFUND_PENDING', 'REFUNDED']
     };
 
     const allowed = allowedTransitions[current] || [];

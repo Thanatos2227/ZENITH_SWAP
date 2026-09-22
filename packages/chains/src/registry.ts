@@ -6,7 +6,7 @@ import {
   OperationalStatus,
   ChainCapabilities
 } from '@zenith/types';
-import { ZENITH_SUPPORTED_CHAINS } from './chains.data';
+import { ZENITH_SUPPORTED_CHAINS, ZENITH_TESTNET_CHAINS } from './chains.data';
 
 export interface NetworkGasProfile {
   swapGasUnits: number;
@@ -72,7 +72,13 @@ export const NETWORK_GAS_PROFILES: Record<string, NetworkGasProfile> = {
   monad: { swapGasUnits: 80000, avgGasPriceGwei: 0.005, typicalSwapUSD: 0.0028, typicalSplitSwapUSD: 0.0045, bridgeRelayUSD: 0.30 },
   robinhood: { swapGasUnits: 95000, avgGasPriceGwei: 0.02, typicalSwapUSD: 0.0095, typicalSplitSwapUSD: 0.016, bridgeRelayUSD: 0.40 },
   tempo: { swapGasUnits: 75000, avgGasPriceGwei: 0.002, typicalSwapUSD: 0.0018, typicalSplitSwapUSD: 0.0030, bridgeRelayUSD: 0.25 },
-  megaeth: { swapGasUnits: 60000, avgGasPriceGwei: 0.001, typicalSwapUSD: 0.0008, typicalSplitSwapUSD: 0.0014, bridgeRelayUSD: 0.20 }
+  megaeth: { swapGasUnits: 60000, avgGasPriceGwei: 0.001, typicalSwapUSD: 0.0008, typicalSplitSwapUSD: 0.0014, bridgeRelayUSD: 0.20 },
+
+  sepolia: { swapGasUnits: 140000, avgGasPriceGwei: 2, typicalSwapUSD: 0.05, typicalSplitSwapUSD: 0.08, bridgeRelayUSD: 0.10 },
+  arbitrum_sepolia: { swapGasUnits: 130000, avgGasPriceGwei: 0.1, typicalSwapUSD: 0.01, typicalSplitSwapUSD: 0.02, bridgeRelayUSD: 0.05 },
+  base_sepolia: { swapGasUnits: 120000, avgGasPriceGwei: 0.05, typicalSwapUSD: 0.01, typicalSplitSwapUSD: 0.02, bridgeRelayUSD: 0.05 },
+  optimism_sepolia: { swapGasUnits: 125000, avgGasPriceGwei: 0.05, typicalSwapUSD: 0.01, typicalSplitSwapUSD: 0.02, bridgeRelayUSD: 0.05 },
+  polygon_amoy: { swapGasUnits: 150000, avgGasPriceGwei: 25, typicalSwapUSD: 0.01, typicalSplitSwapUSD: 0.02, bridgeRelayUSD: 0.05 }
 };
 
 export class ChainRegistry {
@@ -80,7 +86,7 @@ export class ChainRegistry {
   private chainIdToKey: Map<number, string> = new Map();
 
   constructor(customChains?: Record<string, ChainConfig>) {
-    const initial = customChains || ZENITH_SUPPORTED_CHAINS;
+    const initial = customChains || { ...ZENITH_SUPPORTED_CHAINS, ...ZENITH_TESTNET_CHAINS };
     Object.entries(initial).forEach(([key, config]) => {
       this.registerChain(key, config);
     });
@@ -109,8 +115,12 @@ export class ChainRegistry {
     return undefined;
   }
 
-  public getAllChains(includeMaintenance = true): ChainConfig[] {
-    const all = Array.from(this.chains.values());
+  public getAllChains(includeMaintenance = true, includeTestnets = false): ChainConfig[] {
+    let all = Array.from(this.chains.values());
+    if (!includeTestnets) {
+      const testnetKeys = new Set(Object.keys(ZENITH_TESTNET_CHAINS).map((k) => k.toLowerCase()));
+      all = all.filter((c) => !testnetKeys.has(c.id.toLowerCase()) && (c.category as string) !== 'TESTNET');
+    }
     if (includeMaintenance) return all;
     return all.filter((c) => c.operationalStatus !== 'DISABLED');
   }

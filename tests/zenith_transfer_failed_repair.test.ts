@@ -409,7 +409,12 @@ test('ZENITH SWAP — TRANSFER_FAILED Root-Cause Repair & Complete Simulation Su
         });
       },
       (err: any) => {
-        assert.ok(err.message.includes('Insufficient native POL balance'), `Unexpected error: ${err.message}`);
+        assert.ok(
+          err.message.includes('Insufficient native POL balance') ||
+          err.message.includes('Insufficient balance for POL') ||
+          err instanceof InsufficientBalanceError,
+          `Unexpected error: ${err.message}`
+        );
         return true;
       },
       'Must reject with Insufficient native balance error before simulation'

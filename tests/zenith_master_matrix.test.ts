@@ -599,6 +599,7 @@ test('SUITE 14: Complete End-to-End User Journeys', async (t) => {
         })
       }),
       provider: {
+        getBalance: async () => BigInt('10000000000000000000'),
         call: async () => '0x',
         estimateGas: async () => BigInt(150000),
         getFeeData: async () => ({ gasPrice: BigInt(30000000000) }),

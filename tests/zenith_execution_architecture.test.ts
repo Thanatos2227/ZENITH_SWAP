@@ -142,7 +142,13 @@ test('4. Across Bridge Provider produces valid depositV3 calldata', async () => 
   assert.equal(quote.provider, 'ACROSS');
   assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 20, 'Across quote preview calldata must be valid');
 
-  const exec = await defaultAcrossProvider.buildExecution(quote, USER_ADDR);
+  const sampleQuote: any = {
+    ...quote,
+    isExecutable: true,
+    unexecutableReason: undefined
+  };
+
+  const exec = await defaultAcrossProvider.buildExecution(sampleQuote, USER_ADDR);
   assert.ok(exec.data.startsWith('0x') && exec.data.length > 20);
   assert.equal(exec.to.toLowerCase(), '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5'.toLowerCase());
 });
@@ -186,9 +192,15 @@ test('6. Stargate Provider produces valid LayerZero swap calldata', async () => 
 
   assert.ok(quote);
   assert.equal(quote.provider, 'STARGATE');
-  assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 20, 'Stargate preview calldata must be valid');
+  assert.equal(quote.isExecutable, false, 'Unconnected live quoter must mark quote as non-executable');
+  assert.equal(quote.calldata, '0x');
 
-  const exec = await defaultStargateProvider.buildExecution(quote, USER_ADDR);
+  const sampleQuote: any = {
+    ...quote,
+    isExecutable: true
+  };
+
+  const exec = await defaultStargateProvider.buildExecution(sampleQuote, USER_ADDR);
   assert.ok(exec.data.startsWith('0x') && exec.data.length > 20);
   assert.equal(exec.to.toLowerCase(), '0x8731d54E9D02c286767d56ac03e8037C07e01e98'.toLowerCase());
 });

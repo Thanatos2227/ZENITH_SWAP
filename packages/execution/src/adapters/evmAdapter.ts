@@ -1,5 +1,8 @@
 import { Contract, JsonRpcSigner, BrowserProvider, formatUnits } from 'ethers';
+
+
 import { QuoteResponse, TransactionStatus, DEXExecution, CrossChainExecution } from '@zenith/types';
+import { defaultChainRegistry } from '@zenith/chains';
 import {
   SignerRequiredError,
   CANONICAL_NATIVE_ADDRESS,
@@ -9,13 +12,27 @@ import {
   InvalidCalldataError,
   ZenithSimulationFailedError,
   ZenithRouteExecutionMismatchError,
-  ZenithApprovalTargetMismatchError
+  ZenithApprovalTargetMismatchError,
+  InvalidExecutionTargetError,
+  InsufficientBalanceError,
+  GasEstimationFailedError,
+  FeeDataUnavailableError,
+  ReceiptRevertedError,
+  ConfirmationTimeoutError,
+  GasLimitOverflowError,
+  TransactionRejectedError,
+  BroadcastUncertainError,
+  getAcrossSpokePool,
+  getStargateRouter,
+  getDeBridgeSourceContract
 } from '@zenith/contracts';
 import {
   defaultDEXAggregator,
   defaultCrossChainAggregator,
   isNativeToken
 } from '@zenith/routing';
+import { defaultMultiProviderRpcClient } from '../providers/multiProviderRpcClient';
+
 
 export interface EVMExecutionParams {
   quote: QuoteResponse;
@@ -23,6 +40,9 @@ export interface EVMExecutionParams {
   signer?: JsonRpcSigner | null;
   provider?: BrowserProvider | null;
   onStatusChange?: (status: TransactionStatus, txHash?: string) => void;
+  confirmations?: number;
+  timeoutMs?: number;
+  maxGasCeiling?: bigint;
 }
 
 export interface EVMExecutionResult {
@@ -32,6 +52,15 @@ export interface EVMExecutionResult {
   gasUsed: bigint;
   effectiveGasPriceWei: bigint;
   revertReason?: string;
+}
+
+export type FeeStrategyType = 'EIP1559' | 'LEGACY' | 'UNAVAILABLE';
+
+export interface ResolvedFeeData {
+  type: FeeStrategyType;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  gasPrice?: bigint;
 }
 
 const ERC20_ABI = [
@@ -62,6 +91,89 @@ export function decodeRevertReason(rawReason: string): string {
 }
 
 export class EVMExecutionAdapter {
+  public calculateSafeGasLimit(
+    estimatedGas: bigint,
+    _chainId?: string | number,
+    customCeiling?: bigint
+  ): bigint {
+    if (estimatedGas <= 0n) {
+      throw new GasEstimationFailedError(
+        `Invalid estimated gas: ${estimatedGas.toString()}. Estimated gas must be strictly positive.`
+      );
+    }
+
+    const maxCeiling = customCeiling || 30_000_000n;
+    // safeGasLimit = ceil(estimatedGas * 1.20)
+    const safeGasLimit = ((estimatedGas * 120n) + 99n) / 100n;
+
+    if (safeGasLimit > maxCeiling) {
+      throw new GasLimitOverflowError(
+        safeGasLimit.toString(),
+        maxCeiling.toString()
+      );
+    }
+
+    return safeGasLimit;
+  }
+
+  public async resolveFeeStrategy(
+    runner: any,
+    chainId: string | number
+  ): Promise<ResolvedFeeData> {
+    const chain = defaultChainRegistry.getChain(chainId);
+    const supportsEIP1559 = chain?.capabilities?.supportsEIP1559 ?? true;
+
+    if (!runner) {
+      throw new FeeDataUnavailableError(chainId, 'No provider available to query dynamic fee data.');
+    }
+
+    try {
+      let feeData: any;
+      if (typeof runner.getFeeData === 'function') {
+        feeData = await runner.getFeeData();
+      } else if (typeof runner.provider?.getFeeData === 'function') {
+        feeData = await runner.provider.getFeeData();
+      }
+
+      if (supportsEIP1559 && feeData && (feeData.maxFeePerGas != null || feeData.maxPriorityFeePerGas != null)) {
+        return {
+          type: 'EIP1559',
+          maxFeePerGas: feeData.maxFeePerGas != null ? BigInt(feeData.maxFeePerGas.toString()) : undefined,
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas != null ? BigInt(feeData.maxPriorityFeePerGas.toString()) : undefined
+        };
+      }
+
+      if (feeData && feeData.gasPrice != null) {
+        return {
+          type: 'LEGACY',
+          gasPrice: BigInt(feeData.gasPrice.toString())
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[ZENITH EVMAdapter] Fee resolution note on chain ${chainId}:`, err?.message || err);
+    }
+
+    try {
+      const multiFee = await defaultMultiProviderRpcClient.getFeeData(chainId);
+      if (supportsEIP1559 && (multiFee.maxFeePerGas != null || multiFee.maxPriorityFeePerGas != null)) {
+        return {
+          type: 'EIP1559',
+          maxFeePerGas: multiFee.maxFeePerGas,
+          maxPriorityFeePerGas: multiFee.maxPriorityFeePerGas
+        };
+      }
+      if (multiFee.gasPrice != null) {
+        return {
+          type: 'LEGACY',
+          gasPrice: multiFee.gasPrice
+        };
+      }
+    } catch {}
+
+    return { type: 'UNAVAILABLE' };
+  }
+
+
   public async checkAllowance(params: {
     tokenAddress: string;
     ownerAddress: string;
@@ -84,6 +196,87 @@ export class EVMExecutionAdapter {
     }
 
     return 0n;
+  }
+
+  public async verifyTransactionReceipt(
+    provider: any,
+    txHash: string,
+    options?: {
+      confirmations?: number;
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+      chainId?: string | number;
+    }
+  ): Promise<{
+    isSuccess: boolean;
+    txHash: string;
+    blockNumber: number;
+    gasUsed: bigint;
+    effectiveGasPriceWei: bigint;
+    receipt: any;
+  }> {
+    if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      throw new Error(`Invalid transaction hash for receipt verification: "${txHash}".`);
+    }
+
+    const timeoutMs = options?.timeoutMs || 60000;
+    const pollIntervalMs = options?.pollIntervalMs || 1000;
+    const confirmations = options?.confirmations || 1;
+    const startTime = Date.now();
+
+    let receipt: any = null;
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        if (typeof provider.getTransactionReceipt === 'function') {
+          receipt = await provider.getTransactionReceipt(txHash);
+        } else if (typeof provider.provider?.getTransactionReceipt === 'function') {
+          receipt = await provider.provider.getTransactionReceipt(txHash);
+        }
+      } catch (rpcErr: any) {
+        console.warn(`[ZENITH EVMAdapter] Receipt fetch error for ${txHash}:`, rpcErr?.message || rpcErr);
+      }
+
+      if (receipt) {
+        if (receipt.status === 0) {
+          throw new ReceiptRevertedError(txHash, receipt.blockNumber);
+        }
+        if (receipt.status === 1) {
+          if (confirmations > 1) {
+            try {
+              let currentBlock: number | undefined;
+              if (typeof provider.getBlockNumber === 'function') {
+                currentBlock = await provider.getBlockNumber();
+              } else if (typeof provider.provider?.getBlockNumber === 'function') {
+                currentBlock = await provider.provider.getBlockNumber();
+              }
+              if (currentBlock !== undefined && currentBlock - receipt.blockNumber + 1 < confirmations) {
+                await new Promise((r) => setTimeout(r, pollIntervalMs));
+                continue;
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          return {
+            isSuccess: true,
+            txHash,
+            blockNumber: receipt.blockNumber,
+            gasUsed: receipt.gasUsed ? BigInt(receipt.gasUsed.toString()) : 0n,
+            effectiveGasPriceWei:
+              receipt.gasPrice || receipt.effectiveGasPrice
+                ? BigInt((receipt.gasPrice || receipt.effectiveGasPrice).toString())
+                : 0n,
+            receipt
+          };
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+    }
+
+    throw new ConfirmationTimeoutError(txHash, timeoutMs);
   }
 
   public async executeSwap(params: EVMExecutionParams): Promise<EVMExecutionResult> {
@@ -135,6 +328,27 @@ export class EVMExecutionAdapter {
       executionValue = BigInt(ccExecution.value || '0');
       approvalTarget = validateExecutionTarget(ccExecution.approvalTarget || ccExecution.to, quote.request.sourceChainId);
       requiredAllowance = BigInt(ccExecution.requiredAllowanceRaw || quote.amountInRaw);
+
+      // Verify execution target against known canonical bridge contracts
+      const srcChain = defaultChainRegistry.getChain(quote.request.sourceChainId);
+      if (srcChain?.chainId) {
+        if (ccQuote.provider === 'ACROSS') {
+          const expectedTarget = getAcrossSpokePool(srcChain.chainId);
+          if (executionTo.toLowerCase() !== expectedTarget.toLowerCase()) {
+            throw new InvalidExecutionTargetError(executionTo, quote.request.sourceChainId, `Expected Across SpokePool ${expectedTarget}`);
+          }
+        } else if (ccQuote.provider === 'STARGATE') {
+          const expectedTarget = getStargateRouter(srcChain.chainId);
+          if (executionTo.toLowerCase() !== expectedTarget.toLowerCase()) {
+            throw new InvalidExecutionTargetError(executionTo, quote.request.sourceChainId, `Expected Stargate Router ${expectedTarget}`);
+          }
+        } else if (ccQuote.provider === 'DEBRIDGE_DLN') {
+          const expectedTarget = getDeBridgeSourceContract(srcChain.chainId);
+          if (executionTo.toLowerCase() !== expectedTarget.toLowerCase()) {
+            throw new InvalidExecutionTargetError(executionTo, quote.request.sourceChainId, `Expected deBridge DLN Source ${expectedTarget}`);
+          }
+        }
+      }
     } else {
       const dexQuote = quote.dexQuote || quote.bestRoute.dexQuote;
       let dexExecution: DEXExecution | undefined = quote.bestRoute.execution as DEXExecution | undefined;
@@ -165,19 +379,21 @@ export class EVMExecutionAdapter {
       throw new ZenithRouteExecutionMismatchError(quote.executionTarget, executionTo);
     }
 
-    if (!isCrossChain && isNativeIn) {
+    if (isNativeIn) {
       try {
         if (typeof signer.provider?.getBalance === 'function') {
           const nativeBalance = await signer.provider.getBalance(validatedUser);
           const requiredNative = BigInt(quote.amountInRaw);
           if (nativeBalance < requiredNative) {
-            throw new Error(
-              `Insufficient native ${tokenIn.symbol} balance: Wallet holds ${formatUnits(nativeBalance, 18)} ${tokenIn.symbol}, but swap requires ${quote.amountInFormatted} ${tokenIn.symbol}.`
+            throw new InsufficientBalanceError(
+              tokenIn.symbol,
+              quote.amountInFormatted,
+              formatUnits(nativeBalance, tokenIn.decimals || 18)
             );
           }
         }
       } catch (nativeErr: any) {
-        if (nativeErr.message?.includes('Insufficient')) throw nativeErr;
+        if (nativeErr instanceof InsufficientBalanceError || nativeErr.message?.includes('Insufficient balance')) throw nativeErr;
         console.warn('[ZENITH EVMAdapter] Native balance verification note:', nativeErr);
       }
     }
@@ -187,7 +403,7 @@ export class EVMExecutionAdapter {
         throw new ZenithApprovalTargetMismatchError(approvalTarget, executionTo);
       }
 
-      const validatedTokenIn = validateTokenAddress(tokenIn.address, quote.request.sourceChainId);
+      const validatedTokenIn = validateTokenAddress(tokenIn.address, quote.request.sourceChainId, tokenIn.isNative);
       const tokenContract = new Contract(validatedTokenIn, ERC20_ABI, signer);
 
       try {
@@ -195,13 +411,15 @@ export class EVMExecutionAdapter {
           const userBalance: bigint = await tokenContract.balanceOf(validatedUser);
           const requiredAmount = BigInt(quote.amountInRaw);
           if (userBalance < requiredAmount) {
-            throw new Error(
-              `Insufficient ${tokenIn.symbol} balance: Wallet has less than required ${quote.amountInFormatted} ${tokenIn.symbol}.`
+            throw new InsufficientBalanceError(
+              tokenIn.symbol,
+              quote.amountInFormatted,
+              formatUnits(userBalance, tokenIn.decimals || 18)
             );
           }
         }
       } catch (balErr: any) {
-        if (balErr.message?.includes('Insufficient')) throw balErr;
+        if (balErr instanceof InsufficientBalanceError || balErr.message?.includes('Insufficient balance')) throw balErr;
         console.warn('[ZENITH EVMAdapter] Pre-flight balance check warning:', balErr);
       }
 
@@ -303,6 +521,13 @@ export class EVMExecutionAdapter {
           data: authoritativeTx.data,
           value: authoritativeTx.value
         });
+      } else if (rpcRunner && typeof rpcRunner.estimateGas === 'function') {
+        estimatedGas = await rpcRunner.estimateGas({
+          from: authoritativeTx.from,
+          to: authoritativeTx.to,
+          data: authoritativeTx.data,
+          value: authoritativeTx.value
+        });
       } else {
         estimatedGas = 200000n;
       }
@@ -319,14 +544,31 @@ export class EVMExecutionAdapter {
       );
     }
 
-    // Apply documented 120% safety multiplier over measured estimateGas
-    const finalGasLimit = (estimatedGas * 120n) / 100n;
+    // Apply safe gas limit calculation with 120% margin
+    const finalGasLimit = this.calculateSafeGasLimit(
+      estimatedGas,
+      quote.request.sourceChainId,
+      params.maxGasCeiling
+    );
+
+    // Dynamic fee resolution (EIP-1559 vs Legacy)
+    let feeOverrides: Record<string, bigint> = {};
+    if (rpcRunner) {
+      const feeStrategy = await this.resolveFeeStrategy(rpcRunner, quote.request.sourceChainId);
+      if (feeStrategy.type === 'EIP1559') {
+        if (feeStrategy.maxFeePerGas != null) feeOverrides.maxFeePerGas = feeStrategy.maxFeePerGas;
+        if (feeStrategy.maxPriorityFeePerGas != null) feeOverrides.maxPriorityFeePerGas = feeStrategy.maxPriorityFeePerGas;
+      } else if (feeStrategy.type === 'LEGACY' && feeStrategy.gasPrice != null) {
+        feeOverrides.gasPrice = feeStrategy.gasPrice;
+      }
+    }
 
     const submissionTx: any = {
       to: authoritativeTx.to,
       data: authoritativeTx.data,
       value: authoritativeTx.value,
-      gasLimit: finalGasLimit
+      gasLimit: finalGasLimit,
+      ...feeOverrides
     };
 
     if (
@@ -357,6 +599,11 @@ export class EVMExecutionAdapter {
     } catch (sendErr: any) {
       console.error('[ZENITH EVMAdapter] signer.sendTransaction error:', sendErr);
       const rawMsg = sendErr?.reason || sendErr?.message || String(sendErr);
+
+      if (sendErr?.code === 'ACTION_REJECTED' || sendErr?.code === 4001 || rawMsg.includes('user rejected') || rawMsg.includes('User rejected')) {
+        throw new TransactionRejectedError('Transaction rejected by user in connected wallet.');
+      }
+
       if (
         rawMsg.includes('STF') ||
         sendErr?.revert?.args?.[0] === 'STF' ||
@@ -393,9 +640,9 @@ export class EVMExecutionAdapter {
     params.onStatusChange?.('BROADCASTED', txHash);
     params.onStatusChange?.('CONFIRMING', txHash);
 
-    const receipt = await tx.wait(1);
+    const receipt = await tx.wait(params.confirmations || 1);
     if (!receipt || receipt.status === 0) {
-      throw new Error(`Transaction reverted on-chain: ${txHash}`);
+      throw new ReceiptRevertedError(txHash, receipt?.blockNumber);
     }
 
     if (isCrossChain) {
@@ -411,6 +658,317 @@ export class EVMExecutionAdapter {
       gasUsed: receipt.gasUsed || 0n,
       effectiveGasPriceWei: receipt.gasPrice || (receipt as any).effectiveGasPrice || 0n
     };
+  }
+
+  public async getBalance(params: {
+    tokenAddress: string;
+    accountAddress: string;
+    isNative?: boolean;
+    runner: any;
+  }): Promise<bigint> {
+    const { tokenAddress, accountAddress, isNative, runner } = params;
+    if (isNative || isNativeToken(tokenAddress)) {
+      if (typeof runner.getBalance === 'function') {
+        return await runner.getBalance(accountAddress);
+      }
+      if (typeof runner.provider?.getBalance === 'function') {
+        return await runner.provider.getBalance(accountAddress);
+      }
+      return 0n;
+    }
+    const tokenContract = new Contract(tokenAddress, ERC20_ABI, runner);
+    if (typeof tokenContract.balanceOf === 'function') {
+      return await tokenContract.balanceOf(accountAddress);
+    }
+    return 0n;
+  }
+
+  public async executeTransaction(params: {
+    chainId: string;
+    to: string;
+    data: string;
+    value?: string | bigint;
+    approvalTarget?: string;
+    tokenInAddress?: string;
+    tokenInSymbol?: string;
+    tokenInDecimals?: number;
+    amountInRaw?: string;
+    userAddress: string;
+    signer: JsonRpcSigner;
+    provider?: BrowserProvider | null;
+    confirmations?: number;
+    maxGasCeiling?: bigint;
+    onStatusChange?: (status: TransactionStatus, txHash?: string) => void;
+  }): Promise<EVMExecutionResult & { receipt?: any }> {
+    const {
+      chainId,
+      to,
+      data,
+      value = '0',
+      approvalTarget,
+      tokenInAddress,
+      tokenInSymbol = 'TOKEN',
+      tokenInDecimals = 18,
+      amountInRaw,
+      userAddress,
+      signer,
+      provider,
+      confirmations = 1,
+      maxGasCeiling,
+      onStatusChange
+    } = params;
+
+    if (!signer) {
+      throw new SignerRequiredError('Wallet signer is required to sign and broadcast transaction on-chain.');
+    }
+
+    const validatedUser = validateEvmAddress(userAddress, 'User Address');
+    const executionTo = validateExecutionTarget(to, chainId);
+    const executionData = data;
+    const executionValue = BigInt(value.toString());
+
+    if (!executionData || executionData === '0x') {
+      throw new InvalidCalldataError('Cannot execute transaction with empty calldata (0x)');
+    }
+
+    const isNativeIn = tokenInAddress ? isNativeToken(tokenInAddress) : executionValue > 0n;
+
+    // 1. Balance verification
+    if (amountInRaw && BigInt(amountInRaw) > 0n) {
+      const requiredAmount = BigInt(amountInRaw);
+      const userBalance = await this.getBalance({
+        tokenAddress: tokenInAddress || CANONICAL_NATIVE_ADDRESS,
+        accountAddress: validatedUser,
+        isNative: isNativeIn,
+        runner: signer.provider || signer
+      });
+
+      if (userBalance < requiredAmount) {
+        throw new InsufficientBalanceError(
+          tokenInSymbol,
+          formatUnits(requiredAmount, tokenInDecimals),
+          formatUnits(userBalance, tokenInDecimals)
+        );
+      }
+    }
+
+    // 2. Allowance check & approval
+    if (!isNativeIn && tokenInAddress && approvalTarget && approvalTarget !== CANONICAL_NATIVE_ADDRESS && amountInRaw) {
+      const validatedTokenIn = validateTokenAddress(tokenInAddress, chainId);
+      const validatedApprovalTarget = validateExecutionTarget(approvalTarget, chainId);
+      const requiredAllowance = BigInt(amountInRaw);
+
+      const currentAllowance = await this.checkAllowance({
+        tokenAddress: validatedTokenIn,
+        ownerAddress: validatedUser,
+        spenderAddress: validatedApprovalTarget,
+        signer,
+        provider
+      });
+
+      if (currentAllowance < requiredAllowance) {
+        onStatusChange?.('APPROVING');
+        const tokenContract = new Contract(validatedTokenIn, ERC20_ABI, signer);
+        const approveTx = await tokenContract.approve(validatedApprovalTarget, requiredAllowance, {
+          gasLimit: 100000n
+        });
+        if (typeof approveTx?.wait === 'function') {
+          const approveReceipt = await approveTx.wait(1);
+          if (!approveReceipt || approveReceipt.status === 0) {
+            throw new ReceiptRevertedError(approveTx.hash, approveReceipt?.blockNumber);
+          }
+        }
+        onStatusChange?.('APPROVED');
+      }
+    }
+
+    // 3. Pre-flight eth_call simulation
+    const authoritativeTx = {
+      from: validatedUser,
+      to: executionTo,
+      data: executionData,
+      value: executionValue
+    };
+
+    const rpcRunner = signer.provider || provider;
+    if (rpcRunner && typeof rpcRunner.call === 'function') {
+      try {
+        await rpcRunner.call(authoritativeTx);
+      } catch (callErr: any) {
+        const rawReason = callErr?.data || callErr?.reason || callErr?.message || String(callErr);
+        const revertReason = decodeRevertReason(rawReason);
+        throw new ZenithSimulationFailedError(
+          `Pre-flight simulation (eth_call) reverted on ${chainId}. (${revertReason})`,
+          revertReason
+        );
+      }
+    }
+
+    // 4. Pre-flight eth_estimateGas
+    let estimatedGas: bigint;
+    try {
+      if (typeof signer.estimateGas === 'function') {
+        estimatedGas = await signer.estimateGas(authoritativeTx);
+      } else if (rpcRunner && typeof rpcRunner.estimateGas === 'function') {
+        estimatedGas = await rpcRunner.estimateGas(authoritativeTx);
+      } else {
+        estimatedGas = 200000n;
+      }
+    } catch (gasErr: any) {
+      const rawReason = gasErr?.data || gasErr?.reason || gasErr?.message || String(gasErr);
+      const revertReason = decodeRevertReason(rawReason);
+      throw new ZenithSimulationFailedError(
+        `Gas estimation (eth_estimateGas) failed on ${chainId}. (${revertReason})`,
+        revertReason
+      );
+    }
+
+    const finalGasLimit = this.calculateSafeGasLimit(estimatedGas, chainId, maxGasCeiling);
+
+    // Dynamic fee resolution
+    let feeOverrides: Record<string, bigint> = {};
+    if (rpcRunner) {
+      const feeStrategy = await this.resolveFeeStrategy(rpcRunner, chainId);
+      if (feeStrategy.type === 'EIP1559') {
+        if (feeStrategy.maxFeePerGas != null) feeOverrides.maxFeePerGas = feeStrategy.maxFeePerGas;
+        if (feeStrategy.maxPriorityFeePerGas != null) feeOverrides.maxPriorityFeePerGas = feeStrategy.maxPriorityFeePerGas;
+      } else if (feeStrategy.type === 'LEGACY' && feeStrategy.gasPrice != null) {
+        feeOverrides.gasPrice = feeStrategy.gasPrice;
+      }
+    }
+
+    onStatusChange?.('SIGNING');
+
+    let preparedNonce: number | undefined = undefined;
+    try {
+      if (typeof signer.getNonce === 'function') {
+        preparedNonce = await signer.getNonce('pending');
+      }
+    } catch {
+      // Nonce retrieval is best-effort
+    }
+
+    let tx: any;
+    try {
+      tx = await signer.sendTransaction({
+        to: authoritativeTx.to,
+        data: authoritativeTx.data,
+        value: authoritativeTx.value,
+        gasLimit: finalGasLimit,
+        ...(preparedNonce !== undefined ? { nonce: preparedNonce } : {}),
+        ...feeOverrides
+      });
+    } catch (sendErr: any) {
+      const rawMsg = sendErr?.reason || sendErr?.message || String(sendErr);
+      if (sendErr?.code === 'ACTION_REJECTED' || sendErr?.code === 4001 || rawMsg.toLowerCase().includes('user rejected') || rawMsg.toLowerCase().includes('user denied')) {
+        throw new TransactionRejectedError('Transaction rejected by user in connected wallet.');
+      }
+
+      // Check for network timeout / RPC connection reset / dropped connection
+      const isNetworkOrTimeout =
+        sendErr?.code === 'NETWORK_ERROR' ||
+        sendErr?.code === 'TIMEOUT' ||
+        sendErr?.code === 'SERVER_ERROR' ||
+        rawMsg.includes('timeout') ||
+        rawMsg.includes('ETIMEDOUT') ||
+        rawMsg.includes('ECONNRESET') ||
+        rawMsg.includes('fetch failed') ||
+        rawMsg.includes('network error') ||
+        rawMsg.includes('Socket connection was closed');
+
+      if (isNetworkOrTimeout) {
+        throw new BroadcastUncertainError(
+          `Transaction broadcast outcome is uncertain due to RPC/network interruption: ${rawMsg}`,
+          {
+            sender: validatedUser,
+            nonce: preparedNonce,
+            chainId
+          }
+        );
+      }
+
+      throw sendErr;
+    }
+
+    if (!tx || !tx.hash) {
+      throw new BroadcastUncertainError(
+        'sendTransaction succeeded but no transaction hash was returned by the provider.',
+        {
+          sender: validatedUser,
+          nonce: preparedNonce,
+          chainId
+        }
+      );
+    }
+
+    const txHash = tx.hash;
+    onStatusChange?.('SUBMITTING', txHash);
+    onStatusChange?.('BROADCASTED', txHash);
+    onStatusChange?.('CONFIRMING', txHash);
+
+    const receipt = await tx.wait(confirmations);
+    if (!receipt || receipt.status === 0) {
+      throw new ReceiptRevertedError(txHash, receipt?.blockNumber);
+    }
+
+    return {
+      isSuccess: true,
+      txHash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed || 0n,
+      effectiveGasPriceWei: receipt.gasPrice || (receipt as any).effectiveGasPrice || 0n,
+      receipt
+    };
+  }
+
+  public async discoverTransactionByNonce(params: {
+    sender: string;
+    nonce: number;
+    provider: any;
+    searchBlocks?: number;
+  }): Promise<{ found: boolean; txHash?: string; isMined?: boolean; blockNumber?: number }> {
+    const { sender, nonce, provider, searchBlocks = 20 } = params;
+    if (!provider) return { found: false };
+
+    try {
+      let currentBlock: number | undefined;
+      let latestNonce: number | undefined;
+
+      if (typeof provider.getBlockNumber === 'function') {
+        currentBlock = await provider.getBlockNumber();
+      }
+      if (typeof provider.getTransactionCount === 'function') {
+        latestNonce = await provider.getTransactionCount(sender, 'latest');
+      }
+
+      // If sender's latest mined nonce is <= target nonce, the transaction might be pending in mempool or not mined yet
+      if (currentBlock && latestNonce !== undefined && latestNonce > nonce) {
+        // The nonce has already been mined in a block! Search recent blocks backwards
+        const fromBlock = Math.max(0, currentBlock - searchBlocks);
+        for (let b = currentBlock; b >= fromBlock; b--) {
+          try {
+            const block = typeof provider.getBlock === 'function' ? await provider.getBlock(b, true) : null;
+            if (block && block.prefetchedTransactions) {
+              for (const tx of block.prefetchedTransactions) {
+                if (
+                  tx.from &&
+                  tx.from.toLowerCase() === sender.toLowerCase() &&
+                  tx.nonce === nonce
+                ) {
+                  return { found: true, txHash: tx.hash, isMined: true, blockNumber: b };
+                }
+              }
+            }
+          } catch {
+            // Block query error - continue search
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[ZENITH EVMAdapter] discoverTransactionByNonce note:', err);
+    }
+
+    return { found: false };
   }
 }
 

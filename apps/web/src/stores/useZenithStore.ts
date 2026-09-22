@@ -13,7 +13,7 @@ import {
   WalletType,
   ZenithNotification
 } from '@zenith/types';
-import { defaultChainRegistry, ZENITH_SUPPORTED_CHAINS } from '@zenith/chains';
+import { defaultChainRegistry, ZENITH_SUPPORTED_CHAINS, defaultMultiProviderRpcManager } from '@zenith/chains';
 import { DEFAULT_TOKENS, defaultTokenService, defaultMarketDataService, LiveMarketData, MarketStatus } from '@zenith/tokens';
 import { defaultZenithRouter, validateAndSanitizeAmount, parseTokenUnits, isNativeToken } from '@zenith/routing';
 import { isZenithDeployed } from '@zenith/contracts';
@@ -34,6 +34,7 @@ import {
 
 const THEME_STORAGE_KEY = 'zenith-theme';
 const CROSS_CHAIN_ORDERS_KEY = 'zenith_active_cross_chain_orders';
+const ACTIVE_PLAN_STORAGE_KEY = 'zenith_active_execution_plan';
 
 let notifIdCounter = 1;
 
@@ -237,13 +238,19 @@ const getChainRpcProvider = (
   }
 
   try {
-    const rpcUrl = defaultChainRegistry.getHealthyRPC(chain.id);
+    let rpcUrl: string;
+    try {
+      rpcUrl = defaultMultiProviderRpcManager.getHealthyRpcUrl(chain.id);
+    } catch {
+      rpcUrl = defaultChainRegistry.getHealthyRPC(chain.id);
+    }
     return new JsonRpcProvider(rpcUrl, chain.chainId ? { chainId: chain.chainId, name: chain.id } : undefined);
   } catch (err) {
     console.warn(`[useZenithStore] Fallback to default RPC for ${chainIdStr}:`, err);
     return injectedProvider || new JsonRpcProvider('https://eth.llamarpc.com');
   }
 };
+
 
 export const resolveTokenLivePrice = (token: Token, marketDataRecord: Record<string, LiveMarketData>): number => {
   if (!token) return 0;
@@ -948,14 +955,30 @@ export const useZenithStore = create<ZenithState>((set, get) => {
       }
 
       const session = getStoredWalletSession();
-      if (!session.isConnected || !session.walletType) {
-        return;
+      if (session.isConnected && session.walletType) {
+        try {
+          await get().connectWalletWithType(session.walletType, true);
+        } catch (err) {
+          console.warn('[Wallet] Failed to restore session on initialization:', err);
+        }
       }
 
+      // Restore any in-flight execution plan after page reload
       try {
-        await get().connectWalletWithType(session.walletType, true );
-      } catch (err) {
-        console.warn('[Wallet] Failed to restore session on initialization:', err);
+        const rawPlan = localStorage.getItem(ACTIVE_PLAN_STORAGE_KEY);
+        if (rawPlan) {
+          const parsed = JSON.parse(rawPlan);
+          if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) {
+            console.log('[Zenith Store] Restoring in-flight execution plan after page refresh:', parsed.planId);
+            set({
+              executionSteps: parsed.steps,
+              executionStatus: parsed.status || 'CONFIRMING',
+              isExecutingTrade: parsed.status !== 'COMPLETED' && parsed.status !== 'FAILED'
+            });
+          }
+        }
+      } catch (planErr) {
+        console.warn('[Zenith Store] Could not parse stored active plan:', planErr);
       }
     },
 
@@ -1248,6 +1271,20 @@ export const useZenithStore = create<ZenithState>((set, get) => {
 
       try {
         const isCrossChain = quote.request.sourceChainId !== quote.request.destinationChainId;
+        const plan = quote.executionPlan;
+        if (plan) {
+          try {
+            localStorage.setItem(ACTIVE_PLAN_STORAGE_KEY, JSON.stringify({
+              planId: plan.planId,
+              steps: plan.steps,
+              status: 'SUBMITTING',
+              startedAt: Date.now()
+            }));
+          } catch {
+            // LocalStorage write best effort
+          }
+        }
+
         const receipt = await defaultExecutionCoordinator.executeTrade({
           quote,
           userAddress: walletAddress,
@@ -1255,6 +1292,10 @@ export const useZenithStore = create<ZenithState>((set, get) => {
           signer: activeSigner,
           provider
         });
+
+        try {
+          localStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
+        } catch {}
 
         if (isCrossChain && quote.intent) {
           try {
@@ -1294,6 +1335,9 @@ export const useZenithStore = create<ZenithState>((set, get) => {
           chainId: receipt.sourceChain.id
         });
       } catch (err: any) {
+        try {
+          localStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
+        } catch {}
         set({ isConfirmSheetOpen: false });
         const rawCode = err?.code || err?.info?.error?.code;
         const rawMsg = err?.reason || err?.message || String(err);

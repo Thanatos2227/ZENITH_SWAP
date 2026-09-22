@@ -619,10 +619,10 @@ export const ZENITH_SUPPORTED_CHAINS: Record<string, ChainConfig> = {
     supportedStandards: ['ERC-20', 'ERC-721', 'ERC-1155', 'Permit2'],
     nativeCurrency: { name: 'Polygon Ecosystem Token', symbol: 'POL', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png' },
     rpcEndpoints: [
-      { url: 'https://polygon-rpc.com', priority: 1, status: 'HEALTHY' },
-      { url: 'https://polygon.llamarpc.com', priority: 2, status: 'HEALTHY' },
-      { url: 'https://rpc.ankr.com/polygon', priority: 3, status: 'HEALTHY' },
-      { url: 'https://1rpc.io/matic', priority: 4, status: 'HEALTHY' }
+      { url: 'https://polygon-bor-rpc.publicnode.com', priority: 1, status: 'HEALTHY' },
+      { url: 'https://polygon.drpc.org', priority: 2, status: 'HEALTHY' },
+      { url: 'https://polygon.gateway.tenderly.co', priority: 3, status: 'HEALTHY' },
+      { url: 'https://polygon-rpc.com', priority: 4, status: 'HEALTHY' }
     ],
     explorer: {
       name: 'PolygonScan',
@@ -3413,6 +3413,268 @@ export const ZENITH_SUPPORTED_CHAINS: Record<string, ChainConfig> = {
         decimals: 18,
         verificationTier: 'VERIFIED_CANONICAL',
         logoURI: '/tokens/mega.png'
+      }
+    ]
+  }
+};
+
+export const ZENITH_TESTNET_CHAINS: Record<string, ChainConfig> = {
+  sepolia: {
+    id: 'sepolia',
+    chainId: 11155111,
+    canonicalName: 'Ethereum Sepolia Testnet',
+    shortName: 'Sepolia',
+    executionEnvironment: 'EVM',
+    category: 'LAYER_1',
+    tier: 'TIER_1',
+    operationalStatus: 'HEALTHY',
+    supportedStandards: ['ERC-20', 'Permit2'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+    rpcEndpoints: [
+      { url: 'https://ethereum-sepolia-rpc.publicnode.com', priority: 1, status: 'HEALTHY' },
+      { url: 'https://rpc2.sepolia.org', priority: 2, status: 'HEALTHY' }
+    ],
+    explorer: { name: 'Etherscan Sepolia', baseUrl: 'https://sepolia.etherscan.io', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
+    finality: { reorgSafetyBlocks: 12, instantFinality: false, typicalBlockTimeSec: 12, safeFinalityTimeSec: 144 },
+    capabilities: {
+      wallet: true, tokenDiscovery: true, tokenRisk: true, priceData: true, liquidityDiscovery: true,
+      swap: true, smartRouting: true, simulation: true, portfolio: true, history: true,
+      mevProtection: false, crossChain: true, zenithLiquidity: true, api: true, sdk: true,
+      supportsEIP1559: true, supportsPermit2: true, hasSubSecondBlocks: false
+    },
+    regulatoryScope: { jurisdictionGated: false },
+    liquidityMaturity: 'EXPERIMENTAL',
+    productionStatus: 'BETA',
+    color: '#627EEA',
+    iconURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+    defaultTokens: [
+      {
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: 'sepolia',
+        name: 'Sepolia Ether',
+        symbol: 'ETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        isNative: true,
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png'
+      },
+      {
+        address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+        chainId: 'sepolia',
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+      },
+      {
+        address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+        chainId: 'sepolia',
+        name: 'Wrapped Ether',
+        symbol: 'WETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
+      }
+    ]
+  },
+
+  arbitrum_sepolia: {
+    id: 'arbitrum_sepolia',
+    chainId: 421614,
+    canonicalName: 'Arbitrum Sepolia Testnet',
+    shortName: 'Arb Sepolia',
+    executionEnvironment: 'EVM',
+    category: 'OPTIMISTIC_ROLLUP',
+    tier: 'TIER_1',
+    operationalStatus: 'HEALTHY',
+    supportedStandards: ['ERC-20', 'Permit2'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+    rpcEndpoints: [
+      { url: 'https://sepolia-rollup.arbitrum.io/rpc', priority: 1, status: 'HEALTHY' }
+    ],
+    explorer: { name: 'Arbiscan Sepolia', baseUrl: 'https://sepolia.arbiscan.io', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
+    finality: { reorgSafetyBlocks: 1, instantFinality: true, typicalBlockTimeSec: 0.25, safeFinalityTimeSec: 1 },
+    capabilities: {
+      wallet: true, tokenDiscovery: true, tokenRisk: true, priceData: true, liquidityDiscovery: true,
+      swap: true, smartRouting: true, simulation: true, portfolio: true, history: true,
+      mevProtection: false, crossChain: true, zenithLiquidity: true, api: true, sdk: true,
+      supportsEIP1559: true, supportsPermit2: true, hasSubSecondBlocks: true
+    },
+    regulatoryScope: { jurisdictionGated: false },
+    liquidityMaturity: 'EXPERIMENTAL',
+    productionStatus: 'BETA',
+    color: '#28A0F0',
+    iconURI: 'https://assets.coingecko.com/coins/images/16547/small/arbitrum_logo.png',
+    defaultTokens: [
+      {
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: 'arbitrum_sepolia',
+        name: 'Sepolia Ether',
+        symbol: 'ETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        isNative: true,
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png'
+      },
+      {
+        address: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d',
+        chainId: 'arbitrum_sepolia',
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+      },
+      {
+        address: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73',
+        chainId: 'arbitrum_sepolia',
+        name: 'Wrapped Ether',
+        symbol: 'WETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
+      }
+    ]
+  },
+
+  base_sepolia: {
+    id: 'base_sepolia',
+    chainId: 84532,
+    canonicalName: 'Base Sepolia Testnet',
+    shortName: 'Base Sepolia',
+    executionEnvironment: 'EVM',
+    category: 'OPTIMISTIC_ROLLUP',
+    tier: 'TIER_1',
+    operationalStatus: 'HEALTHY',
+    supportedStandards: ['ERC-20', 'Permit2'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+    rpcEndpoints: [
+      { url: 'https://sepolia.base.org', priority: 1, status: 'HEALTHY' }
+    ],
+    explorer: { name: 'Basescan Sepolia', baseUrl: 'https://sepolia.basescan.org', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
+    finality: { reorgSafetyBlocks: 1, instantFinality: true, typicalBlockTimeSec: 2, safeFinalityTimeSec: 4 },
+    capabilities: {
+      wallet: true, tokenDiscovery: true, tokenRisk: true, priceData: true, liquidityDiscovery: true,
+      swap: true, smartRouting: true, simulation: true, portfolio: true, history: true,
+      mevProtection: false, crossChain: true, zenithLiquidity: true, api: true, sdk: true,
+      supportsEIP1559: true, supportsPermit2: true, hasSubSecondBlocks: false
+    },
+    regulatoryScope: { jurisdictionGated: false },
+    liquidityMaturity: 'EXPERIMENTAL',
+    productionStatus: 'BETA',
+    color: '#0052FF',
+    iconURI: '/networks/base.png',
+    defaultTokens: [
+      {
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: 'base_sepolia',
+        name: 'Sepolia Ether',
+        symbol: 'ETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        isNative: true,
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png'
+      },
+      {
+        address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        chainId: 'base_sepolia',
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+      }
+    ]
+  },
+
+  optimism_sepolia: {
+    id: 'optimism_sepolia',
+    chainId: 11155420,
+    canonicalName: 'Optimism Sepolia Testnet',
+    shortName: 'OP Sepolia',
+    executionEnvironment: 'EVM',
+    category: 'OPTIMISTIC_ROLLUP',
+    tier: 'TIER_1',
+    operationalStatus: 'HEALTHY',
+    supportedStandards: ['ERC-20', 'Permit2'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+    rpcEndpoints: [
+      { url: 'https://sepolia.optimism.io', priority: 1, status: 'HEALTHY' }
+    ],
+    explorer: { name: 'Optimism Sepolia Explorer', baseUrl: 'https://sepolia-optimism.etherscan.io', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
+    finality: { reorgSafetyBlocks: 1, instantFinality: true, typicalBlockTimeSec: 2, safeFinalityTimeSec: 4 },
+    capabilities: {
+      wallet: true, tokenDiscovery: true, tokenRisk: true, priceData: true, liquidityDiscovery: true,
+      swap: true, smartRouting: true, simulation: true, portfolio: true, history: true,
+      mevProtection: false, crossChain: true, zenithLiquidity: true, api: true, sdk: true,
+      supportsEIP1559: true, supportsPermit2: true, hasSubSecondBlocks: false
+    },
+    regulatoryScope: { jurisdictionGated: false },
+    liquidityMaturity: 'EXPERIMENTAL',
+    productionStatus: 'BETA',
+    color: '#FF0420',
+    iconURI: 'https://assets.coingecko.com/coins/images/25244/small/Optimism.png',
+    defaultTokens: [
+      {
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: 'optimism_sepolia',
+        name: 'Sepolia Ether',
+        symbol: 'ETH',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        isNative: true,
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png'
+      },
+      {
+        address: '0x5fd84259d66Cd46123540766Be93DFE6D43130D7',
+        chainId: 'optimism_sepolia',
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+        verificationTier: 'VERIFIED_CANONICAL',
+        logoURI: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+      }
+    ]
+  },
+
+  polygon_amoy: {
+    id: 'polygon_amoy',
+    chainId: 80002,
+    canonicalName: 'Polygon Amoy Testnet',
+    shortName: 'Amoy',
+    executionEnvironment: 'EVM',
+    category: 'OPTIMISTIC_ROLLUP',
+    tier: 'TIER_2',
+    operationalStatus: 'HEALTHY',
+    supportedStandards: ['ERC-20', 'Permit2'],
+    nativeCurrency: { name: 'Polygon Ecosystem Token', symbol: 'POL', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png' },
+    rpcEndpoints: [
+      { url: 'https://polygon-amoy-bor-rpc.publicnode.com', priority: 1, status: 'HEALTHY' }
+    ],
+    explorer: { name: 'PolygonScan Amoy', baseUrl: 'https://amoy.polygonscan.com', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
+    finality: { reorgSafetyBlocks: 64, instantFinality: false, typicalBlockTimeSec: 2, safeFinalityTimeSec: 128 },
+    capabilities: {
+      wallet: true, tokenDiscovery: true, tokenRisk: true, priceData: true, liquidityDiscovery: true,
+      swap: true, smartRouting: true, simulation: true, portfolio: true, history: true,
+      mevProtection: false, crossChain: false, zenithLiquidity: true, api: true, sdk: true,
+      supportsEIP1559: true, supportsPermit2: true, hasSubSecondBlocks: false
+    },
+    regulatoryScope: { jurisdictionGated: false },
+    liquidityMaturity: 'EXPERIMENTAL',
+    productionStatus: 'BETA',
+    color: '#8247E5',
+    iconURI: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
+    defaultTokens: [
+      {
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: 'polygon_amoy',
+        name: 'Polygon Ecosystem Token',
+        symbol: 'POL',
+        decimals: 18,
+        verificationTier: 'VERIFIED_CANONICAL',
+        isNative: true,
+        logoURI: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png'
       }
     ]
   }

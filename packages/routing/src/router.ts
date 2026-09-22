@@ -16,26 +16,41 @@ import { defaultCrossChainAggregator, CrossChainAggregator } from './crosschain/
 import { defaultScoringService, ScoringService } from './scoring';
 import { defaultSimulationEngine, SimulationEngine } from '@zenith/security';
 import { MAX_SWAP_AMOUNT_NUM } from './amountValidation';
-import { ConfigurationError } from '@zenith/contracts';
+import { ConfigurationError, AggregateCrossChainQuoteError, ExecutionUnavailableError } from '@zenith/contracts';
 import { parseTokenUnits, formatTokenUnits } from './tokenDecimals';
+import { defaultQuoteDiagnosticLogger } from './crosschain/quoteDiagnostics';
+import { RouteArbitrator, RouteNormalizer } from './arbitration';
+
+export type PlanBuilderFn = (params: {
+  normalizedRoute: any;
+  request: QuoteRequest;
+  options?: any;
+}) => any;
 
 export class ZenithRouter {
   private dexAggregator: DEXAggregator;
   private crossChainAggregator: CrossChainAggregator;
   private scoringService: ScoringService;
   private simulationEngine: SimulationEngine;
+  private planBuilder?: PlanBuilderFn;
   private intentNonceCounter: number = 1001;
 
   constructor(
     dexAggregator = defaultDEXAggregator,
     crossChainAggregator = defaultCrossChainAggregator,
     scoringService = defaultScoringService,
-    simulationEngine = defaultSimulationEngine
+    simulationEngine = defaultSimulationEngine,
+    planBuilder?: PlanBuilderFn
   ) {
     this.dexAggregator = dexAggregator;
     this.crossChainAggregator = crossChainAggregator;
     this.scoringService = scoringService;
     this.simulationEngine = simulationEngine;
+    this.planBuilder = planBuilder;
+  }
+
+  public setPlanBuilder(planBuilder: PlanBuilderFn): void {
+    this.planBuilder = planBuilder;
   }
 
   public async getQuote(request: QuoteRequest): Promise<QuoteResponse> {
@@ -99,6 +114,7 @@ export class ZenithRouter {
 
     let routes: SwapRoute[] = [];
     let bestRoute: SwapRoute;
+    let selectedNormalizedRoute: any = null;
 
     const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;
     const slippageBps = Math.floor(slippagePct * 100);
@@ -124,13 +140,63 @@ export class ZenithRouter {
       });
 
       if (routes.length === 0) {
-        throw new ConfigurationError(
-          `[ZenithRouter] No valid cross-chain bridge quote available for ${request.tokenIn.symbol} (${sourceChain.shortName}) -> ${request.tokenOut.symbol} (${destChain.shortName})`,
-          'CROSS_CHAIN_QUOTE_UNAVAILABLE'
-        );
+        const diagnosticsList = defaultQuoteDiagnosticLogger.getDiagnostics(request.sourceChainId, request.destinationChainId);
+        const diagMap: Record<string, any> = {};
+        for (const d of diagnosticsList) {
+          diagMap[d.provider] = {
+            requestStatus: d.requestStatus,
+            error: d.normalizedError || d.unexecutableReason || 'UNKNOWN',
+            message: d.providerErrorMessage || d.unexecutableReason
+          };
+        }
+        throw new AggregateCrossChainQuoteError({
+          sourceChainId: request.sourceChainId,
+          destinationChainId: request.destinationChainId,
+          sourceTokenSymbol: request.tokenIn.symbol,
+          destinationTokenSymbol: request.tokenOut.symbol,
+          providerDiagnostics: diagMap
+        });
       }
 
-      bestRoute = routes[0];
+      // Route Arbitration (Phase 1 Task 27 / Task 28)
+      try {
+        const normalized = routes.map((r) => RouteNormalizer.normalize(r, request));
+        const arbResult = RouteArbitrator.arbitrate(normalized, request, {
+          executionMode: request.executionMode
+        });
+        if (arbResult.selectedRoute) {
+          selectedNormalizedRoute = arbResult.selectedRoute;
+          const match = routes.find((r) => r.id === arbResult.selectedRoute!.routeId);
+          bestRoute = match || routes[0];
+        } else if (
+          request.executionMode === 'LIVE_EXECUTION' ||
+          request.executionMode === 'LIVE_ONCHAIN' ||
+          request.executionMode === 'PREFLIGHT_ONLY'
+        ) {
+          const reasons = arbResult.rejectedCandidates
+            .map((c) => `${c.route.bridgeProvider || c.route.routeId}: ${c.reason}`)
+            .join('; ');
+          throw new ExecutionUnavailableError(
+            `No executable route passed arbitration: ${reasons || 'All candidates rejected by RouteCapabilityFilter'}`
+          );
+        } else {
+          bestRoute = routes[0];
+          bestRoute.isExecutable = false;
+          bestRoute.unexecutableReason =
+            arbResult.rejectedCandidates[0]?.reason || 'READ_ONLY_MODE: Route not executable.';
+        }
+      } catch (err: any) {
+        if (
+          request.executionMode === 'LIVE_EXECUTION' ||
+          request.executionMode === 'LIVE_ONCHAIN' ||
+          request.executionMode === 'PREFLIGHT_ONLY'
+        ) {
+          throw err;
+        }
+        bestRoute = routes[0];
+        bestRoute.isExecutable = false;
+        bestRoute.unexecutableReason = err?.message || 'ARBITRATION_FAILED';
+      }
       const ccQuote = bestRoute.crossChainQuote!;
 
       amountInBig = BigInt(ccQuote.sourceAmountRaw);
@@ -359,8 +425,45 @@ export class ZenithRouter {
         );
       }
 
-      const executableRoute = routes.find((r) => r.execution && r.execution.data && r.execution.data !== '0x');
-      bestRoute = executableRoute || routes[0];
+      // Same-Chain Route Arbitration (Phase 1 Task 27 / Task 28)
+      try {
+        const normalized = routes.map((r) => RouteNormalizer.normalize(r, request));
+        const arbResult = RouteArbitrator.arbitrate(normalized, request, {
+          executionMode: request.executionMode
+        });
+        if (arbResult.selectedRoute) {
+          selectedNormalizedRoute = arbResult.selectedRoute;
+          const match = routes.find((r) => r.id === arbResult.selectedRoute!.routeId);
+          bestRoute = match || routes[0];
+        } else if (
+          request.executionMode === 'LIVE_EXECUTION' ||
+          request.executionMode === 'LIVE_ONCHAIN' ||
+          request.executionMode === 'PREFLIGHT_ONLY'
+        ) {
+          const reasons = arbResult.rejectedCandidates
+            .map((c) => `${c.route.sourceDex || c.route.routeId}: ${c.reason}`)
+            .join('; ');
+          throw new ExecutionUnavailableError(
+            `No executable DEX route passed arbitration: ${reasons || 'All candidates rejected by RouteCapabilityFilter'}`
+          );
+        } else {
+          bestRoute = routes[0];
+          bestRoute.isExecutable = false;
+          bestRoute.unexecutableReason =
+            arbResult.rejectedCandidates[0]?.reason || 'READ_ONLY_MODE: Route not executable.';
+        }
+      } catch (err: any) {
+        if (
+          request.executionMode === 'LIVE_EXECUTION' ||
+          request.executionMode === 'LIVE_ONCHAIN' ||
+          request.executionMode === 'PREFLIGHT_ONLY'
+        ) {
+          throw err;
+        }
+        bestRoute = routes[0];
+        bestRoute.isExecutable = false;
+        bestRoute.unexecutableReason = err?.message || 'ARBITRATION_FAILED';
+      }
       const bestDEXQuote = bestRoute.dexQuote!;
       amountOutBig = bestDEXQuote.amountOut;
       minimumReceivedRaw = bestDEXQuote.minimumAmountOut.toString();
@@ -607,7 +710,15 @@ export class ZenithRouter {
       calldata: executableTransaction?.data || (isCrossChain ? bestRoute.crossChainQuote?.calldata : bestRoute.dexQuote?.calldata) || '0x',
       isExecutable,
       executableTransaction,
-      validation
+      validation,
+      executionPlan:
+        selectedNormalizedRoute && this.planBuilder
+          ? this.planBuilder({
+              normalizedRoute: selectedNormalizedRoute,
+              request,
+              options: { userAddress: callerAddress, recipientAddress: targetRecipient }
+            })
+          : undefined
     } as any;
   }
 }

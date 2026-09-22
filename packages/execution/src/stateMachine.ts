@@ -1,6 +1,56 @@
 import { ExecutionStep, ReceiptView, TransactionStatus } from '@zenith/types';
+import { InvalidStateTransitionError } from '@zenith/contracts';
 
 export type StateChangeCallback = (status: TransactionStatus, steps: ExecutionStep[]) => void;
+
+export const VALID_TRANSACTION_STATUS_TRANSITIONS: Record<string, string[]> = {
+  IDLE: ['QUOTE_REQUESTED', 'QUOTED', 'SIMULATING', 'APPROVAL_NEEDED', 'APPROVING', 'SIGNING', 'SUBMITTING', 'BROADCASTED', 'CONFIRMING', 'BRIDGE_SOURCE_CONFIRMED', 'BRIDGE_IN_FLIGHT', 'BRIDGE_DESTINATION_CONFIRMED', 'DESTINATION_FILLED', 'SETTLED', 'TRACKING_TIMEOUT', 'TRACKING_UNAVAILABLE', 'REFUND_PENDING', 'REFUNDED', 'FAILED', 'CANCELLED', 'PREPARING'],
+  PREPARING: ['SIMULATING', 'SIMULATED', 'FAILED', 'CANCELLED'],
+  QUOTE_REQUESTED: ['QUOTED', 'FAILED', 'CANCELLED'],
+  QUOTED: ['SIMULATING', 'SIMULATED', 'APPROVAL_NEEDED', 'APPROVING', 'SIGNING', 'FAILED', 'CANCELLED'],
+  SIMULATING: ['SIMULATED', 'APPROVAL_NEEDED', 'APPROVING', 'SIGNING', 'FAILED', 'REVERTED', 'CANCELLED'],
+  SIMULATED: ['APPROVAL_NEEDED', 'APPROVING', 'SIGNING', 'SUBMITTING', 'FAILED', 'CANCELLED'],
+  APPROVAL_NEEDED: ['APPROVING', 'FAILED', 'CANCELLED'],
+  APPROVING: ['APPROVED', 'FAILED', 'CANCELLED', 'REVERTED'],
+  APPROVED: ['SIGNING', 'SUBMITTING', 'CONFIRMING', 'BRIDGE_IN_FLIGHT', 'FAILED', 'CANCELLED'],
+  SIGNING: ['SUBMITTING', 'BROADCASTED', 'CONFIRMING', 'BRIDGE_IN_FLIGHT', 'FAILED', 'CANCELLED'],
+  SUBMITTING: ['BROADCASTED', 'CONFIRMING', 'BRIDGE_SOURCE_CONFIRMED', 'BRIDGE_IN_FLIGHT', 'FAILED', 'CANCELLED', 'REVERTED'],
+  BROADCASTED: ['CONFIRMING', 'COMPLETED', 'BRIDGE_SOURCE_CONFIRMED', 'BRIDGE_IN_FLIGHT', 'FAILED', 'REVERTED'],
+  CONFIRMING: ['COMPLETED', 'BRIDGE_SOURCE_CONFIRMED', 'BRIDGE_IN_FLIGHT', 'DESTINATION_FILLED', 'SETTLED', 'FAILED', 'REVERTED', 'SIMULATING', 'SIMULATED', 'APPROVING', 'APPROVED', 'SIGNING', 'SUBMITTING'],
+  BRIDGE_SOURCE_CONFIRMED: ['BRIDGE_IN_FLIGHT', 'BRIDGE_DESTINATION_CONFIRMED', 'DESTINATION_FILLED', 'SETTLED', 'TRACKING_TIMEOUT', 'TRACKING_UNAVAILABLE', 'REFUND_PENDING', 'FAILED'],
+  BRIDGE_IN_FLIGHT: ['BRIDGE_DESTINATION_CONFIRMED', 'DESTINATION_FILLED', 'COMPLETED', 'SETTLED', 'TRACKING_TIMEOUT', 'TRACKING_UNAVAILABLE', 'REFUND_PENDING', 'FAILED'],
+  BRIDGE_DESTINATION_CONFIRMED: ['DESTINATION_FILLED', 'COMPLETED', 'SETTLED', 'REFUND_PENDING', 'FAILED'],
+  DESTINATION_FILLED: ['SETTLED', 'COMPLETED', 'REFUND_PENDING', 'FAILED'],
+  TRACKING_TIMEOUT: ['BRIDGE_IN_FLIGHT', 'DESTINATION_FILLED', 'SETTLED', 'REFUND_PENDING', 'REFUNDED', 'FAILED'],
+  TRACKING_UNAVAILABLE: ['BRIDGE_IN_FLIGHT', 'DESTINATION_FILLED', 'SETTLED', 'REFUND_PENDING', 'REFUNDED', 'FAILED'],
+  REFUND_PENDING: ['REFUNDED', 'FAILED'],
+  COMPLETED: [],
+  SETTLED: [],
+  FAILED: [],
+  REVERTED: [],
+  CANCELLED: [],
+  REFUNDED: []
+};
+
+export const TERMINAL_TRANSACTION_STATUSES: Set<string> = new Set([
+  'COMPLETED',
+  'SETTLED',
+  'FAILED',
+  'REVERTED',
+  'CANCELLED',
+  'REFUNDED'
+]);
+
+export function validateTransactionStatusTransition(from: string, to: string): void {
+  if (from === to) return;
+  if (TERMINAL_TRANSACTION_STATUSES.has(from)) {
+    throw new InvalidStateTransitionError(from, to, 'ExecutionStatus');
+  }
+  const allowed = VALID_TRANSACTION_STATUS_TRANSITIONS[from] || [];
+  if (!allowed.includes(to)) {
+    throw new InvalidStateTransitionError(from, to, 'ExecutionStatus');
+  }
+}
 
 export class ExecutionStateMachine {
   private currentStatus: TransactionStatus = 'IDLE';
@@ -21,6 +71,10 @@ export class ExecutionStateMachine {
 
   public getStatus(): TransactionStatus {
     return this.currentStatus;
+  }
+
+  public isTerminal(): boolean {
+    return TERMINAL_TRANSACTION_STATUSES.has(this.currentStatus);
   }
 
   public getSteps(): ExecutionStep[] {
@@ -47,7 +101,10 @@ export class ExecutionStateMachine {
     newStatus: TransactionStatus,
     stepUpdate?: { id: string; status: ExecutionStep['status']; txHash?: string; error?: string }
   ): void {
-    this.currentStatus = newStatus;
+    if (this.currentStatus !== newStatus) {
+      validateTransactionStatusTransition(this.currentStatus, newStatus);
+      this.currentStatus = newStatus;
+    }
 
     if (stepUpdate) {
       const stepIdx = this.steps.findIndex((s) => s.id === stepUpdate.id);
@@ -80,3 +137,4 @@ export class ExecutionStateMachine {
     });
   }
 }
+

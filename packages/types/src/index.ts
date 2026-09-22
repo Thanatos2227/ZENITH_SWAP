@@ -248,6 +248,15 @@ export interface CrossChainQuote {
   estimatedTransferTimeSec: number;
   estimatedDurationSeconds?: number;
   securityRating: 'A+' | 'A' | 'B' | 'EXPERIMENTAL';
+  isExecutable?: boolean;
+  unexecutableReason?: string;
+  diagnostics?: ExecutionPlanDiagnostic[];
+  sourceDexQuote?: DEXQuote;
+  destDexQuote?: DEXQuote;
+  underlyingBridgeQuote?: CrossChainQuote;
+  sourceConnectorToken?: Token;
+  destConnectorToken?: Token;
+  compositeExecutionMode?: CompositeExecutionMode;
 }
 
 export interface DEXExecution {
@@ -367,6 +376,10 @@ export interface SwapRoute {
   amountOutFormatted?: string;
   priceImpact?: PriceImpact;
   effectiveExecutionScore?: number;
+  isExecutable?: boolean;
+  unexecutableReason?: string;
+  diagnostics?: ExecutionPlanDiagnostic[];
+  executionPlan?: ExecutionPlan;
 }
 
 export interface PriceImpact {
@@ -429,7 +442,9 @@ export type SettlementState =
   | 'REJECTED'
   | 'FAILED'
   | 'REFUND_PENDING'
-  | 'REFUNDED';
+  | 'REFUNDED'
+  | 'TRACKING_TIMEOUT'
+  | 'TRACKING_UNAVAILABLE';
 
 export interface CrossChainIntent {
   orderId: string;
@@ -448,6 +463,7 @@ export interface CrossChainIntent {
   txHashSource?: string;
   txHashDestination?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface SolverFillQuote {
@@ -480,19 +496,21 @@ export interface QuoteRequest {
   mevProtectionEnabled?: boolean;
   gasPreset?: GasPreset;
   deadlineSeconds?: number;
+  executionMode?: 'LIVE_EXECUTION' | 'LIVE_ONCHAIN' | 'PREFLIGHT_ONLY' | 'SIMULATION' | 'READ_ONLY' | 'DIAGNOSTIC';
+  requiredCapabilityLevel?: ProviderCapabilityLevel;
 }
 
 export interface ExecutableTransaction {
-  chainId: number;
-  from?: string;
   to: string;
   data: string;
   value: string;
+  from?: string;
+  chainId: number;
   gasLimit?: string;
   maxFeePerGas?: string;
   maxPriorityFeePerGas?: string;
   approvalTarget?: string;
-  amountInRaw: string;
+  amountInRaw?: string;
   minimumOutRaw?: string;
   deadline?: number;
 }
@@ -535,6 +553,9 @@ export interface QuoteResponse {
   crossChainQuote?: CrossChainQuote;
   executionTarget?: string;
   isExecutable?: boolean;
+  unexecutableReason?: string;
+  diagnostics?: ExecutionPlanDiagnostic[];
+  executionPlan?: ExecutionPlan;
   executableTransaction?: ExecutableTransaction;
   validation?: QuoteValidationResult;
 }
@@ -564,8 +585,11 @@ export interface SimulationRequest {
 
 export interface SimulationResult {
   isSuccess: boolean;
-  gasUsed: number;
+  gasEstimate?: string;
+  gasLimit?: string;
+  gasUsed?: number | bigint | string;
   revertReason?: string;
+  stateOverridesApplied?: boolean;
   balanceDeltas: TokenBalanceDelta[];
   approvalRequired: boolean;
   approvalTokenAddress?: string;
@@ -592,6 +616,12 @@ export type TransactionStatus =
   | 'BRIDGE_SOURCE_CONFIRMED'
   | 'BRIDGE_IN_FLIGHT'
   | 'BRIDGE_DESTINATION_CONFIRMED'
+  | 'DESTINATION_FILLED'
+  | 'SETTLED'
+  | 'REFUND_PENDING'
+  | 'REFUNDED'
+  | 'TRACKING_TIMEOUT'
+  | 'TRACKING_UNAVAILABLE'
   | 'FAILED'
   | 'REVERTED'
   | 'CANCELLED';
@@ -623,7 +653,7 @@ export interface ReceiptView {
   protocolFeePaidUSD: number;
   effectiveExecutionScore: number;
   timestamp: number;
-  status: 'COMPLETED' | 'REVERTED' | 'FAILED' | 'PENDING';
+  status: 'COMPLETED' | 'REVERTED' | 'FAILED' | 'PENDING' | 'BRIDGE_IN_FLIGHT' | 'TRACKING_TIMEOUT' | 'REFUNDED' | 'SETTLED';
   revertReason?: string;
   explorerUrl: string;
   routeSummary: string;
@@ -782,3 +812,809 @@ export interface ProtocolAnalytics {
   topTokens: Token[];
   historicalVolume: Array<{ timestamp: number; volumeUSD: number; tvlUSD: number }>;
 }
+
+// ==========================================
+// EXECUTION PLAN & ARCHITECTURE TYPES
+// ==========================================
+
+export type CompositeExecutionMode =
+  | 'ATOMIC'
+  | 'SOLVER'
+  | 'SEPARATE_DESTINATION_TX'
+  | 'UNSUPPORTED';
+
+export type ExecutionStepType =
+  | 'VALIDATION'
+  | 'APPROVAL'
+  | 'SOURCE_APPROVAL'
+  | 'SOURCE_SWAP'
+  | 'BRIDGE_QUOTE_REFRESH'
+  | 'BRIDGE_DEPOSIT'
+  | 'BRIDGE_RELAY_WAIT'
+  | 'DESTINATION_APPROVAL'
+  | 'DESTINATION_SWAP'
+  | 'DESTINATION_VERIFY'
+  | 'SETTLEMENT_COMPLETE';
+
+export type StepExecutionEnvironment = 'EVM' | 'SOLANA' | 'OFF_CHAIN';
+
+export type StepStatus =
+  | 'NOT_STARTED'
+  | 'PENDING'
+  | 'SIMULATING'
+  | 'SIGNING'
+  | 'SUBMITTED'
+  | 'CONFIRMING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'SKIPPED';
+
+export interface ExecutionStepRetryPolicy {
+  maxRetries: number;
+  backoffMs: number;
+  timeoutMs: number;
+}
+
+export interface ExecutionStepVerificationCondition {
+  type: 'ON_CHAIN_RECEIPT' | 'EVENT_EMITTED' | 'BALANCE_DELTA' | 'API_STATUS';
+  expectedValue?: string;
+}
+
+export interface ExecutionPlanStep {
+  readonly id: string;
+  readonly type: ExecutionStepType;
+  readonly title: string;
+  readonly description: string;
+  readonly chainId: string;
+  readonly numericChainId?: number;
+  readonly executionEnvironment: StepExecutionEnvironment;
+  targetAddress?: string;
+  calldata?: string;
+  valueWei?: string;
+  approvalTarget?: string;
+  requiredTokenAddress?: string;
+  requiredTokenSymbol?: string;
+  requiredAmountRaw?: string;
+  outputTokenAddress?: string;
+  outputTokenSymbol?: string;
+  expectedAmountOutRaw?: string;
+  minimumAmountOutRaw?: string;
+  status: StepStatus;
+  txHash?: string;
+  blockNumber?: number;
+  error?: string;
+  readonly dependencies: string[];
+  readonly retryPolicy: ExecutionStepRetryPolicy;
+  readonly verificationCondition?: ExecutionStepVerificationCondition;
+}
+
+export interface ExecutionPlanDiagnostic {
+  readonly code: string;
+  readonly message: string;
+  readonly severity: 'INFO' | 'WARNING' | 'ERROR';
+  readonly providerId?: string;
+  readonly timestamp: number;
+}
+
+export interface ExecutionPlan {
+  readonly planId: string;
+  readonly routeId: string;
+  readonly routeType: 'DIRECT' | 'MULTI_HOP' | 'CROSS_CHAIN_DIRECT' | 'CROSS_CHAIN_COMPOSITE';
+  readonly sourceChainId: string;
+  readonly destinationChainId: string;
+  readonly tokenIn: Token;
+  readonly tokenOut: Token;
+  readonly expectedAmountInRaw: string;
+  readonly expectedAmountOutRaw: string;
+  readonly minimumAmountOutRaw: string;
+  readonly isExecutable: boolean;
+  readonly unexecutableReason?: string;
+  readonly compositeExecutionMode?: CompositeExecutionMode;
+  readonly diagnostics: ExecutionPlanDiagnostic[];
+  readonly steps: ExecutionPlanStep[];
+  currentStepIndex: number;
+  overallStatus: 'IDLE' | 'EXECUTING' | 'PAUSED' | 'COMPLETED' | 'FAILED';
+  readonly selectedProvider?: string;
+  readonly selectedDex?: string;
+  readonly calldata?: string;
+  readonly approvalTarget?: string;
+  readonly executionTarget?: string;
+  readonly expiration?: number;
+  readonly capabilityEvidence?: string | ProviderCapabilityLevel;
+  readonly totalFeeRaw?: string;
+  readonly integrityHash?: string;
+  readonly planHash?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type PlanIntegrityStatus = 'UNSEALED' | 'SEALED_VALID' | 'TAMPERED' | 'EXPIRED';
+
+export interface LifecycleVerificationEvidence {
+  planId: string;
+  verifiedAt: number;
+  integrityHash: string;
+  status: PlanIntegrityStatus;
+  tamperedFields?: string[];
+}
+
+export type BridgeCapabilityState =
+  | 'CONFIGURED'
+  | 'QUOTE_SUPPORTED'
+  | 'EXECUTION_SUPPORTED'
+  | 'DESTINATION_SETTLEMENT_SUPPORTED';
+
+export interface ProviderCapabilityMatrixRecord {
+  provider: BridgeProtocol;
+  providerName: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  supportedTokenSymbols: string[];
+  quoteEndpoint: string | null;
+  executionContract: string | null;
+  executionMethod: string | null;
+  destinationExecutionCapability: boolean;
+  statusEndpoint: string | null;
+  capabilityState: BridgeCapabilityState;
+}
+
+export interface PersistentIntent {
+  intentId: string;
+  userAddress: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  sourceTokenAddress: string;
+  sourceTokenSymbol: string;
+  destinationTokenAddress: string;
+  destinationTokenSymbol: string;
+  amountInRaw: string;
+  expectedAmountOutRaw: string;
+  minAmountOutRaw: string;
+  provider: string;
+  routeId: string;
+  nonce: string;
+  deadline: number;
+  status: SettlementState;
+  sourceTxHash?: string;
+  destinationTxHash?: string;
+  solverId?: string;
+  leaseOwner?: string;
+  leaseExpiresAt?: number;
+  errorMessage?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersistentExecutionStep {
+  stepId: string;
+  intentId: string;
+  stepIndex: number;
+  type: string;
+  chainId: string;
+  status: string;
+  dependsOn: string[];
+  targetAddress?: string;
+  tokenAddress?: string;
+  amountRaw?: string;
+  txHash?: string;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersistentProviderOrder {
+  orderId: string;
+  intentId: string;
+  provider: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  sourceTxHash: string;
+  destinationTxHash?: string;
+  recipient: string;
+  quoteJson: string;
+  status: SettlementState;
+  errorMessage?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersistentSettlement {
+  intentId: string;
+  destinationTxHash: string;
+  destinationChainId: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  recipient: string;
+  expectedAmountRaw: string;
+  actualAmountRaw: string;
+  verified: boolean;
+  verifiedAt: number;
+}
+
+export interface DestinationExecutionCapabilities {
+  supportedChains: string[];
+  supportedProtocols: DEXProtocol[];
+  supportedModes: ('ATOMIC' | 'SOLVER' | 'SEPARATE_DESTINATION_TX')[];
+  maxSlippageBps: number;
+}
+
+export interface DestinationExecutionRequest {
+  intentId: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  recipient: string;
+  inputToken: Token;
+  inputAmountActual: string; // Base units from actual bridge output
+  outputToken: Token;
+  minimumOutputAmount: string; // Base units protecting slippage
+  destinationDex?: DEXProtocol;
+  slippageTolerancePercent?: number;
+  deadline: number;
+  bridgeProvider: string;
+  providerOrderId: string;
+  routeId?: string;
+  solverId?: string;
+}
+
+export interface DestinationExecutionPlan {
+  executionId: string;
+  intentId: string;
+  mode: 'ATOMIC' | 'SOLVER' | 'SEPARATE_DESTINATION_TX' | 'UNSUPPORTED';
+  destinationChainId: string;
+  targetAddress: string;
+  calldata: string;
+  valueWei: string;
+  tokenIn: Token;
+  tokenOut: Token;
+  amountIn: bigint;
+  expectedAmountOut: bigint;
+  minimumAmountOut: bigint;
+  approvalTarget?: string;
+  requiredAllowance?: bigint;
+  gasEstimateUnits: bigint;
+  gasCostUSD: number;
+  deadline: number;
+  dexQuote?: DEXQuote;
+  solverAddress?: string;
+}
+
+export interface DestinationExecutionResult {
+  executionId: string;
+  intentId: string;
+  destinationTxHash?: string;
+  status: 'SUBMITTED' | 'CONFIRMED' | 'FAILED';
+  gasUsed?: bigint;
+  effectiveGasPrice?: bigint;
+  error?: string;
+}
+
+export interface DestinationExecutionStatus {
+  executionId: string;
+  intentId: string;
+  destinationTxHash?: string;
+  status: SettlementState;
+  blockNumber?: number;
+  confirmations?: number;
+  error?: string;
+}
+
+export interface DestinationVerification {
+  isVerified: boolean;
+  destinationTxHash?: string;
+  recipient: string;
+  expectedToken: string;
+  actualToken?: string;
+  expectedMinAmount: bigint;
+  actualAmount?: bigint;
+  receipt?: any;
+  reason?: string;
+}
+
+export interface SolverProfile {
+  id: string;
+  name: string;
+  walletAddress: string;
+  supportedChains: string[];
+  supportedTokens: string[];
+  availableLiquidityUSD: number;
+  reputationScore: number;
+  isActive: boolean;
+}
+
+export type TransactionLifecycleState =
+  | 'CREATED'
+  | 'PREFLIGHTING'
+  | 'PREFLIGHT_PASSED'
+  | 'READY_TO_BROADCAST'
+  | 'BROADCASTING'
+  | 'BROADCAST_UNCERTAIN'
+  | 'BROADCAST_CONFIRMED'
+  | 'CONFIRMING'
+  | 'CONFIRMED'
+  | 'PREFLIGHT_FAILED'
+  | 'BROADCAST_FAILED'
+  | 'REVERTED'
+  | 'DROPPED'
+  | 'EXPIRED'
+  | 'RECOVERY_REQUIRED';
+
+export interface PersistentTransaction {
+  transactionId: string;
+  planId: string;
+  stepId: string;
+  chainId: string;
+  nonce?: number;
+  fromAddress: string;
+  toAddress: string;
+  valueWei: string;
+  calldata: string;
+  gasLimit?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  state: TransactionLifecycleState;
+  txHash?: string;
+  createdAt: number;
+  broadcastAt?: number;
+  confirmedAt?: number;
+  blockNumber?: number;
+  receiptStatus?: number;
+  errorMessage?: string;
+}
+
+export interface WorkerLease {
+  resourceId: string;
+  workerId: string;
+  acquiredAt: number;
+  expiresAt: number;
+  renewedAt: number;
+}
+
+export interface PersistentPlanRecord {
+  planId: string;
+  routeId: string;
+  routeType: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  tokenIn: Token;
+  tokenOut: Token;
+  expectedAmountInRaw: string;
+  expectedAmountOutRaw: string;
+  minimumAmountOutRaw: string;
+  isExecutable: boolean;
+  unexecutableReason?: string;
+  compositeExecutionMode?: string;
+  diagnostics: ExecutionPlanDiagnostic[];
+  currentStepIndex: number;
+  overallStatus: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersistentPlanStepRecord {
+  planStepId: string;
+  planId: string;
+  stepId: string;
+  stepIndex: number;
+  type: ExecutionStepType;
+  title: string;
+  description: string;
+  chainId: string;
+  numericChainId?: number;
+  executionEnvironment: StepExecutionEnvironment;
+  targetAddress?: string;
+  calldata?: string;
+  valueWei?: string;
+  approvalTarget?: string;
+  requiredTokenAddress?: string;
+  requiredTokenSymbol?: string;
+  requiredAmountRaw?: string;
+  status: StepStatus;
+  txHash?: string;
+  blockNumber?: number;
+  error?: string;
+  dependencies: string[];
+  retryPolicy: ExecutionStepRetryPolicy;
+  verificationCondition?: ExecutionStepVerificationCondition;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ProviderHealthStatus =
+  | 'HEALTHY'
+  | 'DEGRADED'
+  | 'UNHEALTHY'
+  | 'CIRCUIT_OPEN'
+  | 'RECOVERING';
+
+export type RpcCircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+export type RequestCategory = 'READ_ONLY' | 'PRE_BROADCAST' | 'BROADCAST';
+
+export type ErrorCategory = 'RETRYABLE' | 'NON_RETRYABLE' | 'AMBIGUOUS';
+
+export interface ProviderEndpointConfig {
+  id: string;
+  chainId: string;
+  numericChainId: number;
+  url: string;
+  priority: number;
+  weight?: number;
+  supportsSimulation?: boolean;
+  isPrivate?: boolean;
+}
+
+export interface ProviderEndpointHealth {
+  id: string;
+  chainId: string;
+  numericChainId: number;
+  url: string;
+  priority: number;
+  weight: number;
+  status: ProviderHealthStatus;
+  circuitState: RpcCircuitBreakerState;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+  lastFailureTimestamp: number | null;
+  lastSuccessTimestamp: number | null;
+  latencyMs: number;
+  timeoutCount: number;
+  errorCount: number;
+  lastCheckedBlockNumber: number | null;
+  lastCheckedAt: number | null;
+}
+
+export type EvidenceSourceType =
+  | 'ON_CHAIN_RECEIPT'
+  | 'TRANSACTION_LOOKUP'
+  | 'PROVIDER_API'
+  | 'INFORMATIONAL_API'
+  | 'LOCAL_CACHE';
+
+export interface ReconciliationEvidence {
+  evidenceId: string;
+  source: EvidenceSourceType;
+  priority: number; // 1: ON_CHAIN_RECEIPT, 2: TRANSACTION_LOOKUP, 3: PROVIDER_API, 4: INFORMATIONAL_API, 5: LOCAL_CACHE
+  timestamp: number;
+  providerId?: string;
+  chainId?: string;
+  txHash?: string;
+  blockNumber?: number;
+  status?: string;
+  data?: any;
+}
+
+export type ReconciliationStatus =
+  | 'SETTLED'
+  | 'DESTINATION_FILLED'
+  | 'FULFILLING'
+  | 'STATUS_UNKNOWN'
+  | 'DESTINATION_STATUS_UNCERTAIN'
+  | 'STATUS_CONFLICT'
+  | 'RECOVERY_REQUIRED'
+  | 'FAILED'
+  | 'REFUNDED';
+
+export interface ReconciliationResult {
+  entityId: string;
+  entityType: 'INTENT' | 'PLAN' | 'STEP' | 'ORDER' | 'TRANSACTION';
+  status: ReconciliationStatus;
+  previousStatus: string;
+  sourceTxHash?: string;
+  destinationTxHash?: string;
+  evidences: ReconciliationEvidence[];
+  conflict?: {
+    reason: string;
+    conflictingEvidences: ReconciliationEvidence[];
+  };
+  actionTaken: string;
+  timestamp: number;
+}
+
+export interface TelemetryEvent {
+  eventId: string;
+  providerId: string;
+  chainId: string;
+  operation: string;
+  category: RequestCategory;
+  latencyMs: number;
+  success: boolean;
+  errorCategory?: ErrorCategory;
+  circuitState?: RpcCircuitBreakerState;
+  retryCount: number;
+  failoverCount: number;
+  blockNumber?: number;
+  timestamp: number;
+  metadata?: Record<string, any>;
+}
+
+// ============================================================================
+// PHASE 0 / TASK 6: CROSS-CHAIN QUOTE PROVIDER DIAGNOSTICS & NORMALIZATION
+// ============================================================================
+
+// Standardized Provider Capability Levels (Phase 1 Task 26)
+export type ProviderCapabilityLevel =
+  | 'UNIT_TESTED'
+  | 'CONFIGURED'
+  | 'QUOTE_AVAILABLE'
+  | 'EXECUTION_AVAILABLE'
+  | 'LIVE_VERIFIED'
+  | 'UNSUPPORTED';
+
+// Standardized 16-Category Provider Error Taxonomy (Phase 1 Task 26)
+export type ProviderErrorCategory =
+  | 'UNSUPPORTED_ROUTE'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'RATE_LIMITED'
+  | 'INVALID_QUOTE'
+  | 'EXPIRED_QUOTE'
+  | 'MISSING_EXECUTION_DATA'
+  | 'INVALID_CALLDATA'
+  | 'INVALID_TARGET'
+  | 'INVALID_TOKEN'
+  | 'INVALID_CHAIN'
+  | 'INSUFFICIENT_LIQUIDITY'
+  | 'DESTINATION_UNAVAILABLE'
+  | 'TRACKING_UNAVAILABLE'
+  | 'STATUS_UNKNOWN'
+  | 'STATUS_CONFLICT'
+  | 'EXECUTION_UNAVAILABLE';
+
+export type CrossChainQuoteErrorCode =
+  | ProviderErrorCategory
+  | 'QUOTE_EXPIRED'
+  | 'API_AUTH_REQUIRED'
+  | 'UNSUPPORTED_TOKEN'
+  | 'INVALID_AMOUNT'
+  | 'MALFORMED_RESPONSE'
+  | 'INVALID_EXECUTION_DATA'
+  | 'UNKNOWN_PROVIDER_ERROR'
+  | 'DESTINATION_EXECUTION_UNAVAILABLE'
+  | 'SOURCE_SWAP_UNAVAILABLE'
+  | 'QUOTE_UNAVAILABLE';
+
+export type CrossChainCapabilityStatus =
+  | 'UNIT_TESTED'
+  | 'CONFIGURED'
+  | 'QUOTE_AVAILABLE'
+  | 'EXECUTION_AVAILABLE'
+  | 'TRACKING_AVAILABLE'
+  | 'LIVE_VERIFIED'
+  | 'UNSUPPORTED';
+
+export interface ProviderCapabilityRecord {
+  provider: BridgeProtocol;
+  providerName: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  sourceTokenSymbol: string;
+  destinationTokenSymbol: string;
+  quoteSupported: boolean;
+  executionSupported: boolean;
+  trackingSupported: boolean;
+  destinationExecutionSupported: boolean;
+  capabilityStatus: CrossChainCapabilityStatus;
+  capabilityLevel?: ProviderCapabilityLevel;
+  requiredApiConfig?: string;
+  unsupportedReason?: string;
+}
+
+// Provider-Agnostic Normalized Bridge Quote (Phase 1 Task 26)
+export interface NormalizedBridgeQuote {
+  provider: BridgeProtocol;
+  sourceChainId: string;
+  destinationChainId: string;
+  sourceToken: Token;
+  destinationToken: Token;
+  inputAmountRaw: string;
+  expectedOutputRaw: string;
+  minimumOutputRaw: string;
+  feeAmountRaw: string;
+  feeToken: Token | string;
+  expiration: number;
+  approvalTarget: string;
+  executionTarget: string;
+  calldata: string;
+  value: string;
+  orderId?: string;
+  statusEndpoint?: string;
+  isExecutable: boolean;
+  capabilityLevel: ProviderCapabilityLevel;
+  unexecutableReason?: string;
+}
+
+// Universal 15-Gate Executability Validation (Phase 1 Task 26)
+export type UniversalValidationGate =
+  | 'ROUTE_SUPPORTED'
+  | 'LIVE_QUOTE_VERIFIED'
+  | 'VALID_SOURCE_TOKEN'
+  | 'VALID_DESTINATION_TOKEN'
+  | 'VALID_CHAIN_IDS'
+  | 'VALID_INPUT_AMOUNT'
+  | 'VALID_EXPECTED_OUTPUT'
+  | 'VALID_MINIMUM_OUTPUT'
+  | 'VALID_EXECUTION_TARGET'
+  | 'VALID_CALLDATA'
+  | 'VALID_APPROVAL_TARGET'
+  | 'VALID_EXPIRATION'
+  | 'VALID_RECEIVER'
+  | 'VALID_TRANSACTION_VALUE'
+  | 'CAPABILITY_PERMITS_EXECUTION';
+
+export interface UniversalValidationResult {
+  isExecutable: boolean;
+  status: 'EXECUTABLE' | 'NON_EXECUTABLE';
+  unexecutableReason?: string;
+  errorCategory?: ProviderErrorCategory;
+  failedGates: UniversalValidationGate[];
+  passedGates: UniversalValidationGate[];
+  diagnostics: ExecutionPlanDiagnostic[];
+}
+
+export interface QuoteProviderDiagnostic {
+  provider: BridgeProtocol;
+  providerName?: string;
+  sourceChainId: string | number;
+  destinationChainId: string | number;
+  sourceToken: string;
+  destinationToken: string;
+  amountInRaw: string;
+  requestStatus: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  httpStatus?: number;
+  providerErrorCode?: string;
+  providerErrorMessage?: string;
+  normalizedError?: CrossChainQuoteErrorCode;
+  isExecutable: boolean;
+  unexecutableReason?: string;
+  latencyMs?: number;
+  endpoint?: string;
+  timestamp: number;
+}
+
+export interface AggregateQuoteErrorResult {
+  code: 'NO_VALID_CROSS_CHAIN_ROUTE';
+  message: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  tokenIn: Token;
+  tokenOut: Token;
+  amountInRaw: string;
+  providerDiagnostics: Record<string, QuoteProviderDiagnostic>;
+  timestamp: number;
+}
+
+export interface NormalizedCrossChainQuote extends CrossChainQuote {
+  routeId: string;
+  amountInRaw: string;
+  amountOutRaw: string;
+  minimumAmountOutRaw: string;
+  feeAmountRaw?: string;
+  estimatedGas?: bigint;
+  bridgeId?: string;
+  orderId?: string;
+  expiresAt: number;
+  providerMetadata?: Record<string, any>;
+}
+
+// ============================================================================
+// PHASE 0 / TASK 11: OPERATOR CONTROL & AUDIT TRAIL TYPES
+// ============================================================================
+
+export type ZenithExecutionMode = 'READ_ONLY' | 'PREFLIGHT_ONLY' | 'LIVE_TESTNET';
+
+export interface OperatorAuditRecord {
+  auditId: string;
+  timestamp: number;
+  mode: ZenithExecutionMode;
+  planId: string;
+  stepId: string;
+  action: string;
+  operatorConfirmationState: string;
+  quoteIdentifiers: Record<string, string>;
+  transactionHashes: Record<string, string | null | undefined>;
+  receiptStates: Record<string, string | number | null | undefined>;
+  actualAmounts: Record<string, string>;
+  failureStates?: string;
+}
+
+// ============================================================================
+// PHASE 1 / TASK 24: GOLDEN PATH EXECUTION OBSERVABILITY & METRICS
+// ============================================================================
+
+export interface GoldenPathExecutionMetrics {
+  sourceSwapDurationMs?: number;
+  sourceOutputExtractionDurationMs?: number;
+  bridgeQuoteDurationMs?: number;
+  bridgeDepositDurationMs?: number;
+  bridgeFillDurationMs?: number;
+  destinationVerificationDurationMs?: number;
+  totalExecutionDurationMs?: number;
+
+  sourceGasUsed?: string;
+  bridgeFee?: string;
+  sourceInputAmount?: string;
+  actualSourceOutput?: string;
+  bridgeExpectedOutput?: string;
+  actualDestinationOutput?: string;
+
+  startedAt?: number;
+  completedAt?: number;
+}
+
+// ============================================================================
+// PHASE 1 / TASK 27: CROSS-PROVIDER ROUTE SELECTION & QUOTE ARBITRATION TYPES
+// ============================================================================
+
+export type NormalizedRouteType = 'SAME_CHAIN' | 'DIRECT_CROSS_CHAIN' | 'COMPOSITE_CROSS_CHAIN';
+
+export type RouteFreshnessState = 'FRESH' | 'EXPIRING_SOON' | 'EXPIRED' | 'UNKNOWN';
+
+export interface NormalizedRoute {
+  routeId: string;
+  sourceChainId: string;
+  destinationChainId: string;
+  sourceToken: Token;
+  destinationToken: Token;
+  inputAmountRaw: string;
+  expectedOutputRaw: string;
+  minimumOutputRaw: string;
+  totalFeeRaw: string;
+  feeToken: Token | string;
+  estimatedGasRaw: string;
+  estimatedGasCostRaw: string;
+  bridgeProvider?: BridgeProtocol | string;
+  sourceDex?: string;
+  destinationDex?: string;
+  quotedAt: number;
+  expiresAt: number;
+  capabilityLevel: ProviderCapabilityLevel;
+  isExecutable: boolean;
+  routeType: NormalizedRouteType;
+  unexecutableReason?: string;
+  diagnostics?: any[];
+  // Optional execution and routing payloads
+  calldata?: string;
+  executionTarget?: string;
+  approvalTarget?: string;
+  valueWei?: string;
+  providerHealth?: ProviderHealthStatus;
+  freshnessState?: RouteFreshnessState;
+  normalizedCostUSD?: string;
+}
+
+export interface CostNormalizationResult {
+  sourceSwapFeeRaw: string;
+  bridgeFeeRaw: string;
+  destSwapFeeRaw: string;
+  gasCostRaw: string;
+  protocolFeeRaw: string;
+  totalCostRaw: string;
+  commonFeeToken: Token | string;
+  normalizedCostUSD?: string;
+  priceSource?: string;
+  priceTimestamp?: number;
+  isAvailable: boolean;
+  unavailableReason?: 'ROUTE_COST_UNAVAILABLE' | string;
+}
+
+export interface RouteArbitrationCandidate {
+  route: NormalizedRoute;
+  score: bigint;
+  rank: number;
+  rejectionReason?: string;
+  costNormalization?: CostNormalizationResult;
+  passedGates: string[];
+  failedGates: string[];
+}
+
+export interface RouteArbitrationResult {
+  selectedRoute: NormalizedRoute | null;
+  executableCandidates: NormalizedRoute[];
+  rejectedCandidates: Array<{ route: NormalizedRoute; reason: string }>;
+  selectionMetrics: {
+    totalEvaluated: number;
+    totalExecutable: number;
+    arbitrationDurationMs: number;
+    tieBrokenByRouteId: boolean;
+  };
+}
+

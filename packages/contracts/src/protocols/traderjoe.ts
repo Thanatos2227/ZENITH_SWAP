@@ -1,8 +1,8 @@
 import { UnsupportedProtocolError } from '../errors';
 
 export const TRADER_JOE_LB_ROUTERS: Record<number, string> = {
-  43114: '0xb4310e7De3e0f14172488457B1A97140eCC94b77',
-  42161: '0xb4310e7De3e0f14172488457B1A97140eCC94b77'
+  43114: '0xB4310e7de3e0f14172488457B1a97140ecc94B77',
+  42161: '0xB4310e7de3e0f14172488457B1a97140ecc94B77'
 };
 
 export const TRADER_JOE_ROUTER_ABI = [

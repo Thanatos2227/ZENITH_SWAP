@@ -451,6 +451,7 @@ test('17. Full End-to-End Swap Execution Lifecycle (EVM & Solana)', async () => 
       })
     }),
     provider: {
+      getBalance: async () => BigInt('10000000000000000000'),
       call: async () => '0x',
       estimateGas: async () => BigInt(150000),
       getFeeData: async () => ({ gasPrice: BigInt(30000000000) }),

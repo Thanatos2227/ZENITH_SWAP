@@ -21,7 +21,11 @@ export const WRAPPED_NATIVE_ADDRESSES: Record<number, string> = {
   10: '0x4200000000000000000000000000000000000006',
   56: '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',
   43114: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
-  31337: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
+  31337: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+  11155111: '0xfff9976782d46cc05630d1f6ebab18b2324d6b14',
+  421614: '0x980b62da83eff3d4576c647993b0c1d7faf17c73',
+  84532: '0x4200000000000000000000000000000000000006',
+  11155420: '0x4200000000000000000000000000000000000006'
 };
 
 export function resolvePoolTokenAddress(token: Token, chainId: number): string {
@@ -337,6 +341,26 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
       token1: '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd',
       reserve0: 100_000n * 10n ** 18n,
       reserve1: 7_500_000n * 10n ** 18n,
+      feeBps: 30
+    }
+  ],
+
+  11155111: [
+    {
+      token0: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+      token1: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+      reserve0: 10_000n * 10n ** 18n,
+      reserve1: 30_000_000n * 10n ** 6n,
+      feeBps: 30
+    }
+  ],
+
+  421614: [
+    {
+      token0: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73',
+      token1: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d',
+      reserve0: 10_000n * 10n ** 18n,
+      reserve1: 30_000_000n * 10n ** 6n,
       feeBps: 30
     }
   ]

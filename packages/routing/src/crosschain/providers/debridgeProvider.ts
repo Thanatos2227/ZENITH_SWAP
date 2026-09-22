@@ -5,6 +5,7 @@ import {
   CrossChainProvider,
   CrossChainQuote,
   CrossChainStatus,
+  ExecutionPlanDiagnostic,
   QuoteRequest,
   Token
 } from '@zenith/types';
@@ -16,10 +17,13 @@ import {
   validateEvmAddress,
   validateTokenAddress,
   validateRecipientAddress,
-  validateExecutionTarget
+  validateExecutionTarget,
+  ProviderUnavailableError
 } from '@zenith/contracts';
 import { isNativeToken, scaleTokenUnits } from '../../dex/dexMath';
 import { formatTokenUnits, parseTokenUnits } from '../../tokenDecimals';
+import { validateCrossChainQuoteExecutability } from '../quoteValidator';
+import { defaultQuoteDiagnosticLogger } from '../quoteDiagnostics';
 
 const dlnInterface = new Interface(DEBRIDGE_DLN_SOURCE_ABI);
 
@@ -34,7 +38,7 @@ export class DeBridgeProvider implements CrossChainProvider {
     tokenOut?: Token
   ): boolean {
     if (!sourceChainId || !destinationChainId) return false;
-    if (sourceChainId === destinationChainId) return false;
+    if (sourceChainId.toLowerCase() === destinationChainId.toLowerCase()) return false;
     const src = defaultChainRegistry.getChain(sourceChainId);
     const dst = defaultChainRegistry.getChain(destinationChainId);
 
@@ -74,12 +78,8 @@ export class DeBridgeProvider implements CrossChainProvider {
     const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 0;
     const priceOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 0;
 
-    const tradeValueUSD = inUnits * priceIn;
-    if (priceIn > 0 && tradeValueUSD < 1.0) {
-      return null;
-    }
-
     const quoteTimestamp = Math.floor(Date.now() / 1000);
+    const startTime = Date.now();
 
     const validatedInputToken = validateTokenAddress(request.tokenIn.address, srcChain.id, request.tokenIn.isNative);
     const validatedOutputToken = validateTokenAddress(request.tokenOut.address, dstChain.id, request.tokenOut.isNative);
@@ -89,9 +89,15 @@ export class DeBridgeProvider implements CrossChainProvider {
     let relayerFee = '0.04%';
     let bridgeFeeUSD = 0;
 
+    let isLiveQuote = false;
+    let quoteDiagnostic: ExecutionPlanDiagnostic | undefined = undefined;
+    let httpStatus: number | undefined = undefined;
+
+    const url = `https://dln.debridge.finance/v1.0/dln/order/quote?srcChainId=${srcChain.chainId}&srcChainTokenIn=${validatedInputToken}&srcChainTokenInAmount=${amountInBig.toString()}&dstChainId=${dstChain.chainId}&dstChainTokenOut=${validatedOutputToken}&prependOperatingExpense=true`;
+
     try {
-      const url = `https://dln.debridge.finance/v1.0/dln/order/quote?srcChainId=${srcChain.chainId}&srcChainTokenIn=${validatedInputToken}&srcChainTokenInAmount=${amountInBig.toString()}&dstChainId=${dstChain.chainId}&dstChainTokenOut=${validatedOutputToken}&prependOperatingExpense=true`;
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      httpStatus = res.status;
       if (res.ok) {
         const data = await res.json();
         const outAmountStr = data.estimation?.dstChainTokenOut?.recommendedAmount || data.estimation?.dstChainTokenOut?.amount;
@@ -105,9 +111,11 @@ export class DeBridgeProvider implements CrossChainProvider {
             const spotRatio = priceIn / priceOut;
             if (rate <= spotRatio * 2 && rate >= spotRatio / 2) {
               destinationAmountBig = parsedAmountBig;
+              isLiveQuote = true;
             }
           } else {
             destinationAmountBig = parsedAmountBig;
+            isLiveQuote = true;
           }
           if (data.estimation?.costsDetails) {
             const opCost = data.estimation.costsDetails.find((c: any) => c.name === 'OperatingExpense');
@@ -127,26 +135,50 @@ export class DeBridgeProvider implements CrossChainProvider {
             relayerFee = `${Number(data.estimation.percentFee).toFixed(4)}%`;
           }
         }
+      } else {
+        const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(res.statusText, res.status);
+        quoteDiagnostic = {
+          code: normalizedCode,
+          message: `deBridge DLN API returned HTTP ${res.status}: ${res.statusText}`,
+          severity: 'WARNING',
+          providerId: 'DEBRIDGE_DLN',
+          timestamp: Date.now()
+        };
       }
-    } catch {
-
+    } catch (apiErr: any) {
+      const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(apiErr, httpStatus);
+      quoteDiagnostic = {
+        code: normalizedCode,
+        message: `deBridge DLN order/quote API request failed: ${apiErr?.message || String(apiErr)}`,
+        severity: 'WARNING',
+        providerId: 'DEBRIDGE_DLN',
+        timestamp: Date.now()
+      };
     }
 
     if (!destinationAmountBig || destinationAmountBig <= 0n) {
-      const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
-      const outDecimals = request.tokenOut.decimals !== undefined ? request.tokenOut.decimals : 18;
       const protocolFeeBps = 4n;
       const feeAmountRaw = (amountInBig * protocolFeeBps) / 10000n;
       const netInBig = amountInBig - feeAmountRaw;
-      const priceIn = request.tokenIn.priceUSD && request.tokenIn.priceUSD > 0 ? request.tokenIn.priceUSD : 1;
-      const priceOut = request.tokenOut.priceUSD && request.tokenOut.priceUSD > 0 ? request.tokenOut.priceUSD : 1;
-      const inUnits = Number(formatTokenUnits(netInBig, inDecimals));
-      const expectedOutUnits = (inUnits * priceIn) / priceOut;
+      const priceInEff = priceIn > 0 ? priceIn : 1;
+      const priceOutEff = priceOut > 0 ? priceOut : 1;
+      const inUnitsEff = Number(formatTokenUnits(netInBig, inDecimals));
+      const expectedOutUnits = (inUnitsEff * priceInEff) / priceOutEff;
       const outRawStr = parseTokenUnits(expectedOutUnits.toFixed(Math.min(outDecimals, 8)), outDecimals);
       destinationAmountBig = BigInt(outRawStr) > 0n ? BigInt(outRawStr) : 1n;
       relayerFee = '0.04%';
       const feeNum = Number(feeAmountRaw) / (10 ** inDecimals);
       bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.04;
+      isLiveQuote = false;
+      if (!quoteDiagnostic) {
+        quoteDiagnostic = {
+          code: 'PROVIDER_UNAVAILABLE',
+          message: 'deBridge DLN API did not return executable quote output. Informational estimate only.',
+          severity: 'WARNING',
+          providerId: 'DEBRIDGE_DLN',
+          timestamp: Date.now()
+        };
+      }
     }
 
     const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;
@@ -188,7 +220,9 @@ export class DeBridgeProvider implements CrossChainProvider {
       }
     }
 
-    return {
+    const diagnostics = quoteDiagnostic ? [quoteDiagnostic] : [];
+
+    const quote: CrossChainQuote = {
       provider: 'DEBRIDGE_DLN',
       providerName: this.name,
       sourceChainId: sourceChainId,
@@ -210,8 +244,38 @@ export class DeBridgeProvider implements CrossChainProvider {
       approvalTarget: sourceContract,
       quoteTimestamp: quoteTimestamp * 1000,
       estimatedTransferTimeSec: estTransferTimeSec,
-      securityRating: 'A'
+      securityRating: 'A',
+      isExecutable: isLiveQuote && calldata !== '0x',
+      unexecutableReason: !isLiveQuote ? (quoteDiagnostic?.code || 'PROVIDER_UNAVAILABLE') : undefined,
+      diagnostics
     };
+
+    const validationResult = validateCrossChainQuoteExecutability(quote, request);
+    quote.isExecutable = validationResult.isExecutable;
+    if (!validationResult.isExecutable) {
+      quote.unexecutableReason = validationResult.unexecutableReason;
+    }
+
+    defaultQuoteDiagnosticLogger.record({
+      provider: 'DEBRIDGE_DLN',
+      providerName: this.name,
+      sourceChainId: request.sourceChainId,
+      destinationChainId: request.destinationChainId,
+      sourceToken: request.tokenIn.symbol,
+      destinationToken: request.tokenOut.symbol,
+      amountInRaw: amountInBig.toString(),
+      requestStatus: isLiveQuote ? 'SUCCESS' : 'FAILED',
+      httpStatus,
+      normalizedError: quoteDiagnostic?.code as any,
+      providerErrorMessage: quoteDiagnostic?.message,
+      isExecutable: Boolean(quote.isExecutable),
+      unexecutableReason: quote.unexecutableReason,
+      latencyMs: Date.now() - startTime,
+      endpoint: url,
+      timestamp: Date.now()
+    });
+
+    return quote;
   }
 
   public async buildExecution(
@@ -219,9 +283,20 @@ export class DeBridgeProvider implements CrossChainProvider {
     userAddress: string,
     recipientAddress?: string
   ): Promise<CrossChainExecution> {
-    const srcChain = defaultChainRegistry.getChain(quote.sourceChainId)!;
-    const dstChain = defaultChainRegistry.getChain(quote.destinationChainId)!;
-    const sourceContract = validateExecutionTarget(getDeBridgeSourceContract(srcChain.chainId!), srcChain.id);
+    if (quote.isExecutable === false) {
+      throw new ProviderUnavailableError(
+        `[DeBridgeProvider] Cannot build execution for unexecutable quote (${quote.unexecutableReason || 'QUOTE_UNAVAILABLE'}). Live verified quote required.`
+      );
+    }
+    const srcChain = defaultChainRegistry.getChain(quote.sourceChainId);
+    if (!srcChain || !srcChain.chainId) {
+      throw new Error(`[DeBridgeProvider] Invalid source chain: ${quote.sourceChainId}`);
+    }
+    const dstChain = defaultChainRegistry.getChain(quote.destinationChainId);
+    if (!dstChain || !dstChain.chainId) {
+      throw new Error(`[DeBridgeProvider] Invalid destination chain: ${quote.destinationChainId}`);
+    }
+    const sourceContract = validateExecutionTarget(getDeBridgeSourceContract(srcChain.chainId), srcChain.id);
 
     const safeUser = validateEvmAddress(userAddress, 'User Address');
     const safeRecipient = validateRecipientAddress(recipientAddress || userAddress, srcChain.id);
@@ -293,11 +368,27 @@ export class DeBridgeProvider implements CrossChainProvider {
                 timestamp: Date.now()
               };
             }
+            if (statusData.state === 'Created' || statusData.state === 'Sent') {
+              return {
+                state: 'FULFILLING',
+                sourceTxHash,
+                isComplete: false,
+                isFailed: false,
+                timestamp: Date.now()
+              };
+            }
           }
         }
       }
     } catch {
-
+      return {
+        state: 'TRACKING_UNAVAILABLE',
+        sourceTxHash,
+        isComplete: false,
+        isFailed: false,
+        errorMessage: 'deBridge DLN tracking API temporarily unreachable',
+        timestamp: Date.now()
+      };
     }
 
     return {

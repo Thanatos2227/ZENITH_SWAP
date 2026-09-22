@@ -5,6 +5,7 @@ import {
   CrossChainProvider,
   CrossChainQuote,
   CrossChainStatus,
+  ExecutionPlanDiagnostic,
   QuoteRequest,
   Token
 } from '@zenith/types';
@@ -16,9 +17,12 @@ import {
   validateEvmAddress,
   validateTokenAddress,
   validateRecipientAddress,
-  validateExecutionTarget
+  validateExecutionTarget,
+  ProviderUnavailableError
 } from '@zenith/contracts';
 import { isNativeToken, scaleTokenUnits } from '../../dex/dexMath';
+import { validateCrossChainQuoteExecutability } from '../quoteValidator';
+import { defaultQuoteDiagnosticLogger } from '../quoteDiagnostics';
 
 const stargateInterface = new Interface(STARGATE_ROUTER_ABI);
 
@@ -53,7 +57,7 @@ export class StargateProvider implements CrossChainProvider {
     tokenOut?: Token
   ): boolean {
     if (!sourceChainId || !destinationChainId) return false;
-    if (sourceChainId === destinationChainId) return false;
+    if (sourceChainId.toLowerCase() === destinationChainId.toLowerCase()) return false;
     const src = defaultChainRegistry.getChain(sourceChainId);
     const dst = defaultChainRegistry.getChain(destinationChainId);
 
@@ -93,6 +97,7 @@ export class StargateProvider implements CrossChainProvider {
     if (amountInBig <= 0n) return null;
 
     const quoteTimestamp = Math.floor(Date.now() / 1000);
+    const startTime = Date.now();
 
     validateTokenAddress(request.tokenIn.address, srcChain.id, request.tokenIn.isNative);
     validateTokenAddress(request.tokenOut.address, dstChain.id, request.tokenOut.isNative);
@@ -103,11 +108,8 @@ export class StargateProvider implements CrossChainProvider {
     const dstPoolId = STARGATE_POOL_IDS[symOut] || (symOut === 'USDC' ? 1 : undefined);
 
     if (!srcPoolId || !dstPoolId) {
-
       return null;
     }
-
-    const dstLzChainId = LZ_CHAIN_IDS[dstChain.chainId!] || dstChain.chainId!;
 
     const protocolFeeBps = 6n;
     const feeAmountRaw = (amountInBig * protocolFeeBps) / 10000n;
@@ -133,28 +135,19 @@ export class StargateProvider implements CrossChainProvider {
     const isNative = isNativeToken(request.tokenIn.address) || Boolean(request.tokenIn.isNative);
     const value = isNative ? amountInBig.toString() : '0';
 
-    let calldata = '0x';
-    if (recipient) {
-      try {
-        const safeRecipient = validateRecipientAddress(recipient, srcChain.id);
-        const recipientBytes = AbiCoder.defaultAbiCoder().encode(['address'], [safeRecipient.toLowerCase()]);
-        calldata = stargateInterface.encodeFunctionData('swap', [
-          dstLzChainId,
-          srcPoolId,
-          dstPoolId,
-          safeRecipient.toLowerCase(),
-          amountInBig,
-          minDestinationAmountBig,
-          [200000, 0, '0x'],
-          recipientBytes,
-          '0x'
-        ]);
-      } catch (err) {
-        console.warn('[StargateProvider] Error encoding calldata preview:', err);
-      }
-    }
+    // Stargate V2 does not have a live quoter API connected in the current codebase.
+    // In accordance with Phase 0 Task 2/6 invariants: unverified estimates must NEVER produce executable calldata.
+    const calldata = '0x';
+    const unexecutableReason = 'QUOTE_UNAVAILABLE: Stargate V2 live quoter not configured (unverified estimates not executable)';
+    const diagnostic: ExecutionPlanDiagnostic = {
+      code: 'QUOTE_UNAVAILABLE',
+      message: unexecutableReason,
+      severity: 'WARNING',
+      providerId: 'STARGATE',
+      timestamp: Date.now()
+    };
 
-    return {
+    const quote: CrossChainQuote = {
       provider: 'STARGATE',
       providerName: this.name,
       sourceChainId: request.sourceChainId,
@@ -176,8 +169,36 @@ export class StargateProvider implements CrossChainProvider {
       approvalTarget: routerAddress,
       quoteTimestamp: quoteTimestamp * 1000,
       estimatedTransferTimeSec: 45,
-      securityRating: 'A+'
+      securityRating: 'A+',
+      isExecutable: false,
+      unexecutableReason,
+      diagnostics: [diagnostic]
     };
+
+    const validationResult = validateCrossChainQuoteExecutability(quote, request);
+    quote.isExecutable = validationResult.isExecutable;
+    if (!validationResult.isExecutable) {
+      quote.unexecutableReason = validationResult.unexecutableReason;
+    }
+
+    defaultQuoteDiagnosticLogger.record({
+      provider: 'STARGATE',
+      providerName: this.name,
+      sourceChainId: request.sourceChainId,
+      destinationChainId: request.destinationChainId,
+      sourceToken: request.tokenIn.symbol,
+      destinationToken: request.tokenOut.symbol,
+      amountInRaw: amountInBig.toString(),
+      requestStatus: 'SKIPPED',
+      normalizedError: 'QUOTE_UNAVAILABLE',
+      providerErrorMessage: unexecutableReason,
+      isExecutable: false,
+      unexecutableReason,
+      latencyMs: Date.now() - startTime,
+      timestamp: Date.now()
+    });
+
+    return quote;
   }
 
   public async buildExecution(
@@ -185,9 +206,20 @@ export class StargateProvider implements CrossChainProvider {
     userAddress: string,
     recipientAddress?: string
   ): Promise<CrossChainExecution> {
-    const srcChain = defaultChainRegistry.getChain(quote.sourceChainId)!;
-    const dstChain = defaultChainRegistry.getChain(quote.destinationChainId)!;
-    const routerAddress = validateExecutionTarget(getStargateRouter(srcChain.chainId!), srcChain.id);
+    if (quote.isExecutable === false) {
+      throw new ProviderUnavailableError(
+        `[StargateProvider] Cannot build execution for unexecutable quote (${quote.unexecutableReason || 'QUOTE_UNAVAILABLE'}). Stargate V2 live quoter is required.`
+      );
+    }
+    const srcChain = defaultChainRegistry.getChain(quote.sourceChainId);
+    if (!srcChain || !srcChain.chainId) {
+      throw new Error(`[StargateProvider] Invalid source chain: ${quote.sourceChainId}`);
+    }
+    const dstChain = defaultChainRegistry.getChain(quote.destinationChainId);
+    if (!dstChain || !dstChain.chainId) {
+      throw new Error(`[StargateProvider] Invalid destination chain: ${quote.destinationChainId}`);
+    }
+    const routerAddress = validateExecutionTarget(getStargateRouter(srcChain.chainId), srcChain.id);
 
     const safeUser = validateEvmAddress(userAddress, 'User Address');
     const safeRecipient = validateRecipientAddress(recipientAddress || userAddress, srcChain.id);
@@ -254,7 +286,14 @@ export class StargateProvider implements CrossChainProvider {
         }
       }
     } catch {
-
+      return {
+        state: 'TRACKING_UNAVAILABLE',
+        sourceTxHash,
+        isComplete: false,
+        isFailed: false,
+        errorMessage: 'LayerZero tracking API temporarily unreachable',
+        timestamp: Date.now()
+      };
     }
 
     return {

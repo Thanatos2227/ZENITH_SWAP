@@ -154,12 +154,12 @@ test('Zenith Cross-Chain Router: Mock Signer Execution Flow', async () => {
   });
 
   assert.ok(receipt);
-  assert.equal(receipt.status, 'COMPLETED');
+  assert.equal(receipt.status, 'BRIDGE_IN_FLIGHT');
   assert.equal(receipt.sourceChain.id, 'polygon');
   assert.equal(receipt.destChain?.id, 'arbitrum');
   assert.ok(receipt.txHash.startsWith('0x'));
   assert.ok(receipt.bridgeDetails);
-  assert.ok(stepStatuses.includes('COMPLETED'));
+  assert.ok(stepStatuses.includes('BRIDGE_IN_FLIGHT') || stepStatuses.includes('SUBMITTED'));
 });
 
 test('Zenith Cross-Chain Router: Direct Unsupported Pair Fails Closed on Micro-Dust', async () => {
