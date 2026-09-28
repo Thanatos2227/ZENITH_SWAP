@@ -39,6 +39,15 @@ function getDatabaseSyncConstructor(): new (path: string) => SQLiteDatabaseSync 
   }
 
   try {
+    // 1. Direct process.getBuiltinModule (standard in Node 22+)
+    if (typeof (process as any).getBuiltinModule === 'function') {
+      const sqliteModule = (process as any).getBuiltinModule('node:sqlite');
+      if (sqliteModule?.DatabaseSync) {
+        return sqliteModule.DatabaseSync;
+      }
+    }
+
+    // 2. Direct require if available in scope or global
     const nodeRequire = (globalThis as any).require || (typeof require !== 'undefined' ? require : undefined);
     if (typeof nodeRequire === 'function') {
       const sqliteModule = nodeRequire('node:sqlite');
@@ -46,11 +55,26 @@ function getDatabaseSyncConstructor(): new (path: string) => SQLiteDatabaseSync 
         return sqliteModule.DatabaseSync;
       }
     }
+
+    // 3. createRequire from node:module
+    try {
+      const modulePkg = (process as any).getBuiltinModule?.('node:module') || (nodeRequire ? nodeRequire('node:module') : undefined);
+      if (modulePkg?.createRequire) {
+        const req = modulePkg.createRequire(process.cwd() + '/index.js');
+        const sqliteModule = req('node:sqlite');
+        if (sqliteModule?.DatabaseSync) {
+          return sqliteModule.DatabaseSync;
+        }
+      }
+    } catch {
+      // Fall through
+    }
   } catch {
     // Ignore and proceed to throw error
   }
 
-  throw new Error("[SQLiteRepo] Node.js 22+ built-in 'node:sqlite' DatabaseSync is not available in current environment.");
+  const detectedNodeVersion = process.versions?.node || 'unknown';
+  throw new Error(`[SQLiteRepo] SQLite persistence requires a supported Node.js runtime (Node.js 22.5.0+) providing 'node:sqlite' DatabaseSync. Detected runtime: v${detectedNodeVersion}.`);
 }
 
 export class SQLiteCrossChainStateRepository implements CrossChainStateRepository {
