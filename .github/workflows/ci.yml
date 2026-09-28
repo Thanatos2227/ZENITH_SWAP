@@ -19,14 +19,23 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+
+      - name: Verify Node runtime
+        run: |
+          node --version
+          npm --version
+          node -e "const { DatabaseSync } = require('node:sqlite'); console.log('DatabaseSync:', typeof DatabaseSync)"
 
       - name: Install Dependencies
         run: npm ci
 
       - name: Anti-Mock & Secret Audit Gate
         run: npm run audit:anti-mock
+
+      - name: Security & Vulnerability Audit Gate
+        run: npm run audit:security
 
       - name: TypeScript Type-Check Gate
         run: npm run type-check
@@ -36,3 +45,4 @@ jobs:
 
       - name: Production Web Application Build Gate
         run: npm run build
+

@@ -28,12 +28,41 @@ export class AuthoritativeTokenRegistry {
     }
   }
 
-  private deepClone<T>(obj: T): T {
-    return JSON.parse(JSON.stringify(obj));
+  private cloneToken(token: TokenIdentity): TokenIdentity {
+    return {
+      tokenId: token.tokenId,
+      networkId: token.networkId,
+      networkIdentityKey: token.networkIdentityKey,
+      family: token.family,
+      namespace: token.namespace,
+      standard: token.standard,
+      address: token.address,
+      normalizedAddress: token.normalizedAddress,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      assetType: token.assetType,
+      isNative: token.isNative,
+      isWrappedNative: token.isWrappedNative,
+      wrappedAddress: token.wrappedAddress,
+      verificationStatus: token.verificationStatus,
+      verificationDimensions: token.verificationDimensions
+        ? { ...token.verificationDimensions }
+        : ({} as any),
+      metadataStatus: token.metadataStatus,
+      capabilityLevel: token.capabilityLevel,
+      onboardingState: token.onboardingState,
+      source: token.source,
+      lastVerifiedAt: token.lastVerifiedAt,
+      isFungible: token.isFungible,
+      isNFT: token.isNFT,
+      isMultiToken: token.isMultiToken,
+      tags: token.tags ? [...token.tags] : undefined
+    };
   }
 
   private indexToken(token: TokenIdentity): void {
-    const cloned = this.deepClone(token);
+    const cloned = this.cloneToken(token);
     const tokenId = cloned.tokenId;
     const identityKey = cloned.networkIdentityKey
       ? buildTokenIdentityKey(cloned.networkIdentityKey, cloned.standard, cloned.normalizedAddress || cloned.symbol)
@@ -112,12 +141,12 @@ export class AuthoritativeTokenRegistry {
 
   public getToken(tokenId: string): TokenIdentity | undefined {
     const token = this.tokensById.get(tokenId);
-    return token ? this.deepClone(token) : undefined;
+    return token ? this.cloneToken(token) : undefined;
   }
 
   public getTokenByIdentityKey(identityKey: string): TokenIdentity | undefined {
     const token = this.tokensByIdentityKey.get(identityKey);
-    return token ? this.deepClone(token) : undefined;
+    return token ? this.cloneToken(token) : undefined;
   }
 
   public getTokenByAddress(
@@ -126,26 +155,26 @@ export class AuthoritativeTokenRegistry {
     address: string
   ): TokenIdentity | undefined {
     const netId = networkId.trim().toLowerCase();
-    const network = defaultAuthoritativeNetworkRegistry.getNetwork(netId);
-    if (!network) return undefined;
+    const family = defaultAuthoritativeNetworkRegistry.getNetworkFamily(netId);
+    if (!family) return undefined;
 
     let normalized: string;
     try {
-      normalized = normalizeTokenAddress(network.family, address, { allowZeroAddress: false });
+      normalized = normalizeTokenAddress(family, address, { allowZeroAddress: false });
     } catch {
       return undefined;
     }
 
     const token = this.tokensByNetworkAndAddress.get(netId)?.get(normalized.toLowerCase());
     if (token && (standard === 'UNSUPPORTED' || token.standard === standard || standard === 'ERC20' || standard === 'SPL')) {
-      return this.deepClone(token);
+      return this.cloneToken(token);
     }
-    return token ? this.deepClone(token) : undefined;
+    return token ? this.cloneToken(token) : undefined;
   }
 
   public getTokens(networkId: string): TokenIdentity[] {
     const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
-    return this.deepClone(list);
+    return list.map((t) => this.cloneToken(t));
   }
 
   public getTokensByStandard(networkId: string, standard: TokenStandard): TokenIdentity[] {
@@ -154,32 +183,32 @@ export class AuthoritativeTokenRegistry {
   }
 
   public getNativeToken(networkId: string): TokenIdentity | undefined {
-    const list = this.getTokens(networkId);
+    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
     const native = list.find((t) => t.isNative && t.standard === 'NATIVE');
-    return native ? this.deepClone(native) : undefined;
+    return native ? this.cloneToken(native) : undefined;
   }
 
   public getWrappedNativeToken(networkId: string): TokenIdentity | undefined {
-    const list = this.getTokens(networkId);
+    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
     const wrapped = list.find((t) => t.isWrappedNative);
-    return wrapped ? this.deepClone(wrapped) : undefined;
+    return wrapped ? this.cloneToken(wrapped) : undefined;
   }
 
   public resolveTokenIdentity(input: TokenResolutionInput): TokenResolutionResult {
     // 1. Direct tokenId lookup
     if (input.tokenId) {
-      const token = this.getToken(input.tokenId);
+      const token = this.tokensById.get(input.tokenId);
       if (token) {
-        return { status: 'RESOLVED_EXACT', token };
+        return { status: 'RESOLVED_EXACT', token: this.cloneToken(token) };
       }
       return { status: 'UNRESOLVED', error: `No token registered with tokenId "${input.tokenId}"` };
     }
 
     // 2. Direct identityKey lookup
     if (input.identityKey) {
-      const token = this.getTokenByIdentityKey(input.identityKey);
+      const token = this.tokensByIdentityKey.get(input.identityKey);
       if (token) {
-        return { status: 'RESOLVED_EXACT', token };
+        return { status: 'RESOLVED_EXACT', token: this.cloneToken(token) };
       }
       return { status: 'UNRESOLVED', error: `No token registered with identityKey "${input.identityKey}"` };
     }
@@ -208,12 +237,12 @@ export class AuthoritativeTokenRegistry {
       const matches = symMap?.get(input.symbol.trim().toUpperCase()) || [];
 
       if (matches.length === 1) {
-        return { status: 'RESOLVED_EXACT', token: this.deepClone(matches[0]) };
+        return { status: 'RESOLVED_EXACT', token: this.cloneToken(matches[0]) };
       }
       if (matches.length > 1) {
         return {
           status: 'RESOLVED_AMBIGUOUS',
-          matches: this.deepClone(matches),
+          matches: matches.map((m) => this.cloneToken(m)),
           error: `Multiple tokens match symbol "${input.symbol}" on network "${input.networkId}"`
         };
       }

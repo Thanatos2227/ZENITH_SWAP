@@ -8,6 +8,9 @@
     "apps/*",
     "contracts/evm"
   ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "npm run dev --workspace=@zenith/web",
     "build": "npm run build --workspaces --if-present",

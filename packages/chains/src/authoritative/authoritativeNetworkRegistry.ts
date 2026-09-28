@@ -26,11 +26,36 @@ import {
 import { ZENITH_AUTHORITATIVE_NETWORKS } from './networkRegistry.data';
 import { NetworkRegistryValidationEngine } from './networkRegistryValidation';
 
-function deepClone<T>(obj: T): T {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(obj);
-  }
-  return JSON.parse(JSON.stringify(obj));
+function cloneNativeAsset(asset: AuthoritativeNativeAsset): AuthoritativeNativeAsset {
+  return { ...asset };
+}
+
+function cloneGasModel(gas: AuthoritativeGasModelConfig): AuthoritativeGasModelConfig {
+  return { ...gas };
+}
+
+function cloneFinalityModel(fin: AuthoritativeFinalityConfig): AuthoritativeFinalityConfig {
+  return { ...fin };
+}
+
+function cloneRpcMetadata(rpc: AuthoritativeRpcMetadata): AuthoritativeRpcMetadata {
+  return { ...rpc };
+}
+
+function cloneExplorerMetadata(exp: AuthoritativeExplorerMetadata): AuthoritativeExplorerMetadata {
+  return { ...exp };
+}
+
+function cloneNetworkIdentity(net: AuthoritativeNetworkIdentity): AuthoritativeNetworkIdentity {
+  return {
+    ...net,
+    aliases: net.aliases ? [...net.aliases] : [],
+    nativeAsset: cloneNativeAsset(net.nativeAsset),
+    gasModel: cloneGasModel(net.gasModel),
+    finality: cloneFinalityModel(net.finality),
+    rpcEndpoints: net.rpcEndpoints ? net.rpcEndpoints.map(cloneRpcMetadata) : [],
+    explorer: cloneExplorerMetadata(net.explorer)
+  };
 }
 
 export class AuthoritativeNetworkRegistry {
@@ -60,7 +85,7 @@ export class AuthoritativeNetworkRegistry {
     }
 
     const canonicalId = network.networkId.toLowerCase().trim();
-    const cloned = deepClone(network);
+    const cloned = cloneNetworkIdentity(network);
 
     this.networks.set(canonicalId, cloned);
 
@@ -129,13 +154,22 @@ export class AuthoritativeNetworkRegistry {
   }
 
   /**
+   * Fast lookup for network family without cloning the network identity object.
+   */
+  public getNetworkFamily(networkIdOrAlias: string | number): NetworkFamily | undefined {
+    const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
+    if (!canonicalId) return undefined;
+    return this.networks.get(canonicalId)?.family;
+  }
+
+  /**
    * Retrieves a deep-cloned AuthoritativeNetworkIdentity by networkId or alias.
    */
   public getNetwork(networkIdOrAlias: string | number): AuthoritativeNetworkIdentity | undefined {
     const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
     if (!canonicalId) return undefined;
     const net = this.networks.get(canonicalId);
-    return net ? deepClone(net) : undefined;
+    return net ? cloneNetworkIdentity(net) : undefined;
   }
 
   /**
@@ -149,7 +183,8 @@ export class AuthoritativeNetworkRegistry {
     const key = buildNetworkIdentityKey(family, namespace, chainId).toLowerCase();
     const canonicalId = this.identityKeyToNetworkId.get(key);
     if (!canonicalId) return undefined;
-    return this.getNetwork(canonicalId);
+    const net = this.networks.get(canonicalId);
+    return net ? cloneNetworkIdentity(net) : undefined;
   }
 
   /**
@@ -159,14 +194,15 @@ export class AuthoritativeNetworkRegistry {
     const lower = alias.toLowerCase().trim();
     const canonicalId = this.aliasToNetworkId.get(lower);
     if (!canonicalId) return undefined;
-    return this.getNetwork(canonicalId);
+    const net = this.networks.get(canonicalId);
+    return net ? cloneNetworkIdentity(net) : undefined;
   }
 
   /**
    * Returns all registered networks (deep-cloned).
    */
   public getNetworks(): AuthoritativeNetworkIdentity[] {
-    return Array.from(this.networks.values()).map((net) => deepClone(net));
+    return Array.from(this.networks.values()).map((net) => cloneNetworkIdentity(net));
   }
 
   /**
@@ -201,40 +237,50 @@ export class AuthoritativeNetworkRegistry {
    * Retrieves the authoritative native asset metadata for a network.
    */
   public getNativeAsset(networkId: string | number): AuthoritativeNativeAsset | undefined {
-    const net = this.getNetwork(networkId);
-    return net ? deepClone(net.nativeAsset) : undefined;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return undefined;
+    const net = this.networks.get(canonicalId);
+    return net ? cloneNativeAsset(net.nativeAsset) : undefined;
   }
 
   /**
    * Retrieves the authoritative gas model configuration for a network.
    */
   public getGasModel(networkId: string | number): AuthoritativeGasModelConfig | undefined {
-    const net = this.getNetwork(networkId);
-    return net ? deepClone(net.gasModel) : undefined;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return undefined;
+    const net = this.networks.get(canonicalId);
+    return net ? cloneGasModel(net.gasModel) : undefined;
   }
 
   /**
    * Retrieves the authoritative finality configuration for a network.
    */
   public getFinalityModel(networkId: string | number): AuthoritativeFinalityConfig | undefined {
-    const net = this.getNetwork(networkId);
-    return net ? deepClone(net.finality) : undefined;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return undefined;
+    const net = this.networks.get(canonicalId);
+    return net ? cloneFinalityModel(net.finality) : undefined;
   }
 
   /**
    * Retrieves the authoritative RPC metadata for a network.
    */
   public getRpcMetadata(networkId: string | number): AuthoritativeRpcMetadata[] {
-    const net = this.getNetwork(networkId);
-    return net ? deepClone(net.rpcEndpoints) : [];
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return [];
+    const net = this.networks.get(canonicalId);
+    return net && net.rpcEndpoints ? net.rpcEndpoints.map(cloneRpcMetadata) : [];
   }
 
   /**
    * Retrieves the authoritative explorer configuration for a network.
    */
   public getExplorerMetadata(networkId: string | number): AuthoritativeExplorerMetadata | undefined {
-    const net = this.getNetwork(networkId);
-    return net ? deepClone(net.explorer) : undefined;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return undefined;
+    const net = this.networks.get(canonicalId);
+    return net ? cloneExplorerMetadata(net.explorer) : undefined;
   }
 
   /**
