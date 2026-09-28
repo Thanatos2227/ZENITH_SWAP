@@ -91,6 +91,54 @@ export class CrossChainAggregator {
             }
             return a.gasEstimateUSD - b.gasEstimateUSD;
         });
+      } else {
+        compositeExecutionMode = 'SEPARATE_DESTINATION_TX';
+        isExecutable = Boolean(bestBridgeQuote.isExecutable);
+        unexecutableReason = bestBridgeQuote.unexecutableReason;
+      }
+
+      const compositeQuote: CrossChainQuote = {
+        provider: bestBridgeQuote.provider,
+        providerName: `${bestBridgeQuote.providerName} (Swap + Bridge)`,
+        sourceChainId: sourceChainId,
+        destinationChainId: destinationChainId,
+        sourceToken: request.tokenIn,
+        destinationToken: request.tokenOut,
+        sourceAmountRaw: amountInBig.toString(),
+        destinationAmountRaw: finalAmountOutBig.toString(),
+        minDestinationAmountRaw: minFinalAmountOutBig.toString(),
+        bridgeFeeUSD: Number((bestBridgeQuote.bridgeFeeUSD + (sourceDexQuote?.gasCostUSD || 0) * 0.05).toFixed(4)),
+        relayerFee: bestBridgeQuote.relayerFee,
+        gasEstimateUSD: Number(
+          (
+            bestBridgeQuote.gasEstimateUSD +
+            (sourceDexQuote?.gasCostUSD || 0) +
+            (destDexQuote?.gasCostUSD || 0)
+          ).toFixed(4)
+        ),
+        recipient: request.recipientAddress || request.userWalletAddress || '',
+        expiration: bestBridgeQuote.expiration,
+        routeIdentifier: `connector-${symbol.toLowerCase()}-${bestBridgeQuote.routeIdentifier}`,
+        executionTarget: sourceDexQuote?.executionTarget || bestBridgeQuote.executionTarget,
+        calldata: sourceDexQuote?.calldata || bestBridgeQuote.calldata || '0x',
+        value: request.tokenIn.isNative ? amountInBig.toString() : '0',
+        approvalTarget: sourceDexQuote?.approvalTarget || bestBridgeQuote.approvalTarget,
+        quoteTimestamp: bestBridgeQuote.quoteTimestamp,
+        protocolTimestampSec: bestBridgeQuote.protocolTimestampSec,
+        estimatedTransferTimeSec: bestBridgeQuote.estimatedTransferTimeSec + (sourceDexQuote ? 5 : 0),
+        securityRating: bestBridgeQuote.securityRating,
+        sourceConnectorToken: srcConnector,
+        destConnectorToken: dstConnector,
+        sourceDexQuote: sourceDexQuote || undefined,
+        destDexQuote: destDexQuote || undefined,
+        underlyingBridgeQuote: bestBridgeQuote,
+        compositeExecutionMode,
+        isExecutable,
+        unexecutableReason,
+        diagnostics: compositeDiagnostics
+      } as any;
+
+      compositeQuotes.push(compositeQuote);
     }
     public async getBestQuote(request: QuoteRequest): Promise<CrossChainQuote | null> {
         const quotes = await this.getQuotes(request);

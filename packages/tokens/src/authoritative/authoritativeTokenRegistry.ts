@@ -5,48 +5,102 @@ import { TokenRegistryValidationEngine } from './tokenRegistryValidation';
 import { normalizeTokenAddress } from './addressNormalizer';
 import { buildTokenIdentityKey } from './tokenIdentity.types';
 export class AuthoritativeTokenRegistry {
-    private readonly tokensById = new Map<string, TokenIdentity>();
-    private readonly tokensByIdentityKey = new Map<string, TokenIdentity>();
-    private readonly tokensByNetworkAndAddress = new Map<string, Map<string, TokenIdentity>>();
-    private readonly tokensByNetworkAndSymbol = new Map<string, Map<string, TokenIdentity[]>>();
-    private readonly tokensByNetwork = new Map<string, TokenIdentity[]>();
-    constructor(initialTokens: readonly TokenIdentity[] = ZENITH_CANONICAL_TOKENS) {
-        TokenRegistryValidationEngine.validate([...initialTokens]);
-        for (const token of initialTokens) {
-            this.indexToken(token);
-        }
+  private readonly tokensById = new Map<string, TokenIdentity>();
+  private readonly tokensByIdentityKey = new Map<string, TokenIdentity>();
+  private readonly tokensByNetworkAndAddress = new Map<string, Map<string, TokenIdentity>>();
+  private readonly tokensByNetworkAndNormalizedAddress = new Map<string, TokenIdentity>();
+  private readonly tokensByNetworkAndSymbol = new Map<string, Map<string, TokenIdentity[]>>();
+  private readonly tokensByNetwork = new Map<string, TokenIdentity[]>();
+
+  constructor(initialTokens: readonly TokenIdentity[] = ZENITH_CANONICAL_TOKENS) {
+    TokenRegistryValidationEngine.validate([...initialTokens]);
+    for (const token of initialTokens) {
+      this.indexToken(token);
     }
-    private cloneToken(token: TokenIdentity): TokenIdentity {
-        return {
-            tokenId: token.tokenId,
-            networkId: token.networkId,
-            networkIdentityKey: token.networkIdentityKey,
-            family: token.family,
-            namespace: token.namespace,
-            standard: token.standard,
-            address: token.address,
-            normalizedAddress: token.normalizedAddress,
-            symbol: token.symbol,
-            name: token.name,
-            decimals: token.decimals,
-            assetType: token.assetType,
-            isNative: token.isNative,
-            isWrappedNative: token.isWrappedNative,
-            wrappedAddress: token.wrappedAddress,
-            verificationStatus: token.verificationStatus,
-            verificationDimensions: token.verificationDimensions
-                ? { ...token.verificationDimensions }
-                : ({} as any),
-            metadataStatus: token.metadataStatus,
-            capabilityLevel: token.capabilityLevel,
-            onboardingState: token.onboardingState,
-            source: token.source,
-            lastVerifiedAt: token.lastVerifiedAt,
-            isFungible: token.isFungible,
-            isNFT: token.isNFT,
-            isMultiToken: token.isMultiToken,
-            tags: token.tags ? [...token.tags] : undefined
-        };
+  }
+
+  private cloneToken(token: TokenIdentity): TokenIdentity {
+    return {
+      ...token,
+      verificationDimensions: token.verificationDimensions
+        ? { ...token.verificationDimensions }
+        : ({} as any),
+      tags: token.tags ? [...token.tags] : undefined
+    };
+  }
+
+  private getIdentityKey(token: TokenIdentity): string {
+    return token.networkIdentityKey
+      ? buildTokenIdentityKey(token.networkIdentityKey, token.standard, token.normalizedAddress || token.symbol)
+      : token.tokenId;
+  }
+
+  private unindexToken(token: TokenIdentity): void {
+    this.tokensById.delete(token.tokenId);
+    this.tokensByIdentityKey.delete(this.getIdentityKey(token));
+
+    const netId = token.networkId.toLowerCase();
+    const netList = this.tokensByNetwork.get(netId);
+    if (netList) {
+      const filtered = netList.filter((entry) => entry.tokenId !== token.tokenId);
+      if (filtered.length > 0) this.tokensByNetwork.set(netId, filtered);
+      else this.tokensByNetwork.delete(netId);
+    }
+
+    if (token.normalizedAddress) {
+      const normLower = token.normalizedAddress.toLowerCase();
+      const addressMap = this.tokensByNetworkAndAddress.get(netId);
+      addressMap?.delete(normLower);
+      if (addressMap && addressMap.size === 0) this.tokensByNetworkAndAddress.delete(netId);
+      this.tokensByNetworkAndNormalizedAddress.delete(`${netId}:${normLower}`);
+    }
+
+    const symMap = this.tokensByNetworkAndSymbol.get(netId);
+    if (symMap) {
+      const symKey = token.symbol.toUpperCase();
+      const symList = symMap.get(symKey);
+      if (symList) {
+        const filtered = symList.filter((entry) => entry.tokenId !== token.tokenId);
+        if (filtered.length > 0) symMap.set(symKey, filtered);
+        else symMap.delete(symKey);
+      }
+      if (symMap.size === 0) this.tokensByNetworkAndSymbol.delete(netId);
+    }
+  }
+
+  private replaceIndexedToken(token: TokenIdentity): void {
+    const current = this.tokensById.get(token.tokenId);
+    if (!current) {
+      throw new Error(`Cannot replace unknown token "${token.tokenId}"`);
+    }
+    this.unindexToken(current);
+    this.indexToken(token);
+  }
+
+  private indexToken(token: TokenIdentity): void {
+    const cloned = this.cloneToken(token);
+    const tokenId = cloned.tokenId;
+    const identityKey = this.getIdentityKey(cloned);
+
+    this.tokensById.set(tokenId, cloned);
+    this.tokensByIdentityKey.set(identityKey, cloned);
+
+    const netId = cloned.networkId.toLowerCase();
+
+    // Index by network
+    if (!this.tokensByNetwork.has(netId)) {
+      this.tokensByNetwork.set(netId, []);
+    }
+    this.tokensByNetwork.get(netId)!.push(cloned);
+
+    // Index by address within network
+    if (cloned.normalizedAddress) {
+      const normLower = cloned.normalizedAddress.toLowerCase();
+      if (!this.tokensByNetworkAndAddress.has(netId)) {
+        this.tokensByNetworkAndAddress.set(netId, new Map());
+      }
+      this.tokensByNetworkAndAddress.get(netId)!.set(normLower, cloned);
+      this.tokensByNetworkAndNormalizedAddress.set(`${netId}:${normLower}`, cloned);
     }
     private indexToken(token: TokenIdentity): void {
         const cloned = this.cloneToken(token);
@@ -115,45 +169,106 @@ export class AuthoritativeTokenRegistry {
         const token = this.tokensById.get(tokenId);
         return token ? this.cloneToken(token) : undefined;
     }
-    public getTokenByIdentityKey(identityKey: string): TokenIdentity | undefined {
-        const token = this.tokensByIdentityKey.get(identityKey);
-        return token ? this.cloneToken(token) : undefined;
+
+    const identityKey = this.getIdentityKey(token);
+    if (this.tokensByIdentityKey.has(identityKey)) {
+      throw new Error(`Token with identity key "${identityKey}" is already registered`);
     }
-    public getTokenByAddress(networkId: string, standard: TokenStandard, address: string): TokenIdentity | undefined {
-        const netId = networkId.trim().toLowerCase();
-        const family = defaultAuthoritativeNetworkRegistry.getNetworkFamily(netId);
-        if (!family)
-            return undefined;
-        let normalized: string;
-        try {
-            normalized = normalizeTokenAddress(family, address, { allowZeroAddress: false });
+
+    if (!token.isNative && token.address) {
+      const network = defaultAuthoritativeNetworkRegistry.getNetwork(token.networkId);
+      if (network) {
+        const normalizedAddress = normalizeTokenAddress(network.family, token.address, { allowZeroAddress: false }).toLowerCase();
+        const existing = this.tokensByNetworkAndAddress.get(token.networkId.trim().toLowerCase())?.get(normalizedAddress);
+        if (existing) {
+          throw new Error(
+            `Token address collision: network "${token.networkId}" address "${normalizedAddress}" is already registered by token "${existing.tokenId}"`
+          );
         }
-        catch {
-            return undefined;
-        }
-        const token = this.tokensByNetworkAndAddress.get(netId)?.get(normalized.toLowerCase());
-        if (token && (standard === 'UNSUPPORTED' || token.standard === standard || standard === 'ERC20' || standard === 'SPL')) {
-            return this.cloneToken(token);
-        }
-        return token ? this.cloneToken(token) : undefined;
+      }
     }
-    public getTokens(networkId: string): TokenIdentity[] {
-        const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
-        return list.map((t) => this.cloneToken(t));
+
+    this.indexToken(token);
+  }
+
+  public removeToken(tokenId: string): boolean {
+    const token = this.tokensById.get(tokenId);
+    if (!token) return false;
+
+    this.tokensById.delete(tokenId);
+    this.unindexToken(token);
+    return true;
+  }
+
+  public getToken(tokenId: string): TokenIdentity | undefined {
+    const token = this.tokensById.get(tokenId);
+    return token ? this.cloneToken(token) : undefined;
+  }
+
+  public getTokenByIdentityKey(identityKey: string): TokenIdentity | undefined {
+    const token = this.tokensByIdentityKey.get(identityKey);
+    return token ? this.cloneToken(token) : undefined;
+  }
+
+  public getTokenByAddress(
+    networkId: string,
+    standard: TokenStandard,
+    address: string
+  ): TokenIdentity | undefined {
+    const netId = networkId.trim().toLowerCase();
+    const canonicalNetId = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(netId);
+    if (!canonicalNetId) return undefined;
+
+    const family = defaultAuthoritativeNetworkRegistry.getNetworkFamily(canonicalNetId);
+    if (!family) return undefined;
+
+    let normalized: string;
+    try {
+      normalized = normalizeTokenAddress(family, address, { allowZeroAddress: false });
+    } catch {
+      return undefined;
     }
-    public getTokensByStandard(networkId: string, standard: TokenStandard): TokenIdentity[] {
-        const list = this.getTokens(networkId);
-        return list.filter((t) => t.standard === standard);
+
+    const normLower = normalized.toLowerCase();
+    const token = this.tokensByNetworkAndNormalizedAddress.get(`${canonicalNetId}:${normLower}`)
+      || this.tokensByNetworkAndAddress.get(canonicalNetId)?.get(normLower);
+
+    if (token && (standard === 'UNSUPPORTED' || token.standard === standard)) {
+      return this.cloneToken(token);
     }
-    public getNativeToken(networkId: string): TokenIdentity | undefined {
-        const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
-        const native = list.find((t) => t.isNative && t.standard === 'NATIVE');
-        return native ? this.cloneToken(native) : undefined;
-    }
-    public getWrappedNativeToken(networkId: string): TokenIdentity | undefined {
-        const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
-        const wrapped = list.find((t) => t.isWrappedNative);
-        return wrapped ? this.cloneToken(wrapped) : undefined;
+    return undefined;
+  }
+
+  public getTokens(networkId: string): TokenIdentity[] {
+    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
+    return list.map((t) => this.cloneToken(t));
+  }
+
+  public getTokensByStandard(networkId: string, standard: TokenStandard): TokenIdentity[] {
+    const list = this.getTokens(networkId);
+    return list.filter((t) => t.standard === standard);
+  }
+
+  public getNativeToken(networkId: string): TokenIdentity | undefined {
+    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
+    const native = list.find((t) => t.isNative && t.standard === 'NATIVE');
+    return native ? this.cloneToken(native) : undefined;
+  }
+
+  public getWrappedNativeToken(networkId: string): TokenIdentity | undefined {
+    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
+    const wrapped = list.find((t) => t.isWrappedNative);
+    return wrapped ? this.cloneToken(wrapped) : undefined;
+  }
+
+  public resolveTokenIdentity(input: TokenResolutionInput): TokenResolutionResult {
+    // 1. Direct tokenId lookup
+    if (input.tokenId) {
+      const token = this.tokensById.get(input.tokenId);
+      if (token) {
+        return { status: 'RESOLVED_EXACT', token: this.cloneToken(token) };
+      }
+      return { status: 'UNRESOLVED', error: `No token registered with tokenId "${input.tokenId}"` };
     }
     public resolveTokenIdentity(input: TokenResolutionInput): TokenResolutionResult {
         if (input.tokenId) {
@@ -258,15 +373,20 @@ export class AuthoritativeTokenRegistry {
         (mutable as any).lastVerifiedAt = evidence.timestamp || Date.now();
         this.tokensById.set(tokenId, mutable);
     }
-    public disableToken(tokenId: string, _reason: string): void {
-        const token = this.tokensById.get(tokenId);
-        if (!token) {
-            throw new Error(`Cannot disable unknown token "${tokenId}"`);
-        }
-        const mutable = { ...token };
-        (mutable as any).onboardingState = 'DISABLED';
-        (mutable as any).capabilityLevel = 'UNSUPPORTED';
-        this.tokensById.set(tokenId, mutable);
+    (mutable as any).lastVerifiedAt = evidence.timestamp || Date.now();
+
+    this.replaceIndexedToken(mutable);
+  }
+
+  public disableToken(tokenId: string, _reason: string): void {
+    const token = this.tokensById.get(tokenId);
+    if (!token) {
+      throw new Error(`Cannot disable unknown token "${tokenId}"`);
     }
+    const mutable = { ...token };
+    (mutable as any).onboardingState = 'DISABLED';
+    (mutable as any).capabilityLevel = 'UNSUPPORTED';
+    this.replaceIndexedToken(mutable);
+  }
 }
 export const defaultAuthoritativeTokenRegistry = new AuthoritativeTokenRegistry();

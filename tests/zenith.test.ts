@@ -261,25 +261,32 @@ test('12. Cross-Chain Stargate & Liquidity Routing', async () => {
     assert.equal(crossQuote.intent?.status, 'CREATED');
 });
 test('13. Cross-Chain Intent Creation, Solver Competition, Nonce & Replay Protection', async () => {
-    const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
-    const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
-    const intent: CrossChainIntent = {
-        orderId: `intent_test_${Date.now()}`,
-        sourceChainId: 'ethereum',
-        destinationChainId: 'arbitrum',
-        sourceToken: tokenIn,
-        destinationToken: tokenOut,
-        sourceAmountRaw: '1000000000',
-        minDestinationAmountRaw: '995000000',
-        recipient: '0x9999999999999999999999999999999999999999',
-        deadline: Date.now() + 100000,
-        nonce: 99999,
-        status: 'CREATED',
-        createdAt: Date.now()
-    };
-    const solverQuotes = await defaultIntentEngine.getCompetitiveQuotes(intent);
-    assert.ok(solverQuotes.length >= 1);
-    assert.ok(solverQuotes[0].solverReputationScore >= 90);
+  const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
+  const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
+
+  const intent: CrossChainIntent = {
+    orderId: `intent_test_${Date.now()}`,
+    sourceChainId: 'ethereum',
+    destinationChainId: 'arbitrum',
+    sourceToken: tokenIn,
+    destinationToken: tokenOut,
+    sourceAmountRaw: '1000000000',
+    minDestinationAmountRaw: '995000000',
+    recipient: '0x8ba1f109551bD432803012645Ac136ddd64DBA72',
+    deadline: Date.now() + 100000,
+    nonce: 99999,
+    status: 'CREATED',
+    createdAt: Date.now()
+  };
+
+  const solverQuotes = await defaultIntentEngine.getCompetitiveQuotes(intent);
+  assert.ok(solverQuotes.length >= 1);
+  assert.ok(solverQuotes[0].solverReputationScore >= 90);
+
+  defaultIntentEngine.registerIntent(intent);
+  assert.equal(defaultIntentEngine.getIntent(intent.orderId)?.status, 'CREATED');
+
+  assert.throws(() => {
     defaultIntentEngine.registerIntent(intent);
     assert.equal(defaultIntentEngine.getIntent(intent.orderId)?.status, 'CREATED');
     assert.throws(() => {
