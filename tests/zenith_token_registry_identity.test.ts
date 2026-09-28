@@ -710,6 +710,38 @@ describe('ZENITH — PHASE 2 TASK 39: AUTHORITATIVE TOKEN REGISTRY & TOKEN IDENT
       const res = defaultAuthoritativeTokenRegistry.getTokenByAddress('arbitrum', 'ERC20', '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48');
       assert.strictEqual(res, undefined, 'Ethereum USDC address must not resolve on Arbitrum');
     });
+
+    it('15.6 Rejects registration when an address is already authoritative on the same network', () => {
+      const reg = new AuthoritativeTokenRegistry(ZENITH_CANONICAL_TOKENS);
+      const canonical = reg.getToken('ethereum:erc20:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')!;
+      const duplicate = { ...canonical, tokenId: 'ethereum:erc20:duplicate-address-registration' };
+      assert.throws(() => reg.registerToken(duplicate), /Token address collision/);
+    });
+
+    it('15.7 Does not allow a requested standard to bypass the canonical token standard', () => {
+      const reg = new AuthoritativeTokenRegistry(ZENITH_CANONICAL_TOKENS);
+      const address = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+      assert.ok(reg.getTokenByAddress('ethereum', 'ERC20', address));
+      assert.strictEqual(reg.getTokenByAddress('ethereum', 'SPL', address), undefined);
+      assert.strictEqual(reg.getTokenByAddress('ethereum', 'WRAPPED_NATIVE', address), undefined);
+    });
+
+    it('15.8 Promotion and disable operations atomically update every token index', () => {
+      const reg = new AuthoritativeTokenRegistry(ZENITH_CANONICAL_TOKENS);
+      const canonical = reg.getWrappedNativeToken('ethereum')!;
+      const identityKey = buildTokenIdentityKey(canonical.networkIdentityKey, canonical.standard, canonical.normalizedAddress!);
+
+      reg.promoteToken(canonical.tokenId, 'LIVE_VERIFIED', { reason: 'index consistency test', timestamp: 123456789 });
+
+      assert.strictEqual(reg.getToken(canonical.tokenId)?.capabilityLevel, 'LIVE_VERIFIED');
+      assert.strictEqual(reg.getTokenByAddress('ethereum', canonical.standard, canonical.address!)?.capabilityLevel, 'LIVE_VERIFIED');
+      assert.strictEqual(reg.getTokenByIdentityKey(identityKey)?.capabilityLevel, 'LIVE_VERIFIED');
+
+      reg.disableToken(canonical.tokenId, 'index consistency test');
+      assert.strictEqual(reg.getToken(canonical.tokenId)?.capabilityLevel, 'UNSUPPORTED');
+      assert.strictEqual(reg.getTokenByAddress('ethereum', canonical.standard, canonical.address!)?.capabilityLevel, 'UNSUPPORTED');
+      assert.strictEqual(reg.getTokenByIdentityKey(identityKey)?.capabilityLevel, 'UNSUPPORTED');
+    });
   });
 
   // ==========================================================================
