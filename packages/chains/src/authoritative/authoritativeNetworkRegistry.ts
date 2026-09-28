@@ -31,15 +31,18 @@ function cloneNativeAsset(asset: AuthoritativeNativeAsset): AuthoritativeNativeA
 }
 
 function cloneGasModel(gas: AuthoritativeGasModelConfig): AuthoritativeGasModelConfig {
-  return { ...gas };
+  return {
+    ...gas,
+    l2FeeComponents: gas.l2FeeComponents ? { ...gas.l2FeeComponents } : undefined
+  };
 }
 
 function cloneFinalityModel(fin: AuthoritativeFinalityConfig): AuthoritativeFinalityConfig {
   return { ...fin };
 }
 
-function cloneRpcMetadata(rpc: AuthoritativeRpcMetadata): AuthoritativeRpcMetadata {
-  return { ...rpc };
+function cloneRpcMetadata(rpcs: AuthoritativeRpcMetadata[]): AuthoritativeRpcMetadata[] {
+  return rpcs ? rpcs.map((r) => ({ ...r })) : [];
 }
 
 function cloneExplorerMetadata(exp: AuthoritativeExplorerMetadata): AuthoritativeExplorerMetadata {
@@ -49,12 +52,15 @@ function cloneExplorerMetadata(exp: AuthoritativeExplorerMetadata): Authoritativ
 function cloneNetworkIdentity(net: AuthoritativeNetworkIdentity): AuthoritativeNetworkIdentity {
   return {
     ...net,
-    aliases: net.aliases ? [...net.aliases] : [],
     nativeAsset: cloneNativeAsset(net.nativeAsset),
     gasModel: cloneGasModel(net.gasModel),
     finality: cloneFinalityModel(net.finality),
-    rpcEndpoints: net.rpcEndpoints ? net.rpcEndpoints.map(cloneRpcMetadata) : [],
-    explorer: cloneExplorerMetadata(net.explorer)
+    rpcEndpoints: cloneRpcMetadata(net.rpcEndpoints),
+    explorer: cloneExplorerMetadata(net.explorer),
+    aliases: net.aliases ? [...net.aliases] : [],
+    dexRegistryReferences: net.dexRegistryReferences ? [...net.dexRegistryReferences] : undefined,
+    bridgeRegistryReferences: net.bridgeRegistryReferences ? [...net.bridgeRegistryReferences] : undefined,
+    tokenRegistryReferences: net.tokenRegistryReferences ? [...net.tokenRegistryReferences] : undefined
   };
 }
 
@@ -63,6 +69,12 @@ export class AuthoritativeNetworkRegistry {
   private identityKeyToNetworkId: Map<string, string> = new Map();
   private evmChainIdToNetworkId: Map<number, string> = new Map();
   private aliasToNetworkId: Map<string, string> = new Map();
+  private nativeAssets: Map<string, AuthoritativeNativeAsset> = new Map();
+  private gasModels: Map<string, AuthoritativeGasModelConfig> = new Map();
+  private finalityModels: Map<string, AuthoritativeFinalityConfig> = new Map();
+  private rpcMetadata: Map<string, AuthoritativeRpcMetadata[]> = new Map();
+  private explorerMetadata: Map<string, AuthoritativeExplorerMetadata> = new Map();
+  private networkFamilies: Map<string, NetworkFamily> = new Map();
 
   constructor(customNetworks?: Record<string, AuthoritativeNetworkIdentity>, skipValidation = false) {
     const initial = customNetworks || ZENITH_AUTHORITATIVE_NETWORKS;
@@ -88,6 +100,14 @@ export class AuthoritativeNetworkRegistry {
     const cloned = cloneNetworkIdentity(network);
 
     this.networks.set(canonicalId, cloned);
+    this.networkFamilies.set(canonicalId, cloned.family);
+    this.nativeAssets.set(canonicalId, cloned.nativeAsset);
+    this.gasModels.set(canonicalId, cloned.gasModel);
+    this.finalityModels.set(canonicalId, cloned.finality);
+    this.rpcMetadata.set(canonicalId, cloned.rpcEndpoints);
+    if (cloned.explorer) {
+      this.explorerMetadata.set(canonicalId, cloned.explorer);
+    }
 
     // Index composite identity key
     const key = cloned.networkIdentityKey.toLowerCase();
@@ -128,22 +148,20 @@ export class AuthoritativeNetworkRegistry {
     }
 
     // 2. Composite key match (e.g. "evm:eip155:1")
-    if (this.identityKeyToNetworkId.has(lower)) {
-      return this.identityKeyToNetworkId.get(lower);
+    const fromKey = this.identityKeyToNetworkId.get(lower);
+    if (fromKey) {
+      return fromKey;
     }
 
     // 3. Numeric string match (e.g. "137")
     const num = Number(lower);
-    if (!isNaN(num) && this.evmChainIdToNetworkId.has(num)) {
-      return this.evmChainIdToNetworkId.get(num);
+    if (!isNaN(num)) {
+      const fromEvm = this.evmChainIdToNetworkId.get(num);
+      if (fromEvm) return fromEvm;
     }
 
     // 4. Alias match
-    if (this.aliasToNetworkId.has(lower)) {
-      return this.aliasToNetworkId.get(lower);
-    }
-
-    return undefined;
+    return this.aliasToNetworkId.get(lower);
   }
 
   /**
@@ -151,15 +169,6 @@ export class AuthoritativeNetworkRegistry {
    */
   public validateNetworkIdentity(input: string | number): boolean {
     return this.resolveNetworkIdentity(input) !== undefined;
-  }
-
-  /**
-   * Fast lookup for network family without cloning the network identity object.
-   */
-  public getNetworkFamily(networkIdOrAlias: string | number): NetworkFamily | undefined {
-    const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
-    if (!canonicalId) return undefined;
-    return this.networks.get(canonicalId)?.family;
   }
 
   /**
@@ -239,8 +248,8 @@ export class AuthoritativeNetworkRegistry {
   public getNativeAsset(networkId: string | number): AuthoritativeNativeAsset | undefined {
     const canonicalId = this.resolveNetworkIdentity(networkId);
     if (!canonicalId) return undefined;
-    const net = this.networks.get(canonicalId);
-    return net ? cloneNativeAsset(net.nativeAsset) : undefined;
+    const asset = this.nativeAssets.get(canonicalId);
+    return asset ? cloneNativeAsset(asset) : undefined;
   }
 
   /**
@@ -249,8 +258,8 @@ export class AuthoritativeNetworkRegistry {
   public getGasModel(networkId: string | number): AuthoritativeGasModelConfig | undefined {
     const canonicalId = this.resolveNetworkIdentity(networkId);
     if (!canonicalId) return undefined;
-    const net = this.networks.get(canonicalId);
-    return net ? cloneGasModel(net.gasModel) : undefined;
+    const gas = this.gasModels.get(canonicalId);
+    return gas ? cloneGasModel(gas) : undefined;
   }
 
   /**
@@ -259,8 +268,8 @@ export class AuthoritativeNetworkRegistry {
   public getFinalityModel(networkId: string | number): AuthoritativeFinalityConfig | undefined {
     const canonicalId = this.resolveNetworkIdentity(networkId);
     if (!canonicalId) return undefined;
-    const net = this.networks.get(canonicalId);
-    return net ? cloneFinalityModel(net.finality) : undefined;
+    const finality = this.finalityModels.get(canonicalId);
+    return finality ? cloneFinalityModel(finality) : undefined;
   }
 
   /**
@@ -269,8 +278,8 @@ export class AuthoritativeNetworkRegistry {
   public getRpcMetadata(networkId: string | number): AuthoritativeRpcMetadata[] {
     const canonicalId = this.resolveNetworkIdentity(networkId);
     if (!canonicalId) return [];
-    const net = this.networks.get(canonicalId);
-    return net && net.rpcEndpoints ? net.rpcEndpoints.map(cloneRpcMetadata) : [];
+    const rpcs = this.rpcMetadata.get(canonicalId);
+    return rpcs ? cloneRpcMetadata(rpcs) : [];
   }
 
   /**
@@ -279,8 +288,17 @@ export class AuthoritativeNetworkRegistry {
   public getExplorerMetadata(networkId: string | number): AuthoritativeExplorerMetadata | undefined {
     const canonicalId = this.resolveNetworkIdentity(networkId);
     if (!canonicalId) return undefined;
-    const net = this.networks.get(canonicalId);
-    return net ? cloneExplorerMetadata(net.explorer) : undefined;
+    const exp = this.explorerMetadata.get(canonicalId);
+    return exp ? cloneExplorerMetadata(exp) : undefined;
+  }
+
+  /**
+   * Retrieves the network family for a registered network.
+   */
+  public getNetworkFamily(networkIdOrAlias: string | number): NetworkFamily | undefined {
+    const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
+    if (!canonicalId) return undefined;
+    return this.networkFamilies.get(canonicalId);
   }
 
   /**
@@ -294,16 +312,18 @@ export class AuthoritativeNetworkRegistry {
    * Checks whether a network is mainnet.
    */
   public isMainnet(networkId: string | number): boolean {
-    const net = this.getNetwork(networkId);
-    return net ? net.isMainnet : false;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return false;
+    return this.networks.get(canonicalId)?.isMainnet ?? false;
   }
 
   /**
    * Checks whether a network is testnet.
    */
   public isTestnet(networkId: string | number): boolean {
-    const net = this.getNetwork(networkId);
-    return net ? net.isTestnet : false;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return false;
+    return this.networks.get(canonicalId)?.isTestnet ?? false;
   }
 
   /**
@@ -326,8 +346,9 @@ export class AuthoritativeNetworkRegistry {
    * Retrieves the onboarding state for a network.
    */
   public getOnboardingState(networkId: string | number): NetworkOnboardingState | undefined {
-    const net = this.getNetwork(networkId);
-    return net ? net.onboardingState : undefined;
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId) return undefined;
+    return this.networks.get(canonicalId)?.onboardingState;
   }
 }
 

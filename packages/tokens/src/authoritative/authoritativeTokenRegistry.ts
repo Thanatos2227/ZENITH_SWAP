@@ -18,6 +18,7 @@ export class AuthoritativeTokenRegistry {
   private readonly tokensById = new Map<string, TokenIdentity>();
   private readonly tokensByIdentityKey = new Map<string, TokenIdentity>();
   private readonly tokensByNetworkAndAddress = new Map<string, Map<string, TokenIdentity>>();
+  private readonly tokensByNetworkAndNormalizedAddress = new Map<string, TokenIdentity>();
   private readonly tokensByNetworkAndSymbol = new Map<string, Map<string, TokenIdentity[]>>();
   private readonly tokensByNetwork = new Map<string, TokenIdentity[]>();
 
@@ -30,33 +31,10 @@ export class AuthoritativeTokenRegistry {
 
   private cloneToken(token: TokenIdentity): TokenIdentity {
     return {
-      tokenId: token.tokenId,
-      networkId: token.networkId,
-      networkIdentityKey: token.networkIdentityKey,
-      family: token.family,
-      namespace: token.namespace,
-      standard: token.standard,
-      address: token.address,
-      normalizedAddress: token.normalizedAddress,
-      symbol: token.symbol,
-      name: token.name,
-      decimals: token.decimals,
-      assetType: token.assetType,
-      isNative: token.isNative,
-      isWrappedNative: token.isWrappedNative,
-      wrappedAddress: token.wrappedAddress,
-      verificationStatus: token.verificationStatus,
+      ...token,
       verificationDimensions: token.verificationDimensions
         ? { ...token.verificationDimensions }
         : ({} as any),
-      metadataStatus: token.metadataStatus,
-      capabilityLevel: token.capabilityLevel,
-      onboardingState: token.onboardingState,
-      source: token.source,
-      lastVerifiedAt: token.lastVerifiedAt,
-      isFungible: token.isFungible,
-      isNFT: token.isNFT,
-      isMultiToken: token.isMultiToken,
       tags: token.tags ? [...token.tags] : undefined
     };
   }
@@ -80,9 +58,11 @@ export class AuthoritativeTokenRegistry {
     }
 
     if (token.normalizedAddress) {
+      const normLower = token.normalizedAddress.toLowerCase();
       const addressMap = this.tokensByNetworkAndAddress.get(netId);
-      addressMap?.delete(token.normalizedAddress.toLowerCase());
+      addressMap?.delete(normLower);
       if (addressMap && addressMap.size === 0) this.tokensByNetworkAndAddress.delete(netId);
+      this.tokensByNetworkAndNormalizedAddress.delete(`${netId}:${normLower}`);
     }
 
     const symMap = this.tokensByNetworkAndSymbol.get(netId);
@@ -125,10 +105,12 @@ export class AuthoritativeTokenRegistry {
 
     // Index by address within network
     if (cloned.normalizedAddress) {
+      const normLower = cloned.normalizedAddress.toLowerCase();
       if (!this.tokensByNetworkAndAddress.has(netId)) {
         this.tokensByNetworkAndAddress.set(netId, new Map());
       }
-      this.tokensByNetworkAndAddress.get(netId)!.set(cloned.normalizedAddress.toLowerCase(), cloned);
+      this.tokensByNetworkAndAddress.get(netId)!.set(normLower, cloned);
+      this.tokensByNetworkAndNormalizedAddress.set(`${netId}:${normLower}`, cloned);
     }
 
     // Index by symbol within network
@@ -198,7 +180,10 @@ export class AuthoritativeTokenRegistry {
     address: string
   ): TokenIdentity | undefined {
     const netId = networkId.trim().toLowerCase();
-    const family = defaultAuthoritativeNetworkRegistry.getNetworkFamily(netId);
+    const canonicalNetId = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(netId);
+    if (!canonicalNetId) return undefined;
+
+    const family = defaultAuthoritativeNetworkRegistry.getNetworkFamily(canonicalNetId);
     if (!family) return undefined;
 
     let normalized: string;
@@ -208,7 +193,10 @@ export class AuthoritativeTokenRegistry {
       return undefined;
     }
 
-    const token = this.tokensByNetworkAndAddress.get(netId)?.get(normalized.toLowerCase());
+    const normLower = normalized.toLowerCase();
+    const token = this.tokensByNetworkAndNormalizedAddress.get(`${canonicalNetId}:${normLower}`)
+      || this.tokensByNetworkAndAddress.get(canonicalNetId)?.get(normLower);
+
     if (token && (standard === 'UNSUPPORTED' || token.standard === standard)) {
       return this.cloneToken(token);
     }
