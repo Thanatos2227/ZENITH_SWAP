@@ -61,12 +61,56 @@ export class AuthoritativeTokenRegistry {
     };
   }
 
+  private getIdentityKey(token: TokenIdentity): string {
+    return token.networkIdentityKey
+      ? buildTokenIdentityKey(token.networkIdentityKey, token.standard, token.normalizedAddress || token.symbol)
+      : token.tokenId;
+  }
+
+  private unindexToken(token: TokenIdentity): void {
+    this.tokensById.delete(token.tokenId);
+    this.tokensByIdentityKey.delete(this.getIdentityKey(token));
+
+    const netId = token.networkId.toLowerCase();
+    const netList = this.tokensByNetwork.get(netId);
+    if (netList) {
+      const filtered = netList.filter((entry) => entry.tokenId !== token.tokenId);
+      if (filtered.length > 0) this.tokensByNetwork.set(netId, filtered);
+      else this.tokensByNetwork.delete(netId);
+    }
+
+    if (token.normalizedAddress) {
+      const addressMap = this.tokensByNetworkAndAddress.get(netId);
+      addressMap?.delete(token.normalizedAddress.toLowerCase());
+      if (addressMap && addressMap.size === 0) this.tokensByNetworkAndAddress.delete(netId);
+    }
+
+    const symMap = this.tokensByNetworkAndSymbol.get(netId);
+    if (symMap) {
+      const symKey = token.symbol.toUpperCase();
+      const symList = symMap.get(symKey);
+      if (symList) {
+        const filtered = symList.filter((entry) => entry.tokenId !== token.tokenId);
+        if (filtered.length > 0) symMap.set(symKey, filtered);
+        else symMap.delete(symKey);
+      }
+      if (symMap.size === 0) this.tokensByNetworkAndSymbol.delete(netId);
+    }
+  }
+
+  private replaceIndexedToken(token: TokenIdentity): void {
+    const current = this.tokensById.get(token.tokenId);
+    if (!current) {
+      throw new Error(`Cannot replace unknown token "${token.tokenId}"`);
+    }
+    this.unindexToken(current);
+    this.indexToken(token);
+  }
+
   private indexToken(token: TokenIdentity): void {
     const cloned = this.cloneToken(token);
     const tokenId = cloned.tokenId;
-    const identityKey = cloned.networkIdentityKey
-      ? buildTokenIdentityKey(cloned.networkIdentityKey, cloned.standard, cloned.normalizedAddress || cloned.symbol)
-      : tokenId;
+    const identityKey = this.getIdentityKey(cloned);
 
     this.tokensById.set(tokenId, cloned);
     this.tokensByIdentityKey.set(identityKey, cloned);
@@ -107,6 +151,25 @@ export class AuthoritativeTokenRegistry {
     if (this.tokensById.has(token.tokenId)) {
       throw new Error(`Token with ID "${token.tokenId}" is already registered`);
     }
+
+    const identityKey = this.getIdentityKey(token);
+    if (this.tokensByIdentityKey.has(identityKey)) {
+      throw new Error(`Token with identity key "${identityKey}" is already registered`);
+    }
+
+    if (!token.isNative && token.address) {
+      const network = defaultAuthoritativeNetworkRegistry.getNetwork(token.networkId);
+      if (network) {
+        const normalizedAddress = normalizeTokenAddress(network.family, token.address, { allowZeroAddress: false }).toLowerCase();
+        const existing = this.tokensByNetworkAndAddress.get(token.networkId.trim().toLowerCase())?.get(normalizedAddress);
+        if (existing) {
+          throw new Error(
+            `Token address collision: network "${token.networkId}" address "${normalizedAddress}" is already registered by token "${existing.tokenId}"`
+          );
+        }
+      }
+    }
+
     this.indexToken(token);
   }
 
@@ -115,27 +178,7 @@ export class AuthoritativeTokenRegistry {
     if (!token) return false;
 
     this.tokensById.delete(tokenId);
-    const idKey = buildTokenIdentityKey(token.networkIdentityKey, token.standard, token.normalizedAddress || token.symbol);
-    this.tokensByIdentityKey.delete(idKey);
-
-    const netId = token.networkId.toLowerCase();
-    const netList = this.tokensByNetwork.get(netId);
-    if (netList) {
-      this.tokensByNetwork.set(netId, netList.filter((t) => t.tokenId !== tokenId));
-    }
-
-    if (token.normalizedAddress) {
-      this.tokensByNetworkAndAddress.get(netId)?.delete(token.normalizedAddress.toLowerCase());
-    }
-
-    const symMap = this.tokensByNetworkAndSymbol.get(netId);
-    if (symMap) {
-      const symList = symMap.get(token.symbol.toUpperCase());
-      if (symList) {
-        symMap.set(token.symbol.toUpperCase(), symList.filter((t) => t.tokenId !== tokenId));
-      }
-    }
-
+    this.unindexToken(token);
     return true;
   }
 
@@ -166,10 +209,10 @@ export class AuthoritativeTokenRegistry {
     }
 
     const token = this.tokensByNetworkAndAddress.get(netId)?.get(normalized.toLowerCase());
-    if (token && (standard === 'UNSUPPORTED' || token.standard === standard || standard === 'ERC20' || standard === 'SPL')) {
+    if (token && (standard === 'UNSUPPORTED' || token.standard === standard)) {
       return this.cloneToken(token);
     }
-    return token ? this.cloneToken(token) : undefined;
+    return undefined;
   }
 
   public getTokens(networkId: string): TokenIdentity[] {
@@ -311,7 +354,7 @@ export class AuthoritativeTokenRegistry {
     }
     (mutable as any).lastVerifiedAt = evidence.timestamp || Date.now();
 
-    this.tokensById.set(tokenId, mutable);
+    this.replaceIndexedToken(mutable);
   }
 
   public disableToken(tokenId: string, _reason: string): void {
@@ -322,7 +365,7 @@ export class AuthoritativeTokenRegistry {
     const mutable = { ...token };
     (mutable as any).onboardingState = 'DISABLED';
     (mutable as any).capabilityLevel = 'UNSUPPORTED';
-    this.tokensById.set(tokenId, mutable);
+    this.replaceIndexedToken(mutable);
   }
 }
 
