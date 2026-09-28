@@ -1,38 +1,60 @@
 import { Interface } from 'ethers';
-import { BridgeProtocol, CrossChainExecution, CrossChainProvider, CrossChainQuote, CrossChainStatus, ExecutionPlanDiagnostic, QuoteRequest, Token } from '@zenith/types';
+import {
+  BridgeProtocol,
+  CrossChainExecution,
+  CrossChainProvider,
+  CrossChainQuote,
+  CrossChainStatus,
+  ExecutionPlanDiagnostic,
+  QuoteRequest,
+  Token
+} from '@zenith/types';
 import { defaultChainRegistry } from '@zenith/chains';
-import { getAcrossSpokePool, isAcrossSupported, ACROSS_SPOKE_POOL_ABI, validateEvmAddress, validateTokenAddress, validateRecipientAddress, validateExecutionTarget, ProviderUnavailableError } from '@zenith/contracts';
+import {
+  getAcrossSpokePool,
+  isAcrossSupported,
+  ACROSS_SPOKE_POOL_ABI,
+  validateEvmAddress,
+  validateTokenAddress,
+  validateRecipientAddress,
+  validateExecutionTarget,
+  ProviderUnavailableError
+} from '@zenith/contracts';
 import { isNativeToken } from '../../dex/dexMath';
 import { formatTokenUnits } from '../../tokenDecimals';
 import { validateCrossChainQuoteExecutability } from '../quoteValidator';
 import { defaultQuoteDiagnosticLogger } from '../quoteDiagnostics';
+
 const spokePoolInterface = new Interface(ACROSS_SPOKE_POOL_ABI);
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
 export class AcrossProvider implements CrossChainProvider {
-    public readonly id: BridgeProtocol = 'ACROSS';
-    public readonly name = 'Across Protocol V3';
-    public isAvailable(sourceChainId?: string, destinationChainId?: string, tokenIn?: Token, tokenOut?: Token): boolean {
-        if (!sourceChainId || !destinationChainId)
-            return false;
-        if (sourceChainId.toLowerCase() === destinationChainId.toLowerCase())
-            return false;
-        const src = defaultChainRegistry.getChain(sourceChainId);
-        const dst = defaultChainRegistry.getChain(destinationChainId);
-        if (!src?.chainId || !dst?.chainId)
-            return false;
-        if (src.executionEnvironment !== 'EVM' || dst.executionEnvironment !== 'EVM')
-            return false;
-        if (!isAcrossSupported(src.chainId) || !isAcrossSupported(dst.chainId))
-            return false;
-        if (tokenIn && tokenOut) {
-            if (tokenIn.symbol.toUpperCase() !== tokenOut.symbol.toUpperCase()) {
-                const isUsd = (s: string) => s.startsWith('USD');
-                if (!isUsd(tokenIn.symbol) || !isUsd(tokenOut.symbol)) {
-                    return false;
-                }
-            }
+  public readonly id: BridgeProtocol = 'ACROSS';
+  public readonly name = 'Across Protocol V3';
+
+  public isAvailable(
+    sourceChainId?: string,
+    destinationChainId?: string,
+    tokenIn?: Token,
+    tokenOut?: Token
+  ): boolean {
+    if (!sourceChainId || !destinationChainId) return false;
+    if (sourceChainId.toLowerCase() === destinationChainId.toLowerCase()) return false;
+    const src = defaultChainRegistry.getChain(sourceChainId);
+    const dst = defaultChainRegistry.getChain(destinationChainId);
+
+    if (!src?.chainId || !dst?.chainId) return false;
+    if (src.executionEnvironment !== 'EVM' || dst.executionEnvironment !== 'EVM') return false;
+
+    if (!isAcrossSupported(src.chainId) || !isAcrossSupported(dst.chainId)) return false;
+
+    if (tokenIn && tokenOut) {
+      if (tokenIn.symbol.toUpperCase() !== tokenOut.symbol.toUpperCase()) {
+        const isUsd = (s: string) => s.startsWith('USD');
+        if (!isUsd(tokenIn.symbol) || !isUsd(tokenOut.symbol)) {
+          return false;
         }
-        return true;
+      }
     }
 
     return true;
@@ -104,113 +126,52 @@ export class AcrossProvider implements CrossChainProvider {
             isLiveQuote = true;
           } else {
             quoteDiagnostic = {
-                code: normalizedCode,
-                message: `Across API request failed: ${err?.message || 'Network error'}`,
-                severity: 'WARNING',
-                providerId: 'ACROSS',
-                timestamp: Date.now()
+              code: 'INVALID_AMOUNT',
+              message: `Across relay fee (${totalFeeRaw.toString()} raw) exceeds input amount (${amountInBig.toString()} raw). Net output is zero.`,
+              severity: 'WARNING',
+              providerId: 'ACROSS',
+              timestamp: Date.now()
             };
+          }
         }
-        if (!isLiveQuote) {
-            const fallbackFeeBps = 5n;
-            const feeAmountRaw = (amountInBig * fallbackFeeBps) / 10000n;
-            destinationAmountBig = amountInBig > feeAmountRaw ? amountInBig - feeAmountRaw : 1n;
-            const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
-            const feeNum = Number(feeAmountRaw) / (10 ** inDecimals);
-            bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.05;
-            isLiveQuote = false;
-            if (!quoteDiagnostic) {
-                quoteDiagnostic = {
-                    code: 'PROVIDER_UNAVAILABLE',
-                    message: 'Across API did not return executable quote output. Informational estimate only.',
-                    severity: 'WARNING',
-                    providerId: 'ACROSS',
-                    timestamp: Date.now()
-                };
-            }
-        }
-        const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;
-        const slippageBps = BigInt(Math.floor(slippagePct * 100));
-        const slippageMultiplier = 10000n - slippageBps;
-        const minDestinationAmountBig = (destinationAmountBig * slippageMultiplier) / 10000n;
-        const gasEstimateUSD = defaultChainRegistry.getEstimatedGasCostUSD(srcChain.id, 'BRIDGE', request.gasPreset);
-        const isNative = isNativeToken(request.tokenIn.address) || Boolean(request.tokenIn.isNative);
-        const value = isNative ? amountInBig.toString() : '0';
-        let calldata = '0x';
-        if (recipient) {
-            try {
-                const safeRecipient = validateRecipientAddress(recipient, srcChain.id);
-                calldata = spokePoolInterface.encodeFunctionData('depositV3', [
-                    safeRecipient.toLowerCase(),
-                    safeRecipient.toLowerCase(),
-                    validatedInputToken.toLowerCase(),
-                    validatedOutputToken.toLowerCase(),
-                    amountInBig,
-                    minDestinationAmountBig,
-                    dstChain.chainId!,
-                    exclusiveRelayer,
-                    quoteTimestampSec,
-                    fillDeadlineSec,
-                    0,
-                    '0x'
-                ]);
-            }
-            catch (encErr) {
-                console.warn('[AcrossProvider] Error encoding calldata preview:', encErr);
-            }
-        }
-        const diagnostics = quoteDiagnostic ? [quoteDiagnostic] : [];
-        const quote: CrossChainQuote = {
-            provider: 'ACROSS',
-            providerName: this.name,
-            sourceChainId: request.sourceChainId,
-            destinationChainId: request.destinationChainId,
-            sourceToken: request.tokenIn,
-            destinationToken: request.tokenOut,
-            sourceAmountRaw: amountInBig.toString(),
-            destinationAmountRaw: destinationAmountBig.toString(),
-            minDestinationAmountRaw: minDestinationAmountBig.toString(),
-            bridgeFeeUSD,
-            relayerFee: relayerFeePctStr,
-            gasEstimateUSD,
-            recipient: recipient || '',
-            expiration: Math.max(Date.now() + 300000, (quoteTimestampSec + 300) * 1000),
-            routeIdentifier: `across-${srcChain.id}-${dstChain.id}-${Date.now()}`,
-            executionTarget: spokePool,
-            calldata,
-            value,
-            approvalTarget: spokePool,
-            quoteTimestamp: quoteTimestampSec * 1000,
-            estimatedTransferTimeSec: estTransferTimeSec,
-            securityRating: 'A+',
-            isExecutable: isLiveQuote,
-            unexecutableReason: !isLiveQuote ? (quoteDiagnostic?.code || 'PROVIDER_UNAVAILABLE') : undefined,
-            diagnostics
+      } else {
+        const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(res.statusText, res.status);
+        quoteDiagnostic = {
+          code: normalizedCode,
+          message: `Across API returned HTTP ${res.status}: ${res.statusText}`,
+          severity: 'WARNING',
+          providerId: 'ACROSS',
+          timestamp: Date.now()
         };
-        const validationResult = validateCrossChainQuoteExecutability(quote, request);
-        quote.isExecutable = validationResult.isExecutable;
-        if (!validationResult.isExecutable) {
-            quote.unexecutableReason = validationResult.unexecutableReason;
-        }
-        defaultQuoteDiagnosticLogger.record({
-            provider: 'ACROSS',
-            providerName: this.name,
-            sourceChainId: request.sourceChainId,
-            destinationChainId: request.destinationChainId,
-            sourceToken: request.tokenIn.symbol,
-            destinationToken: request.tokenOut.symbol,
-            amountInRaw: amountInBig.toString(),
-            requestStatus: isLiveQuote ? 'SUCCESS' : 'FAILED',
-            httpStatus,
-            normalizedError: quoteDiagnostic?.code as any,
-            providerErrorMessage: quoteDiagnostic?.message,
-            isExecutable: Boolean(quote.isExecutable),
-            unexecutableReason: quote.unexecutableReason,
-            latencyMs: Date.now() - startTime,
-            endpoint: url,
-            timestamp: Date.now()
-        });
-        return quote;
+      }
+    } catch (err: any) {
+      const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(err, httpStatus);
+      quoteDiagnostic = {
+        code: normalizedCode,
+        message: `Across API request failed: ${err?.message || 'Network error'}`,
+        severity: 'WARNING',
+        providerId: 'ACROSS',
+        timestamp: Date.now()
+      };
+    }
+
+    if (!isLiveQuote) {
+      const fallbackFeeBps = 5n;
+      const feeAmountRaw = (amountInBig * fallbackFeeBps) / 10000n;
+      destinationAmountBig = amountInBig > feeAmountRaw ? amountInBig - feeAmountRaw : 1n;
+      const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
+      const feeNum = Number(feeAmountRaw) / (10 ** inDecimals);
+      bridgeFeeUSD = request.tokenIn.priceUSD ? Number((feeNum * request.tokenIn.priceUSD).toFixed(4)) : 0.05;
+      isLiveQuote = false;
+      if (!quoteDiagnostic) {
+        quoteDiagnostic = {
+          code: 'PROVIDER_UNAVAILABLE',
+          message: 'Across API did not return executable quote output. Informational estimate only.',
+          severity: 'WARNING',
+          providerId: 'ACROSS',
+          timestamp: Date.now()
+        };
+      }
     }
 
     const slippagePct = request.slippageTolerancePercent !== undefined && !isNaN(request.slippageTolerancePercent) ? request.slippageTolerancePercent : 0.5;
@@ -412,90 +373,125 @@ export class AcrossProvider implements CrossChainProvider {
             timestamp: Date.now()
           };
         }
-        catch {
-            return {
-                state: 'TRACKING_UNAVAILABLE',
-                sourceTxHash,
-                isComplete: false,
-                isFailed: false,
-                errorMessage: 'Across tracking API temporarily unreachable',
-                timestamp: Date.now()
-            };
-        }
-        return {
+        if (normalized.status === 'pending') {
+          return {
             state: 'FULFILLING',
             sourceTxHash,
             isComplete: false,
             isFailed: false,
             timestamp: Date.now()
-        };
+          };
+        }
+        if (normalized.status === 'refunded' || normalized.status === 'expired') {
+          return {
+            state: 'REFUND_PENDING',
+            sourceTxHash,
+            isComplete: false,
+            isFailed: true,
+            errorMessage: `Across order status: ${normalized.status}`,
+            timestamp: Date.now()
+          };
+        }
+      }
+    } catch {
+      return {
+        state: 'TRACKING_UNAVAILABLE',
+        sourceTxHash,
+        isComplete: false,
+        isFailed: false,
+        errorMessage: 'Across tracking API temporarily unreachable',
+        timestamp: Date.now()
+      };
     }
-    public async getDestinationTransaction(sourceTxHash: string, quote: CrossChainQuote): Promise<string | null> {
-        const status = await this.getStatus(sourceTxHash, quote);
-        return status.destinationTxHash || null;
-    }
-}
-export const defaultAcrossProvider = new AcrossProvider();
-export interface NormalizedAcrossDepositStatus {
-    status: 'filled' | 'pending' | 'refunded' | 'expired' | 'unknown';
-    resolvedFillTx: string | null;
-    depositId: string | null;
-    originChainId: number | null;
-    destinationChainId: number | null;
-    rawMetadata: Record<string, any>;
-    hasStatusConflict: boolean;
-}
-export function isValidHexTxHash(candidate: unknown): candidate is string {
-    if (typeof candidate !== 'string')
-        return false;
-    const trimmed = candidate.trim();
-    return /^0x[0-9a-fA-F]{64}$/.test(trimmed);
-}
-export function normalizeAcrossDepositStatus(data: any): NormalizedAcrossDepositStatus {
-    if (!data || typeof data !== 'object') {
-        return {
-            status: 'unknown',
-            resolvedFillTx: null,
-            depositId: null,
-            originChainId: null,
-            destinationChainId: null,
-            rawMetadata: {},
-            hasStatusConflict: false
-        };
-    }
-    const rawCandidate = (data.fillTx !== undefined && data.fillTx !== null && String(data.fillTx).trim() !== '' ? data.fillTx : null) ||
-        (data.fillTxnRef !== undefined && data.fillTxnRef !== null && String(data.fillTxnRef).trim() !== '' ? data.fillTxnRef : null) ||
-        (data.fillTxHash !== undefined && data.fillTxHash !== null && String(data.fillTxHash).trim() !== '' ? data.fillTxHash : null) ||
-        null;
-    const resolvedFillTx = isValidHexTxHash(rawCandidate) ? rawCandidate.trim().toLowerCase() : null;
-    const normalizedStatusStr = typeof data.status === 'string' ? data.status.trim().toLowerCase() : 'unknown';
-    let status: 'filled' | 'pending' | 'refunded' | 'expired' | 'unknown' = 'unknown';
-    if (normalizedStatusStr === 'filled')
-        status = 'filled';
-    else if (normalizedStatusStr === 'pending')
-        status = 'pending';
-    else if (normalizedStatusStr === 'refunded')
-        status = 'refunded';
-    else if (normalizedStatusStr === 'expired')
-        status = 'expired';
-    const hasStatusConflict = (status === 'filled' && !resolvedFillTx) ||
-        (status !== 'filled' && status !== 'unknown' && Boolean(resolvedFillTx));
-    const rawMetadata: Record<string, any> = {
-        status: data.status,
-        fillTx: typeof data.fillTx === 'string' ? data.fillTx : undefined,
-        fillTxnRef: typeof data.fillTxnRef === 'string' ? data.fillTxnRef : undefined,
-        fillTxHash: typeof data.fillTxHash === 'string' ? data.fillTxHash : undefined,
-        depositId: data.depositId,
-        originChainId: data.originChainId,
-        destinationChainId: data.destinationChainId
-    };
+
     return {
-        status,
-        resolvedFillTx,
-        depositId: data.depositId ? String(data.depositId) : null,
-        originChainId: typeof data.originChainId === 'number' ? data.originChainId : (data.originChainId ? Number(data.originChainId) : null),
-        destinationChainId: typeof data.destinationChainId === 'number' ? data.destinationChainId : (data.destinationChainId ? Number(data.destinationChainId) : null),
-        rawMetadata,
-        hasStatusConflict
+      state: 'FULFILLING',
+      sourceTxHash,
+      isComplete: false,
+      isFailed: false,
+      timestamp: Date.now()
     };
+  }
+
+  public async getDestinationTransaction(sourceTxHash: string, quote: CrossChainQuote): Promise<string | null> {
+    const status = await this.getStatus(sourceTxHash, quote);
+    return status.destinationTxHash || null;
+  }
+}
+
+export const defaultAcrossProvider = new AcrossProvider();
+
+export interface NormalizedAcrossDepositStatus {
+  status: 'filled' | 'pending' | 'refunded' | 'expired' | 'unknown';
+  resolvedFillTx: string | null;
+  depositId: string | null;
+  originChainId: number | null;
+  destinationChainId: number | null;
+  rawMetadata: Record<string, any>;
+  hasStatusConflict: boolean;
+}
+
+export function isValidHexTxHash(candidate: unknown): candidate is string {
+  if (typeof candidate !== 'string') return false;
+  const trimmed = candidate.trim();
+  return /^0x[0-9a-fA-F]{64}$/.test(trimmed);
+}
+
+/**
+ * Authoritative Across API response normalizer.
+ * Extracts and canonicalizes resolvedFillTx across all possible provider representations
+ * (fillTx, fillTxnRef, fillTxHash) with strict hexadecimal format validation and precedence.
+ */
+export function normalizeAcrossDepositStatus(data: any): NormalizedAcrossDepositStatus {
+  if (!data || typeof data !== 'object') {
+    return {
+      status: 'unknown',
+      resolvedFillTx: null,
+      depositId: null,
+      originChainId: null,
+      destinationChainId: null,
+      rawMetadata: {},
+      hasStatusConflict: false
+    };
+  }
+
+  // Precedence: fillTx > fillTxnRef > fillTxHash
+  const rawCandidate =
+    (data.fillTx !== undefined && data.fillTx !== null && String(data.fillTx).trim() !== '' ? data.fillTx : null) ||
+    (data.fillTxnRef !== undefined && data.fillTxnRef !== null && String(data.fillTxnRef).trim() !== '' ? data.fillTxnRef : null) ||
+    (data.fillTxHash !== undefined && data.fillTxHash !== null && String(data.fillTxHash).trim() !== '' ? data.fillTxHash : null) ||
+    null;
+
+  const resolvedFillTx = isValidHexTxHash(rawCandidate) ? rawCandidate.trim().toLowerCase() : null;
+
+  const normalizedStatusStr = typeof data.status === 'string' ? data.status.trim().toLowerCase() : 'unknown';
+  let status: 'filled' | 'pending' | 'refunded' | 'expired' | 'unknown' = 'unknown';
+  if (normalizedStatusStr === 'filled') status = 'filled';
+  else if (normalizedStatusStr === 'pending') status = 'pending';
+  else if (normalizedStatusStr === 'refunded') status = 'refunded';
+  else if (normalizedStatusStr === 'expired') status = 'expired';
+
+  const hasStatusConflict =
+    (status === 'filled' && !resolvedFillTx) ||
+    (status !== 'filled' && status !== 'unknown' && Boolean(resolvedFillTx));
+
+  const rawMetadata: Record<string, any> = {
+    status: data.status,
+    fillTx: typeof data.fillTx === 'string' ? data.fillTx : undefined,
+    fillTxnRef: typeof data.fillTxnRef === 'string' ? data.fillTxnRef : undefined,
+    fillTxHash: typeof data.fillTxHash === 'string' ? data.fillTxHash : undefined,
+    depositId: data.depositId,
+    originChainId: data.originChainId,
+    destinationChainId: data.destinationChainId
+  };
+
+  return {
+    status,
+    resolvedFillTx,
+    depositId: data.depositId ? String(data.depositId) : null,
+    originChainId: typeof data.originChainId === 'number' ? data.originChainId : (data.originChainId ? Number(data.originChainId) : null),
+    destinationChainId: typeof data.destinationChainId === 'number' ? data.destinationChainId : (data.destinationChainId ? Number(data.destinationChainId) : null),
+    rawMetadata,
+    hasStatusConflict
+  };
 }

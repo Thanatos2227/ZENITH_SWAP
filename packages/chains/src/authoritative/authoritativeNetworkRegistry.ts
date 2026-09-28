@@ -1,26 +1,54 @@
-import { AuthoritativeNetworkIdentity, AuthoritativeNativeAsset, AuthoritativeGasModelConfig, AuthoritativeFinalityConfig, AuthoritativeRpcMetadata, AuthoritativeExplorerMetadata, NetworkEnvironment, buildNetworkIdentityKey } from './networkIdentity.types';
-import { NetworkFamily, NetworkOnboardingState, NetworkCapabilityProfile } from '../capabilities/networkCapabilityTypes';
+/**
+ * @file authoritativeNetworkRegistry.ts
+ * @package @zenith/chains
+ *
+ * Authoritative Canonical Network Registry for ZENITH.
+ * Serves as the single authoritative source of truth for network identities,
+ * chain namespaces, environments, gas models, finality, and explorer metadata.
+ * Guarantees collision-free lookup and deep-cloned immutability.
+ */
+
+import {
+  AuthoritativeNetworkIdentity,
+  AuthoritativeNativeAsset,
+  AuthoritativeGasModelConfig,
+  AuthoritativeFinalityConfig,
+  AuthoritativeRpcMetadata,
+  AuthoritativeExplorerMetadata,
+  NetworkEnvironment,
+  buildNetworkIdentityKey
+} from './networkIdentity.types';
+import {
+  NetworkFamily,
+  NetworkOnboardingState,
+  NetworkCapabilityProfile
+} from '../capabilities/networkCapabilityTypes';
 import { ZENITH_AUTHORITATIVE_NETWORKS } from './networkRegistry.data';
 import { NetworkRegistryValidationEngine } from './networkRegistryValidation';
+
 function cloneNativeAsset(asset: AuthoritativeNativeAsset): AuthoritativeNativeAsset {
-    return { ...asset };
+  return { ...asset };
 }
+
 function cloneGasModel(gas: AuthoritativeGasModelConfig): AuthoritativeGasModelConfig {
   return {
     ...gas,
     l2FeeComponents: gas.l2FeeComponents ? { ...gas.l2FeeComponents } : undefined
   };
 }
+
 function cloneFinalityModel(fin: AuthoritativeFinalityConfig): AuthoritativeFinalityConfig {
-    return { ...fin };
+  return { ...fin };
 }
 
 function cloneRpcMetadata(rpcs: AuthoritativeRpcMetadata[]): AuthoritativeRpcMetadata[] {
   return rpcs ? rpcs.map((r) => ({ ...r })) : [];
 }
+
 function cloneExplorerMetadata(exp: AuthoritativeExplorerMetadata): AuthoritativeExplorerMetadata {
-    return { ...exp };
+  return { ...exp };
 }
+
 function cloneNetworkIdentity(net: AuthoritativeNetworkIdentity): AuthoritativeNetworkIdentity {
   return {
     ...net,
@@ -35,6 +63,7 @@ function cloneNetworkIdentity(net: AuthoritativeNetworkIdentity): AuthoritativeN
     tokenRegistryReferences: net.tokenRegistryReferences ? [...net.tokenRegistryReferences] : undefined
   };
 }
+
 export class AuthoritativeNetworkRegistry {
   private networks: Map<string, AuthoritativeNetworkIdentity> = new Map();
   private identityKeyToNetworkId: Map<string, string> = new Map();
@@ -53,48 +82,18 @@ export class AuthoritativeNetworkRegistry {
     if (!skipValidation) {
       NetworkRegistryValidationEngine.validateRegistry(initial);
     }
-    public registerNetwork(network: AuthoritativeNetworkIdentity, skipValidation = false): void {
-        if (!skipValidation) {
-            NetworkRegistryValidationEngine.validateRegistry({ [network.networkId]: network });
-        }
-        const canonicalId = network.networkId.toLowerCase().trim();
-        const cloned = cloneNetworkIdentity(network);
-        this.networks.set(canonicalId, cloned);
-        const key = cloned.networkIdentityKey.toLowerCase();
-        this.identityKeyToNetworkId.set(key, canonicalId);
-        if (cloned.family === 'EVM' && typeof cloned.numericChainId === 'number') {
-            this.evmChainIdToNetworkId.set(cloned.numericChainId, canonicalId);
-        }
-        if (Array.isArray(cloned.aliases)) {
-            for (const alias of cloned.aliases) {
-                const lowerAlias = alias.toLowerCase().trim();
-                if (lowerAlias) {
-                    this.aliasToNetworkId.set(lowerAlias, canonicalId);
-                }
-            }
-        }
+
+    for (const net of Object.values(initial)) {
+      this.registerNetwork(net, true);
     }
-    public resolveNetworkIdentity(input: string | number): string | undefined {
-        if (typeof input === 'number') {
-            return this.evmChainIdToNetworkId.get(input);
-        }
-        if (!input || typeof input !== 'string')
-            return undefined;
-        const lower = input.toLowerCase().trim();
-        if (this.networks.has(lower)) {
-            return lower;
-        }
-        if (this.identityKeyToNetworkId.has(lower)) {
-            return this.identityKeyToNetworkId.get(lower);
-        }
-        const num = Number(lower);
-        if (!isNaN(num) && this.evmChainIdToNetworkId.has(num)) {
-            return this.evmChainIdToNetworkId.get(num);
-        }
-        if (this.aliasToNetworkId.has(lower)) {
-            return this.aliasToNetworkId.get(lower);
-        }
-        return undefined;
+  }
+
+  /**
+   * Registers an AuthoritativeNetworkIdentity record into memory.
+   */
+  public registerNetwork(network: AuthoritativeNetworkIdentity, skipValidation = false): void {
+    if (!skipValidation) {
+      NetworkRegistryValidationEngine.validateRegistry({ [network.networkId]: network });
     }
 
     const canonicalId = network.networkId.toLowerCase().trim();
@@ -118,37 +117,34 @@ export class AuthoritativeNetworkRegistry {
     if (cloned.family === 'EVM' && typeof cloned.numericChainId === 'number') {
       this.evmChainIdToNetworkId.set(cloned.numericChainId, canonicalId);
     }
-    public getNetworkFamily(networkIdOrAlias: string | number): NetworkFamily | undefined {
-        const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
-        if (!canonicalId)
-            return undefined;
-        return this.networks.get(canonicalId)?.family;
+
+    // Index aliases
+    if (Array.isArray(cloned.aliases)) {
+      for (const alias of cloned.aliases) {
+        const lowerAlias = alias.toLowerCase().trim();
+        if (lowerAlias) {
+          this.aliasToNetworkId.set(lowerAlias, canonicalId);
+        }
+      }
     }
-    public getNetwork(networkIdOrAlias: string | number): AuthoritativeNetworkIdentity | undefined {
-        const canonicalId = this.resolveNetworkIdentity(networkIdOrAlias);
-        if (!canonicalId)
-            return undefined;
-        const net = this.networks.get(canonicalId);
-        return net ? cloneNetworkIdentity(net) : undefined;
+  }
+
+  /**
+   * Resolves an arbitrary input (networkId, alias, composite key, or numeric EVM chain ID)
+   * to a canonical networkId.
+   */
+  public resolveNetworkIdentity(input: string | number): string | undefined {
+    if (typeof input === 'number') {
+      return this.evmChainIdToNetworkId.get(input);
     }
-    public getNetworkByChainIdentity(family: NetworkFamily, namespace: string, chainId: string | number): AuthoritativeNetworkIdentity | undefined {
-        const key = buildNetworkIdentityKey(family, namespace, chainId).toLowerCase();
-        const canonicalId = this.identityKeyToNetworkId.get(key);
-        if (!canonicalId)
-            return undefined;
-        const net = this.networks.get(canonicalId);
-        return net ? cloneNetworkIdentity(net) : undefined;
-    }
-    public getNetworkByAlias(alias: string): AuthoritativeNetworkIdentity | undefined {
-        const lower = alias.toLowerCase().trim();
-        const canonicalId = this.aliasToNetworkId.get(lower);
-        if (!canonicalId)
-            return undefined;
-        const net = this.networks.get(canonicalId);
-        return net ? cloneNetworkIdentity(net) : undefined;
-    }
-    public getNetworks(): AuthoritativeNetworkIdentity[] {
-        return Array.from(this.networks.values()).map((net) => cloneNetworkIdentity(net));
+
+    if (!input || typeof input !== 'string') return undefined;
+
+    const lower = input.toLowerCase().trim();
+
+    // 1. Direct networkId match
+    if (this.networks.has(lower)) {
+      return lower;
     }
 
     // 2. Composite key match (e.g. "evm:eip155:1")
@@ -355,4 +351,8 @@ export class AuthoritativeNetworkRegistry {
     return this.networks.get(canonicalId)?.onboardingState;
   }
 }
+
+/**
+ * Singleton instance of the Authoritative Network Registry.
+ */
 export const defaultAuthoritativeNetworkRegistry = new AuthoritativeNetworkRegistry();
