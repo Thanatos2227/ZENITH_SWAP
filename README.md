@@ -229,7 +229,7 @@ To deploy using Docker and Nginx:
 
 ```dockerfile
 # Build Stage
-FROM node:22.5-alpine AS builder
+FROM node:22.13-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY packages/ ./packages/
@@ -286,7 +286,7 @@ Every asset undergoes pre-trade evaluation:
 ## 🛠️ Local Development & Testing
 
 ### Prerequisites
-- Node.js >= 22.5.0
+- Node.js >= 22.13.0
 - npm >= 9.0.0
 - Foundry (`forge`, `cast`, `anvil`) for contract compilation/testing
 
