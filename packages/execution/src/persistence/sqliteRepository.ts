@@ -74,7 +74,7 @@ function getDatabaseSyncConstructor(): new (path: string) => SQLiteDatabaseSync 
   }
 
   const detectedNodeVersion = process.versions?.node || 'unknown';
-  throw new Error(`[SQLiteRepo] SQLite persistence requires a supported Node.js runtime (Node.js 22.5.0+) providing 'node:sqlite' DatabaseSync. Detected runtime: v${detectedNodeVersion}.`);
+  throw new Error(`[SQLiteRepo] SQLite persistence requires a supported Node.js runtime (Node.js 22.13.0+) providing 'node:sqlite' DatabaseSync. Detected runtime: v${detectedNodeVersion}.`);
 }
 
 export class SQLiteCrossChainStateRepository implements CrossChainStateRepository {

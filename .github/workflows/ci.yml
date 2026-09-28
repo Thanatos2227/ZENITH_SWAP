@@ -19,14 +19,14 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.13.0
           cache: 'npm'
 
       - name: Verify Node runtime
         run: |
           node --version
           npm --version
-          node -e "const { DatabaseSync } = require('node:sqlite'); console.log('DatabaseSync:', typeof DatabaseSync)"
+          node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 13)) process.exit(1); const { DatabaseSync } = require('node:sqlite'); if (typeof DatabaseSync !== 'function') process.exit(1); console.log('Node runtime and DatabaseSync verified:', process.version)"
 
       - name: Install Dependencies
         run: npm ci
@@ -39,6 +39,9 @@ jobs:
 
       - name: TypeScript Type-Check Gate
         run: npm run type-check
+
+      - name: Lint Gate
+        run: npm run lint
 
       - name: Protocol Test Suite (All Disciplines)
         run: npm test

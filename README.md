@@ -4,8 +4,8 @@
 
 ![ZENITH SWAP Platform](https://img.shields.io/badge/ZENITH%20SWAP-v4.0.0-00E599?style=for-the-badge&logo=target&logoColor=black)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
-![Supported Chains](https://img.shields.io/badge/Chains-21%20Networks%20(EVM%20%2B%20SVM)-7C3AED?style=for-the-badge)
-![Tests](https://img.shields.io/badge/Tests-7%20Passed%20(100%25)-00E599?style=for-the-badge)
+![Supported Chains](https://img.shields.io/badge/Chains-52%2B%20Networks%20by%20Support%20Tier-7C3AED?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Tests-Comprehensive%20Automated%20Suite-00E599?style=for-the-badge)
 ![Security](https://img.shields.io/badge/Security-Non--Custodial%20%2B%20MEV%20Protected-0EA5E9?style=for-the-badge)
 
 **Universal Multi-Chain Decentralized Trading, Smart Routing & Execution Engine**
@@ -35,7 +35,7 @@
 
 ## 🌟 Overview & Core Principles
 
-**ZENITH SWAP** is an institutional-grade, non-custodial decentralized trading platform engineered to provide seamless liquidity aggregation and atomic cross-chain swaps across 21 EVM, L2, L3, and Solana SVM networks.
+**ZENITH SWAP** is an institutional-grade, non-custodial decentralized trading platform engineered to provide seamless liquidity aggregation and atomic cross-chain swaps across the documented 52+ network support tiers, spanning EVM, L2, L3, Solana SVM, and other supported ecosystems.
 
 - **Non-Custodial Architecture:** Zero private key storage; contracts never hold user balances outside of atomic swap execution.
 - **Dynamic Best Execution Router (EES):** Multi-DEX splitting and scoring based on price impact, gas ratios, bridge latency, and liquidity depth.
@@ -84,7 +84,7 @@ ZENITH/
 │       └── package.json                    # @zenith/contracts-evm
 │
 ├── packages/
-│   ├── chains/                         # 53 Chain Configurations, RPC Fallbacks & Explorer Metadata
+│   ├── chains/                         # Network Configurations, RPC Fallbacks & Explorer Metadata
 │   ├── execution/                      # State Machine (IDLE -> QUOTE -> EXEC -> RX) & EVM/Solana Adapters
 │   ├── routing/                        # Best Execution Router, AMM Math & Bridge Aggregator
 │   ├── sdk/                            # Zenith TypeScript SDK
@@ -229,7 +229,7 @@ To deploy using Docker and Nginx:
 
 ```dockerfile
 # Build Stage
-FROM node:20-alpine AS builder
+FROM node:22.13-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY packages/ ./packages/
@@ -251,7 +251,7 @@ CMD ["nginx", "-g", "daemon off;"]
 
 ## ⛓️ Universal Network Support Tier System (52+ Networks)
 
-ZENITH features a formal, dynamic **Network Support Tier System** connecting 52+ distinct blockchain networks:
+ZENITH features a formal, dynamic **Network Support Tier System** covering 52+ documented network targets. The tiers describe capability and execution readiness; they should not be interpreted as a guarantee that every listed network has identical production functionality.
 
 | Tier | Classification | Feature Set & Availability | Network Targets |
 | :-- | :--- | :--- | :--- |
@@ -286,15 +286,15 @@ Every asset undergoes pre-trade evaluation:
 ## 🛠️ Local Development & Testing
 
 ### Prerequisites
-- Node.js >= 18.0.0
+- Node.js >= 22.13.0
 - npm >= 9.0.0
 - Foundry (`forge`, `cast`, `anvil`) for contract compilation/testing
 
 ### Installation
 ```bash
 # Clone the repository
-git clone https://github.com/zenith-exchange/zenith.git
-cd zenith
+git clone https://github.com/Thanatos2227/ZENITH_SWAP.git
+cd ZENITH_SWAP
 
 # Install dependencies across all workspaces
 npm install
@@ -316,14 +316,7 @@ npm run test
 ```bash
 npm run test
 ```
-Outputs validation across:
-- Dynamic 21-Chain Registry
-- Token Service & Custom Importer
-- Token Risk Engine & Honeypot Analysis
-- Best Execution Router & EES Scoring
-- Multi-Hop Cross-Chain Routing (Stargate Bridge)
-- Circuit Breaker Anomaly Thresholds
-- Execution State Machine Lifecycle
+The automated suite covers the protocol's routing, execution, persistence/recovery, security, network capability, and authoritative token-registry certification suites. Use the CI workflow as the source of truth for the current gate sequence and results.
 
 ---
 
