@@ -38,12 +38,16 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         assert.equal(result.sourceTxHash, undefined);
     });
     await t.test('3. LIVE_ONCHAIN mode: Fails closed with BLOCKED_NO_FUNDED_KEY when no signer is present', async () => {
+        const origMainnetKey = process.env.ZENITH_MAINNET_PRIVATE_KEY;
         const origKey = process.env.TESTNET_PRIVATE_KEY;
         const origSigner = process.env.ZENITH_SIGNER_PRIVATE_KEY;
+        const origZenithKey = process.env.ZENITH_PRIVATE_KEY;
         const origPk = process.env.PRIVATE_KEY;
         try {
+            delete process.env.ZENITH_MAINNET_PRIVATE_KEY;
             delete process.env.TESTNET_PRIVATE_KEY;
             delete process.env.ZENITH_SIGNER_PRIVATE_KEY;
+            delete process.env.ZENITH_PRIVATE_KEY;
             delete process.env.PRIVATE_KEY;
             const result = await runControlledPolygonCrossChainExecution({
                 executionMode: 'LIVE_ONCHAIN',
@@ -54,10 +58,14 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
             assert.equal(result.sourceTxHash, undefined);
         }
         finally {
+            if (origMainnetKey)
+                process.env.ZENITH_MAINNET_PRIVATE_KEY = origMainnetKey;
             if (origKey)
                 process.env.TESTNET_PRIVATE_KEY = origKey;
             if (origSigner)
                 process.env.ZENITH_SIGNER_PRIVATE_KEY = origSigner;
+            if (origZenithKey)
+                process.env.ZENITH_PRIVATE_KEY = origZenithKey;
             if (origPk)
                 process.env.PRIVATE_KEY = origPk;
         }
