@@ -714,7 +714,13 @@ describe('ZENITH — PHASE 2 TASK 39: AUTHORITATIVE TOKEN REGISTRY & TOKEN IDENT
     it('15.6 Rejects registration when an address is already authoritative on the same network', () => {
       const reg = new AuthoritativeTokenRegistry(ZENITH_CANONICAL_TOKENS);
       const canonical = reg.getToken('ethereum:erc20:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')!;
-      const duplicate = { ...canonical, tokenId: 'ethereum:erc20:duplicate-address-registration' };
+      const duplicate = {
+        ...canonical,
+        tokenId: 'ethereum:erc721:duplicate-address-registration',
+        standard: 'ERC721' as TokenStandard,
+        isFungible: false,
+        isNFT: true
+      };
       assert.throws(() => reg.registerToken(duplicate), /Token address collision/);
     });
 
