@@ -421,6 +421,7 @@ export class CrossChainAggregator {
         value: request.tokenIn.isNative ? amountInBig.toString() : '0',
         approvalTarget: sourceDexQuote?.approvalTarget || bestBridgeQuote.approvalTarget,
         quoteTimestamp: bestBridgeQuote.quoteTimestamp,
+        protocolTimestampSec: bestBridgeQuote.protocolTimestampSec,
         estimatedTransferTimeSec: bestBridgeQuote.estimatedTransferTimeSec + (sourceDexQuote ? 5 : 0),
         securityRating: bestBridgeQuote.securityRating,
         sourceConnectorToken: srcConnector,

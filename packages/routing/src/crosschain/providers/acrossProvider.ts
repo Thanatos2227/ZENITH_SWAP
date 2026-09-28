@@ -83,8 +83,9 @@ export class AcrossProvider implements CrossChainProvider {
     let bridgeFeeUSD = 0;
     let relayerFeePctStr = '0.05%';
     let estTransferTimeSec = 30;
-    let quoteTimestampSec = Math.floor(Date.now() / 1000);
-    let fillDeadlineSec = quoteTimestampSec + 1800;
+    const quoteArrivalTimestamp = Date.now();
+    let protocolTimestampSec = Math.floor(quoteArrivalTimestamp / 1000);
+    let fillDeadlineSec = protocolTimestampSec + 1800;
     let exclusiveRelayer = ZERO_ADDRESS;
     let isLiveQuote = false;
     let quoteDiagnostic: ExecutionPlanDiagnostic | undefined = undefined;
@@ -119,8 +120,8 @@ export class AcrossProvider implements CrossChainProvider {
             bridgeFeeUSD = request.tokenIn.priceUSD ? Number((Number(feeFormatted) * request.tokenIn.priceUSD).toFixed(4)) : 0;
             relayerFeePctStr = data.totalRelayFee.pct ? `${(Number(data.totalRelayFee.pct) * 100).toFixed(2)}%` : '0.05%';
             exclusiveRelayer = data.exclusiveRelayer || ZERO_ADDRESS;
-            quoteTimestampSec = Number(data.timestamp || quoteTimestampSec);
-            fillDeadlineSec = Number(data.fillDeadline || quoteTimestampSec + 1800);
+            protocolTimestampSec = Number(data.timestamp || protocolTimestampSec);
+            fillDeadlineSec = Number(data.fillDeadline || protocolTimestampSec + 1800);
             estTransferTimeSec = Number(data.estimatedFillTimeSec || 30);
             isLiveQuote = true;
           } else {
@@ -195,7 +196,7 @@ export class AcrossProvider implements CrossChainProvider {
           minDestinationAmountBig,
           dstChain.chainId!,
           exclusiveRelayer,
-          quoteTimestampSec,
+          protocolTimestampSec,
           fillDeadlineSec,
           0,
           '0x'
@@ -221,13 +222,14 @@ export class AcrossProvider implements CrossChainProvider {
       relayerFee: relayerFeePctStr,
       gasEstimateUSD,
       recipient: recipient || '',
-      expiration: Math.max(Date.now() + 300000, (quoteTimestampSec + 300) * 1000),
+      expiration: Math.max(quoteArrivalTimestamp + 300000, (protocolTimestampSec + 300) * 1000),
       routeIdentifier: `across-${srcChain.id}-${dstChain.id}-${Date.now()}`,
       executionTarget: spokePool,
       calldata,
       value,
       approvalTarget: spokePool,
-      quoteTimestamp: quoteTimestampSec * 1000,
+      quoteTimestamp: quoteArrivalTimestamp,
+      protocolTimestampSec,
       estimatedTransferTimeSec: estTransferTimeSec,
       securityRating: 'A+',
       isExecutable: isLiveQuote,
@@ -288,8 +290,31 @@ export class AcrossProvider implements CrossChainProvider {
     const safeInputToken = validateTokenAddress(quote.sourceToken.address, srcChain.id, quote.sourceToken.isNative);
     const safeOutputToken = validateTokenAddress(quote.destinationToken.address, dstChain.id, quote.destinationToken.isNative);
 
-    const quoteTimestampSec = Math.floor(quote.quoteTimestamp / 1000);
-    const fillDeadlineSec = quoteTimestampSec + 1800;
+    let exclusiveRelayer = ZERO_ADDRESS;
+    let protocolTimestampSec = quote.protocolTimestampSec;
+    let fillDeadlineSec: number | undefined;
+
+    if (quote.calldata && quote.calldata !== '0x') {
+      try {
+        const decoded = spokePoolInterface.decodeFunctionData('depositV3', quote.calldata);
+        exclusiveRelayer = decoded[7] || ZERO_ADDRESS;
+        if (protocolTimestampSec === undefined) {
+          protocolTimestampSec = Number(decoded[8]);
+        }
+        if (fillDeadlineSec === undefined) {
+          fillDeadlineSec = Number(decoded[9]);
+        }
+      } catch {
+        // Fallback if calldata is not decodable depositV3
+      }
+    }
+
+    if (protocolTimestampSec === undefined) {
+      protocolTimestampSec = Math.floor(quote.quoteTimestamp / 1000);
+    }
+    if (fillDeadlineSec === undefined) {
+      fillDeadlineSec = protocolTimestampSec + 1800;
+    }
 
     const data = spokePoolInterface.encodeFunctionData('depositV3', [
       safeUser.toLowerCase(),
@@ -299,8 +324,8 @@ export class AcrossProvider implements CrossChainProvider {
       BigInt(quote.sourceAmountRaw),
       BigInt(quote.minDestinationAmountRaw),
       dstChain.chainId,
-      ZERO_ADDRESS,
-      quoteTimestampSec,
+      exclusiveRelayer,
+      protocolTimestampSec,
       fillDeadlineSec,
       0,
       '0x'

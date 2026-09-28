@@ -245,6 +245,7 @@ export interface CrossChainQuote {
   value: string;
   approvalTarget: string;
   quoteTimestamp: number;
+  protocolTimestampSec?: number;
   estimatedTransferTimeSec: number;
   estimatedDurationSeconds?: number;
   securityRating: 'A+' | 'A' | 'B' | 'EXPERIMENTAL';
