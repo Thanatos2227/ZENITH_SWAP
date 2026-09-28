@@ -119,7 +119,7 @@ contract ZenithV3Test is Test {
         address pool = factory.createPool(address(token0), address(token1), 3000);
         assertTrue(pool != address(0));
 
-        uint160 initialSqrtPriceX96 = 79228162514264337593543950336; // 1:1 price
+        uint160 initialSqrtPriceX96 = 79228162514264337593543950336; 
         ZenithV3Pool(pool).initialize(initialSqrtPriceX96);
 
         (uint160 sqrtPriceX96, int24 tick, ) = ZenithV3Pool(pool).slot0();

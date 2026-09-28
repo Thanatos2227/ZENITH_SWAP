@@ -7,11 +7,6 @@ import "../src/libraries/FullMath.sol";
 import "../src/libraries/SqrtPriceMath.sol";
 import "../src/v3/libraries/SwapMath.sol";
 
-/**
- * @title ZenithV3TickMathFuzzTest
- * @notice Comprehensive property-based fuzz and invariant test suite for Zenith V3 Math libraries
- * @dev Designed for >= 10,000 runs to test all extreme edge cases, tick boundaries, and rounding invariants
- */
 contract ZenithV3TickMathFuzzTest is Test {
     int24 internal constant MIN_TICK = -887272;
     int24 internal constant MAX_TICK = 887272;
@@ -20,9 +15,6 @@ contract ZenithV3TickMathFuzzTest is Test {
 
     function setUp() public {}
 
-    // ==========================================
-    // 1. BOUNDARY & EXACT CONSTANT TESTS
-    // ==========================================
     function callGetSqrtRatioAtTick(int24 tick) external pure returns (uint160) {
         return TickMath.getSqrtRatioAtTick(tick);
     }
@@ -41,7 +33,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         assertEq(TickMath.getTickAtSqrtRatio(MAX_SQRT_RATIO - 1), MAX_TICK - 1, "MAX_SQRT_RATIO - 1 recovers MAX_TICK - 1");
     }
 
-    /// @notice Invariant: For any tick in [MIN_TICK, MAX_TICK], getSqrtRatioAtTick produces ratio in [MIN_SQRT_RATIO, MAX_SQRT_RATIO]
     function testFuzz_getSqrtRatioAtTick_inBounds(int24 tick) public pure {
         tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK)));
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick);
@@ -50,7 +41,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         assertTrue(sqrtPriceX96 <= MAX_SQRT_RATIO, "sqrtPriceX96 above MAX_SQRT_RATIO");
     }
 
-    /// @notice Invariant: Monotonicity - tickA < tickB ==> sqrtRatio(tickA) < sqrtRatio(tickB)
     function testFuzz_getSqrtRatioAtTick_monotonic(int24 tickA, int24 tickB) public pure {
         tickA = int24(bound(int256(tickA), int256(MIN_TICK), int256(MAX_TICK)));
         tickB = int24(bound(int256(tickB), int256(MIN_TICK), int256(MAX_TICK)));
@@ -66,7 +56,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    /// @notice Invariant: Round-trip consistency getTickAtSqrtRatio(getSqrtRatioAtTick(tick)) == tick
     function testFuzz_roundTrip_tickToSqrtRatioToTick(int24 tick) public pure {
         tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK)));
 
@@ -76,8 +65,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         assertEq(recoveredTick, tick, "Recovered tick must equal original tick");
     }
 
-    /// @notice Invariant: For any sqrtRatioX96 in [MIN, MAX), the recovered tick t satisfies:
-    /// sqrtRatioAtTick(t) <= sqrtPriceX96 < sqrtRatioAtTick(t + 1)
     function testFuzz_getTickAtSqrtRatio_bracketInvariant(uint160 sqrtPriceX96) public pure {
         sqrtPriceX96 = uint160(bound(uint256(sqrtPriceX96), uint256(MIN_SQRT_RATIO), uint256(MAX_SQRT_RATIO - 1)));
 
@@ -94,7 +81,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    /// @notice Invariant: Ticks out of bound [-887272, 887272] MUST revert
     function testFuzz_getSqrtRatioAtTick_outOfBounds_reverts(int256 rawTick) public {
         vm.assume(rawTick < int256(MIN_TICK) || rawTick > int256(MAX_TICK));
 
@@ -105,7 +91,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    /// @notice Invariant: Sqrt ratios out of bound [MIN_SQRT_RATIO, MAX_SQRT_RATIO) MUST revert
     function testFuzz_getTickAtSqrtRatio_outOfBounds_reverts(uint256 rawSqrtPrice) public {
         vm.assume(rawSqrtPrice < uint256(MIN_SQRT_RATIO) || rawSqrtPrice >= uint256(MAX_SQRT_RATIO));
 
@@ -116,11 +101,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    // ==========================================
-    // 3. SQRTPRICEMATH FUZZ & INVARIANT TESTS
-    // ==========================================
-
-    /// @notice Invariant: getAmount0Delta rounding up >= rounding down, and 0 delta for identical prices
     function testFuzz_SqrtPriceMath_getAmount0Delta_monotonicity(
         uint160 sqrtA,
         uint160 sqrtB,
@@ -141,7 +121,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    /// @notice Invariant: getAmount1Delta rounding up >= rounding down, and 0 delta for identical prices
     function testFuzz_SqrtPriceMath_getAmount1Delta_monotonicity(
         uint160 sqrtA,
         uint160 sqrtB,
@@ -162,7 +141,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-    /// @notice Invariant: getNextSqrtPriceFromInput moves price monotonically in expected direction
     function testFuzz_getNextSqrtPriceFromInput_direction(
         uint160 sqrtP,
         uint128 liquidity,
@@ -182,8 +160,6 @@ contract ZenithV3TickMathFuzzTest is Test {
         }
     }
 
-
-    /// @notice Invariant: SwapMath step never exceeds target sqrt price and conserves fee bounds
     function testFuzz_SwapMath_computeSwapStep_invariants(
         uint160 sqrtCurrent,
         uint160 sqrtTarget,
@@ -195,7 +171,7 @@ contract ZenithV3TickMathFuzzTest is Test {
         sqrtTarget = uint160(bound(uint256(sqrtTarget), uint256(MIN_SQRT_RATIO) + 100, uint256(MAX_SQRT_RATIO) - 100));
         liquidity = uint128(bound(uint256(liquidity), 1e10, 1e24));
         int256 amountRemaining = int256(bound(amountRemainingRaw, 1, 1e22));
-        feePips = uint24(bound(uint256(feePips), 100, 10000)); // 1 BPS to 100 BPS
+        feePips = uint24(bound(uint256(feePips), 100, 10000)); 
 
         (
             uint160 sqrtRatioNextX96,

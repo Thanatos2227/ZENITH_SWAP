@@ -1,8 +1,6 @@
 import React from 'react';
 import { UnifiedTradingView } from './UnifiedTradingView';
-
 export const ProTradingView: React.FC = () => {
-  return <UnifiedTradingView />;
+    return <UnifiedTradingView />;
 };
-
 export default ProTradingView;

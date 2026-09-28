@@ -1,10 +1,3 @@
-/**
- * @file index.ts
- * @package @zenith/routing
- *
- * Public Exports for Authoritative DEX / AMM Adapter Framework.
- */
-
 export * from './dexIdentity.types';
 export * from './dexProtocol.taxonomy';
 export * from './dexCapability.matrix';

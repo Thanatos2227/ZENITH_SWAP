@@ -1,30 +1,26 @@
 import { UnsupportedProtocolError } from '../errors';
-
 export const STARGATE_V2_ROUTERS: Record<number, string> = {
-  1: '0x8731d54E9D02c286767d56ac03e8037C07e01e98',
-  10: '0xB0D502E938ed5f4df2E681fE6E419ff29631d62b',
-  56: '0x4a364f8c717cAAD9A442737Eb7b8A55cc6cf18D8',
-  137: '0x45a01E4e04f14F7A4A1Da563391C99F3679c3eb0',
-  8453: '0x45f1A95A4D3f3836523F5c83673c797f4d4d263B',
-  42161: '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614',
-  43114: '0x45a01E4e04f14F7A4A1Da563391C99F3679c3eb0',
-  59144: '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614',
-  534352: '0x2f6F07cDCf3588944Bf4C42aC07Ff614588e673F'
+    1: '0x8731d54E9D02c286767d56ac03e8037C07e01e98',
+    10: '0xB0D502E938ed5f4df2E681fE6E419ff29631d62b',
+    56: '0x4a364f8c717cAAD9A442737Eb7b8A55cc6cf18D8',
+    137: '0x45a01E4e04f14F7A4A1Da563391C99F3679c3eb0',
+    8453: '0x45f1A95A4D3f3836523F5c83673c797f4d4d263B',
+    42161: '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614',
+    43114: '0x45a01E4e04f14F7A4A1Da563391C99F3679c3eb0',
+    59144: '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614',
+    534352: '0x2f6F07cDCf3588944Bf4C42aC07Ff614588e673F'
 };
-
 export const STARGATE_ROUTER_ABI = [
-  'function swap(uint16 _dstChainId, uint256 _srcPoolId, uint256 _dstPoolId, address payable _refundAddress, uint256 _amountLD, uint256 _minAmountLD, (uint256 dstGasForCall, uint256 dstNativeAmount, bytes dstNativeAddr) _lzTxParams, bytes _to, bytes _payload) external payable',
-  'function quoteLayerZeroFee(uint16 _dstChainId, uint8 _functionType, bytes _toAddress, bytes _transferAndCallPayload, (uint256 dstGasForCall, uint256 dstNativeAmount, bytes dstNativeAddr) _lzTxParams) external view returns (uint256, uint256)'
+    'function swap(uint16 _dstChainId, uint256 _srcPoolId, uint256 _dstPoolId, address payable _refundAddress, uint256 _amountLD, uint256 _minAmountLD, (uint256 dstGasForCall, uint256 dstNativeAmount, bytes dstNativeAddr) _lzTxParams, bytes _to, bytes _payload) external payable',
+    'function quoteLayerZeroFee(uint16 _dstChainId, uint8 _functionType, bytes _toAddress, bytes _transferAndCallPayload, (uint256 dstGasForCall, uint256 dstNativeAmount, bytes dstNativeAddr) _lzTxParams) external view returns (uint256, uint256)'
 ];
-
 export function getStargateRouter(chainId: number): string {
-  const router = STARGATE_V2_ROUTERS[chainId];
-  if (!router) {
-    throw new UnsupportedProtocolError('STARGATE', chainId);
-  }
-  return router;
+    const router = STARGATE_V2_ROUTERS[chainId];
+    if (!router) {
+        throw new UnsupportedProtocolError('STARGATE', chainId);
+    }
+    return router;
 }
-
 export function isStargateSupported(chainId: number): boolean {
-  return Boolean(STARGATE_V2_ROUTERS[chainId]);
+    return Boolean(STARGATE_V2_ROUTERS[chainId]);
 }
