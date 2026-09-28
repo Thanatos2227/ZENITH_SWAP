@@ -1,5 +1,6 @@
 import { Token, TokenSecurityProfile, UnsupportedTokenMetadata } from '@zenith/types';
 import { DEFAULT_TOKENS, UNSUPPORTED_TOKEN_METADATA } from './defaultTokens';
+import { defaultAuthoritativeTokenRegistry } from './authoritative/authoritativeTokenRegistry';
 
 export class TokenService {
   private tokens: Map<string, Token> = new Map();
@@ -43,12 +44,47 @@ export class TokenService {
   }
 
   public getToken(chainId: string, address: string): Token | undefined {
-    return this.tokens.get(this.getTokenKey(chainId, address));
+    const found = this.tokens.get(this.getTokenKey(chainId, address));
+    if (found) return found;
+
+    // Authoritative fallback
+    const auth = defaultAuthoritativeTokenRegistry.getTokenByAddress(chainId, 'ERC20', address);
+    if (auth) {
+      return {
+        address: auth.address || auth.normalizedAddress || address,
+        chainId: auth.networkId,
+        name: auth.name,
+        symbol: auth.symbol,
+        decimals: auth.decimals,
+        isNative: auth.isNative,
+        wrappedAddress: auth.wrappedAddress,
+        verificationTier: auth.verificationStatus === 'IDENTITY_VERIFIED' ? 'VERIFIED_CANONICAL' : 'UNVERIFIED',
+        enabled: auth.onboardingState !== 'DISABLED'
+      };
+    }
+    return undefined;
   }
 
   public getNativeToken(chainId: string): Token | undefined {
     const tokens = this.getTokensForChain(chainId);
-    return tokens.find((t) => t.isNative);
+    const found = tokens.find((t) => t.isNative);
+    if (found) return found;
+
+    const authNative = defaultAuthoritativeTokenRegistry.getNativeToken(chainId);
+    if (authNative) {
+      return {
+        address: authNative.address || '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+        chainId: authNative.networkId,
+        name: authNative.name,
+        symbol: authNative.symbol,
+        decimals: authNative.decimals,
+        isNative: true,
+        wrappedAddress: authNative.wrappedAddress,
+        verificationTier: 'VERIFIED_CANONICAL',
+        enabled: true
+      };
+    }
+    return undefined;
   }
 
   public getTokensForChain(chainId: string): Token[] {

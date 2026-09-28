@@ -6,13 +6,19 @@ import {
   SignerInitErrorCode
 } from './execute-controlled-polygon-crosschain';
 
+import { resolveSecureSignerKey, SignerRuntimeSource } from './secure-runtime-loader';
+
 export interface ProbeSignerResult {
+  signerRuntimeSource: SignerRuntimeSource;
+  signerConfigPresent: boolean;
   environmentConfigured: boolean;
   privateKeyFormat: 'VALID' | 'INVALID' | 'UNSET';
   walletInitialized: boolean;
+  signerProviderInitialized: boolean;
   providerAttached: boolean;
   derivedAddress: string;
   authorizedAddress: string;
+  authorizedAddressMatch: boolean;
   addressMatch: boolean;
   compromisedKeyDetected: boolean;
   polygonChainId: number;
@@ -26,7 +32,7 @@ export async function runSafeSignerProbe(): Promise<ProbeSignerResult> {
   const polygonRpc = process.env.POLYGON_MAINNET_RPC_URL || 'https://polygon-bor-rpc.publicnode.com';
   const provider = new JsonRpcProvider(polygonRpc, 137);
 
-  const rawKey = process.env.ZENITH_MAINNET_PRIVATE_KEY || process.env.TESTNET_PRIVATE_KEY;
+  const { rawKey, runtimeSource } = resolveSecureSignerKey();
   const hasRawKey = Boolean(rawKey && rawKey.trim());
   const normalizedKey = normalizePrivateKey(rawKey);
 
@@ -98,29 +104,32 @@ export async function runSafeSignerProbe(): Promise<ProbeSignerResult> {
 
   console.log('SAFE SIGNER PROBE');
   console.log('-----------------');
-  console.log(`Environment configured: ${environmentConfigured}`);
-  console.log(`Private key format: ${privateKeyFormat}`);
-  console.log(`Wallet initialized: ${walletInitialized}`);
-  console.log(`Provider attached: ${providerAttached}`);
-  console.log(`Derived address: ${derivedAddress}`);
-  console.log(`Authorized address: ${authorizedAddress}`);
-  console.log(`Address match: ${addressMatch}`);
+  console.log(`SIGNER_RUNTIME_SOURCE = ${runtimeSource}`);
+  console.log(`SIGNER_CONFIG_PRESENT = ${hasRawKey ? 'TRUE' : 'FALSE'}`);
+  console.log(`SIGNER_PROVIDER_INITIALIZED = ${walletInitialized && providerAttached ? 'TRUE' : 'FALSE'}`);
+  console.log(`DERIVED_ADDRESS = ${walletInitialized ? derivedAddress : 'NONE'}`);
+  console.log(`AUTHORIZED_ADDRESS_MATCH = ${addressMatch ? 'TRUE' : 'FALSE'}`);
+  console.log(`SIGNING_GATE = ${signingGate}`);
+  console.log('-----------------');
   console.log(`Polygon chain ID: ${polygonChainId}`);
   console.log(`Nonce: ${nonce}`);
   console.log(`POL balance: ${polBalance}`);
-  console.log(`Signing gate: ${signingGate}`);
   if (errorCode !== 'NONE') {
     console.log(`Error code: ${errorCode}`);
   }
   console.log('-----------------');
 
   return {
+    signerRuntimeSource: runtimeSource,
+    signerConfigPresent: hasRawKey,
     environmentConfigured,
     privateKeyFormat,
     walletInitialized,
+    signerProviderInitialized: walletInitialized && providerAttached,
     providerAttached,
-    derivedAddress,
+    derivedAddress: walletInitialized ? derivedAddress : 'NONE',
     authorizedAddress,
+    authorizedAddressMatch: addressMatch,
     addressMatch,
     compromisedKeyDetected,
     polygonChainId,

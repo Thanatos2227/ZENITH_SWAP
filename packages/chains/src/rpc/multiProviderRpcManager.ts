@@ -129,9 +129,20 @@ export class MultiProviderRpcManager {
   }
 
   public getEndpoints(chainId: string | number): ProviderEndpointHealth[] {
-    const chainKey = typeof chainId === 'number'
-      ? (defaultChainRegistry.getChain(chainId)?.id || String(chainId)).toLowerCase()
-      : chainId.toLowerCase();
+    let resolvedKey: string | undefined;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { defaultAuthoritativeNetworkRegistry } = require('../authoritative/authoritativeNetworkRegistry');
+      resolvedKey = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(chainId);
+    } catch {
+      // Fallback
+    }
+
+    const chainKey = resolvedKey
+      ? resolvedKey.toLowerCase()
+      : typeof chainId === 'number'
+        ? (defaultChainRegistry.getChain(chainId)?.id || String(chainId)).toLowerCase()
+        : chainId.toLowerCase();
 
     const map = this.endpoints.get(chainKey);
     return map ? Array.from(map.values()) : [];

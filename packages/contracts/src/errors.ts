@@ -621,11 +621,27 @@ export class ReorgDetectedError extends Error {
   public readonly code = 'REORG_DETECTED';
   public readonly txHash: string;
   public readonly previousBlock?: number;
-  constructor(txHash: string, previousBlock?: number) {
-    super(`REORG_DETECTED: Transaction receipt or block was invalidated by chain reorganization (TxHash: ${txHash}, Previous Block: ${previousBlock ?? 'N/A'})`);
+  public readonly originalBlockHash?: string;
+  public readonly canonicalBlockHash?: string;
+
+  constructor(
+    txHash: string,
+    previousBlockOrOriginalHash?: number | string,
+    canonicalBlockHash?: string,
+    customMessage?: string
+  ) {
+    const isNum = typeof previousBlockOrOriginalHash === 'number';
+    const previousBlock = isNum ? previousBlockOrOriginalHash : undefined;
+    const originalBlockHash = !isNum && typeof previousBlockOrOriginalHash === 'string' ? previousBlockOrOriginalHash : undefined;
+    const msg = customMessage || (originalBlockHash
+      ? `Reorg detected for tx ${txHash}: block hash mutated from ${originalBlockHash} to ${canonicalBlockHash || 'reorged/dropped'}`
+      : `REORG_DETECTED: Transaction receipt or block was invalidated by chain reorganization (TxHash: ${txHash}, Previous Block: ${previousBlock ?? 'N/A'})`);
+    super(msg);
     this.name = 'ReorgDetectedError';
     this.txHash = txHash;
     this.previousBlock = previousBlock;
+    this.originalBlockHash = originalBlockHash;
+    this.canonicalBlockHash = canonicalBlockHash;
     Object.setPrototypeOf(this, ReorgDetectedError.prototype);
   }
 }
@@ -1022,3 +1038,415 @@ export class AmbiguousBroadcastError extends BroadcastUncertainError {
   }
 }
 
+export class AuthorizationBoundaryBreachError extends SecurityPolicyViolationError {
+  public readonly boundary: string;
+  public readonly attemptedAction: string;
+
+  constructor(boundary: string, attemptedAction: string, reason = 'Execution boundary check failed') {
+    super(`AUTHORIZATION_BOUNDARY_BREACH: [${boundary}] ${reason} (Attempted: ${attemptedAction})`, [boundary, reason]);
+    this.name = 'AuthorizationBoundaryBreachError';
+    this.boundary = boundary;
+    this.attemptedAction = attemptedAction;
+    Object.setPrototypeOf(this, AuthorizationBoundaryBreachError.prototype);
+  }
+}
+
+export class UnauthorizedExecutionError extends SecurityPolicyViolationError {
+  public readonly planId?: string;
+
+  constructor(message = 'Execution attempted without authoritative authorization', planId?: string) {
+    super(`UNAUTHORIZED_EXECUTION: ${message}${planId ? ` (Plan: ${planId})` : ''}`, [message]);
+    this.name = 'UnauthorizedExecutionError';
+    this.planId = planId;
+    Object.setPrototypeOf(this, UnauthorizedExecutionError.prototype);
+  }
+}
+
+export class InvalidSecurityStateTransitionError extends InvalidStateTransitionError {
+  constructor(fromState: string, toState: string, context = 'SecurityStateMachine') {
+    super(fromState, toState, context);
+    this.name = 'InvalidSecurityStateTransitionError';
+    Object.setPrototypeOf(this, InvalidSecurityStateTransitionError.prototype);
+  }
+}
+
+export class ExecutionTargetNotAllowlistedError extends InvalidExecutionTargetError {
+  constructor(target: string, chainId: string | number, reason = 'Target address is not on canonical allowlist') {
+    super(target, chainId, `ALLOWLIST_REJECTION: ${reason}`);
+    this.name = 'ExecutionTargetNotAllowlistedError';
+    Object.setPrototypeOf(this, ExecutionTargetNotAllowlistedError.prototype);
+  }
+}
+
+export class ApprovalPolicyViolationError extends SecurityPolicyViolationError {
+  public readonly approvalTarget: string;
+  public readonly amount: string;
+
+  constructor(approvalTarget: string, amount: string, reason: string) {
+    super(`APPROVAL_POLICY_VIOLATION: ${reason} (Target: ${approvalTarget}, Amount: ${amount})`, [reason]);
+    this.name = 'ApprovalPolicyViolationError';
+    this.approvalTarget = approvalTarget;
+    this.amount = amount;
+    Object.setPrototypeOf(this, ApprovalPolicyViolationError.prototype);
+  }
+}
+
+export class CalldataAuthorizationError extends InvalidCalldataError {
+  public readonly selector?: string;
+
+  constructor(message: string, selector?: string) {
+    super(`CALLDATA_AUTHORIZATION_FAILED: ${message}${selector ? ` (Selector: ${selector})` : ''}`);
+    this.name = 'CalldataAuthorizationError';
+    this.selector = selector;
+    Object.setPrototypeOf(this, CalldataAuthorizationError.prototype);
+  }
+}
+
+export class SemanticEquivalenceBreachError extends SecurityPolicyViolationError {
+  public readonly field: string;
+  public readonly expected: string;
+  public readonly actual: string;
+
+  constructor(field: string, expected: string, actual: string, message = 'Semantic equivalence check failed') {
+    super(`SEMANTIC_EQUIVALENCE_BREACH: ${message} [Field: ${field}] (Expected: "${expected}", Actual: "${actual}")`, [field, message]);
+    this.name = 'SemanticEquivalenceBreachError';
+    this.field = field;
+    this.expected = expected;
+    this.actual = actual;
+    Object.setPrototypeOf(this, SemanticEquivalenceBreachError.prototype);
+  }
+}
+
+export class AbiEncodingMismatchError extends InvalidCalldataError {
+  public readonly functionName: string;
+
+  constructor(functionName: string, reason = 'Decoded and re-encoded calldata does not match byte-for-byte') {
+    super(`ABI_ENCODING_MISMATCH: Function "${functionName}" ${reason}`);
+    this.name = 'AbiEncodingMismatchError';
+    this.functionName = functionName;
+    Object.setPrototypeOf(this, AbiEncodingMismatchError.prototype);
+  }
+}
+
+export class ParameterSemanticMismatchError extends SemanticEquivalenceBreachError {
+  public readonly parameterIndex?: number;
+
+  constructor(parameterName: string, expected: string, actual: string, parameterIndex?: number) {
+    super(parameterName, expected, actual, `Parameter semantic mismatch${parameterIndex !== undefined ? ` at index ${parameterIndex}` : ''}`);
+    this.name = 'ParameterSemanticMismatchError';
+    this.parameterIndex = parameterIndex;
+    Object.setPrototypeOf(this, ParameterSemanticMismatchError.prototype);
+  }
+}
+
+export class NativeValueSemanticError extends SecurityPolicyViolationError {
+  public readonly value: string;
+
+  constructor(value: string, reason: string) {
+    super(`NATIVE_VALUE_SEMANTIC_ERROR: ${reason} (Supplied value: "${value}")`, [reason]);
+    this.name = 'NativeValueSemanticError';
+    this.value = value;
+    Object.setPrototypeOf(this, NativeValueSemanticError.prototype);
+  }
+}
+
+export class GasSemanticError extends Error {
+  public readonly code: string;
+
+  constructor(message: string, code = 'GAS_SEMANTIC_ERROR') {
+    super(`GAS_SEMANTIC_ERROR: ${message}`);
+    this.name = 'GasSemanticError';
+    this.code = code;
+    Object.setPrototypeOf(this, GasSemanticError.prototype);
+  }
+}
+
+export class ReceiptSemanticError extends Error {
+  public readonly code: string;
+  public readonly txHash?: string;
+
+  constructor(message: string, txHash?: string) {
+    super(`RECEIPT_SEMANTIC_ERROR: ${message}${txHash ? ` (Tx: ${txHash})` : ''}`);
+    this.name = 'ReceiptSemanticError';
+    this.code = 'RECEIPT_SEMANTIC_ERROR';
+    this.txHash = txHash;
+    Object.setPrototypeOf(this, ReceiptSemanticError.prototype);
+  }
+}
+
+export class EconomicSafetyBreachError extends SecurityPolicyViolationError {
+  public readonly field: string;
+  public readonly expected: string;
+  public readonly actual: string;
+
+  constructor(field: string, expected: string, actual: string, message = 'Economic safety boundary breached') {
+    super(`ECONOMIC_SAFETY_BREACH: ${message} [Field: ${field}] (Expected: "${expected}", Actual: "${actual}")`, [field, message]);
+    this.name = 'EconomicSafetyBreachError';
+    this.field = field;
+    this.expected = expected;
+    this.actual = actual;
+    Object.setPrototypeOf(this, EconomicSafetyBreachError.prototype);
+  }
+}
+
+export class SlippagePolicyViolationError extends EconomicSafetyBreachError {
+  public readonly slippageBps: number;
+
+  constructor(slippageBps: number, reason: string, expected = '<= policy limit', actual = String(slippageBps)) {
+    super('slippageBps', expected, actual, `Slippage policy violation: ${reason}`);
+    this.name = 'SlippagePolicyViolationError';
+    this.slippageBps = slippageBps;
+    Object.setPrototypeOf(this, SlippagePolicyViolationError.prototype);
+  }
+}
+
+export class MinimumOutputBreachError extends EconomicSafetyBreachError {
+  constructor(minimumAmountOut: string, actualAmountOut: string, context = 'Output below guaranteed threshold') {
+    super('minimumAmountOut', `>= ${minimumAmountOut}`, actualAmountOut, `Minimum output breach: ${context}`);
+    this.name = 'MinimumOutputBreachError';
+    Object.setPrototypeOf(this, MinimumOutputBreachError.prototype);
+  }
+}
+
+export class InsufficientNativeReserveError extends EconomicSafetyBreachError {
+  constructor(requiredTotal: string, availableBalance: string, reason = 'Insufficient native gas reserve') {
+    super('nativeReserve', `>= ${requiredTotal}`, availableBalance, reason);
+    this.name = 'InsufficientNativeReserveError';
+    Object.setPrototypeOf(this, InsufficientNativeReserveError.prototype);
+  }
+}
+
+export class QuoteFreshnessExpiredError extends EconomicSafetyBreachError {
+  public readonly quoteAgeMs: number;
+  public readonly maxAgeMs: number;
+
+  constructor(quoteAgeMs: number, maxAgeMs: number, reason = 'Quote has expired or exceeds maximum freshness threshold') {
+    super('quoteAgeMs', `<= ${maxAgeMs}`, String(quoteAgeMs), reason);
+    this.name = 'QuoteFreshnessExpiredError';
+    this.quoteAgeMs = quoteAgeMs;
+    this.maxAgeMs = maxAgeMs;
+    Object.setPrototypeOf(this, QuoteFreshnessExpiredError.prototype);
+  }
+}
+
+export class FeeAccountingBreachError extends EconomicSafetyBreachError {
+  constructor(maxAllowedFee: string, actualFee: string, feeType = 'totalFee') {
+    super(feeType, `<= ${maxAllowedFee}`, actualFee, `Fee accounting breach: fee exceeds authorized limit`);
+    this.name = 'FeeAccountingBreachError';
+    Object.setPrototypeOf(this, FeeAccountingBreachError.prototype);
+  }
+}
+
+export class PriceImpactExceededError extends EconomicSafetyBreachError {
+  public readonly priceImpactPercent: number;
+  public readonly maxAllowedPercent: number;
+
+  constructor(priceImpactPercent: number, maxAllowedPercent: number) {
+    super('priceImpactPercent', `<= ${maxAllowedPercent}%`, `${priceImpactPercent}%`, 'Price impact exceeds acceptable safety ceiling');
+    this.name = 'PriceImpactExceededError';
+    this.priceImpactPercent = priceImpactPercent;
+    this.maxAllowedPercent = maxAllowedPercent;
+    Object.setPrototypeOf(this, PriceImpactExceededError.prototype);
+  }
+}
+
+export class SettlementFinalityBreachError extends Error {
+  public readonly code = 'SETTLEMENT_FINALITY_BREACH';
+  public readonly currentConfirmations: number;
+  public readonly requiredConfirmations: number;
+  public readonly chainId?: number | string;
+
+  constructor(currentConfirmations: number, requiredConfirmations: number, chainId?: number | string, message?: string) {
+    super(message || `Settlement finality breach: current confirmations (${currentConfirmations}) below required safety depth (${requiredConfirmations}) for chain ${chainId || 'unknown'}`);
+    this.name = 'SettlementFinalityBreachError';
+    this.currentConfirmations = currentConfirmations;
+    this.requiredConfirmations = requiredConfirmations;
+    this.chainId = chainId;
+    Object.setPrototypeOf(this, SettlementFinalityBreachError.prototype);
+  }
+}
+
+export class DestinationEvidenceMismatchError extends Error {
+  public readonly code = 'DESTINATION_EVIDENCE_MISMATCH';
+  public readonly field: string;
+  public readonly expected: string;
+  public readonly actual: string;
+
+  constructor(field: string, expected: string, actual: string, message?: string) {
+    super(message || `Destination evidence mismatch on ${field}: expected ${expected}, got ${actual}`);
+    this.name = 'DestinationEvidenceMismatchError';
+    this.field = field;
+    this.expected = expected;
+    this.actual = actual;
+    Object.setPrototypeOf(this, DestinationEvidenceMismatchError.prototype);
+  }
+}
+
+export class EvidenceConflictError extends Error {
+  public readonly code = 'EVIDENCE_CONFLICT';
+  public readonly primaryTier: string;
+  public readonly secondaryTier: string;
+  public readonly conflictDetails: string;
+
+  constructor(primaryTier: string, secondaryTier: string, conflictDetails: string) {
+    super(`Evidence conflict between ${primaryTier} and ${secondaryTier}: ${conflictDetails}`);
+    this.name = 'EvidenceConflictError';
+    this.primaryTier = primaryTier;
+    this.secondaryTier = secondaryTier;
+    this.conflictDetails = conflictDetails;
+    Object.setPrototypeOf(this, EvidenceConflictError.prototype);
+  }
+}
+
+export class DexNetworkMismatchError extends ConfigurationError {
+  constructor(dexId: string, expectedNetworkId: string, actualNetworkId: string) {
+    super(
+      `DEX_NETWORK_MISMATCH: DEX "${dexId}" belongs to network "${expectedNetworkId}", cannot operate on network "${actualNetworkId}"`,
+      'DEX_NETWORK_MISMATCH'
+    );
+    this.name = 'DexNetworkMismatchError';
+    Object.setPrototypeOf(this, DexNetworkMismatchError.prototype);
+  }
+}
+
+export class DexEnvironmentMismatchError extends ConfigurationError {
+  constructor(dexId: string, expectedEnv: string, actualEnv: string) {
+    super(
+      `DEX_ENVIRONMENT_MISMATCH: DEX "${dexId}" environment "${expectedEnv}" does not match requested network environment "${actualEnv}"`,
+      'DEX_ENVIRONMENT_MISMATCH'
+    );
+    this.name = 'DexEnvironmentMismatchError';
+    Object.setPrototypeOf(this, DexEnvironmentMismatchError.prototype);
+  }
+}
+
+export class DexFamilyMismatchError extends ConfigurationError {
+  constructor(dexId: string, expectedFamily: string, actualFamily: string) {
+    super(
+      `DEX_FAMILY_MISMATCH: DEX "${dexId}" family "${expectedFamily}" does not match target family "${actualFamily}"`,
+      'DEX_FAMILY_MISMATCH'
+    );
+    this.name = 'DexFamilyMismatchError';
+    Object.setPrototypeOf(this, DexFamilyMismatchError.prototype);
+  }
+}
+
+export class UnsupportedDexOperationError extends ConfigurationError {
+  public readonly operation: string;
+  public readonly dexId: string;
+  constructor(dexId: string, operation: string, reason?: string) {
+    super(
+      `UNSUPPORTED_DEX_OPERATION: Operation "${operation}" is not supported on DEX "${dexId}"${reason ? `: ${reason}` : ''}`,
+      'UNSUPPORTED_DEX_OPERATION'
+    );
+    this.name = 'UnsupportedDexOperationError';
+    this.operation = operation;
+    this.dexId = dexId;
+    Object.setPrototypeOf(this, UnsupportedDexOperationError.prototype);
+  }
+}
+
+export class DexCapabilityMismatchError extends ConfigurationError {
+  constructor(dexId: string, requiredCapability: string, currentCapability: string, reason?: string) {
+    super(
+      `DEX_CAPABILITY_MISMATCH: DEX "${dexId}" capability "${currentCapability}" does not meet required "${requiredCapability}"${reason ? `: ${reason}` : ''}`,
+      'DEX_CAPABILITY_MISMATCH'
+    );
+    this.name = 'DexCapabilityMismatchError';
+    Object.setPrototypeOf(this, DexCapabilityMismatchError.prototype);
+  }
+}
+
+export class DexMetadataConflictError extends ConfigurationError {
+  constructor(dexId: string, conflictType: string, details: string) {
+    super(
+      `DEX_METADATA_CONFLICT: DEX "${dexId}" has ${conflictType}: ${details}`,
+      'DEX_METADATA_CONFLICT'
+    );
+    this.name = 'DexMetadataConflictError';
+    Object.setPrototypeOf(this, DexMetadataConflictError.prototype);
+  }
+}
+
+export class DexPoolNotFoundError extends ConfigurationError {
+  constructor(dexId: string, tokenA: string, tokenB: string, feeTier?: number) {
+    super(
+      `POOL_NOT_FOUND: No verified pool found on DEX "${dexId}" for pair ${tokenA}/${tokenB}${feeTier !== undefined ? ` (fee: ${feeTier})` : ''}`,
+      'POOL_NOT_FOUND'
+    );
+    this.name = 'DexPoolNotFoundError';
+    Object.setPrototypeOf(this, DexPoolNotFoundError.prototype);
+  }
+}
+
+export class DexPoolUnverifiedError extends ConfigurationError {
+  constructor(dexId: string, poolAddress: string, reason?: string) {
+    super(
+      `POOL_UNVERIFIED: Pool "${poolAddress}" on DEX "${dexId}" could not be verified${reason ? `: ${reason}` : ''}`,
+      'POOL_UNVERIFIED'
+    );
+    this.name = 'DexPoolUnverifiedError';
+    Object.setPrototypeOf(this, DexPoolUnverifiedError.prototype);
+  }
+}
+
+export class DexSimulationFailedError extends Error {
+  public readonly code = 'DEX_SIMULATION_FAILED';
+  public readonly step: string;
+  public readonly reason: string;
+  constructor(step: string, reason: string) {
+    super(`DEX simulation failed at step "${step}": ${reason}`);
+    this.name = 'DexSimulationFailedError';
+    this.step = step;
+    this.reason = reason;
+    Object.setPrototypeOf(this, DexSimulationFailedError.prototype);
+  }
+}
+
+export class DexOnboardingTransitionError extends ConfigurationError {
+  constructor(dexId: string, fromState: string, toState: string, reason?: string) {
+    super(
+      `DEX_ONBOARDING_TRANSITION_INVALID: Cannot transition DEX "${dexId}" from state "${fromState}" to "${toState}"${reason ? `: ${reason}` : ''}`,
+      'DEX_ONBOARDING_TRANSITION_INVALID'
+    );
+    this.name = 'DexOnboardingTransitionError';
+    Object.setPrototypeOf(this, DexOnboardingTransitionError.prototype);
+  }
+}
+
+export class PriceImpactUnavailableError extends Error {
+  public readonly code = 'PRICE_IMPACT_UNKNOWN';
+  constructor(dexId: string, poolAddress?: string) {
+    super(`PRICE_IMPACT_UNKNOWN: Price impact calculation unavailable for DEX "${dexId}"${poolAddress ? ` pool "${poolAddress}"` : ''}`);
+    this.name = 'PriceImpactUnavailableError';
+    Object.setPrototypeOf(this, PriceImpactUnavailableError.prototype);
+  }
+}
+
+export class LiveDexVerificationError extends Error {
+  public readonly code = 'LIVE_DEX_VERIFICATION_FAILED';
+  public readonly dexId: string;
+  public readonly stage: string;
+  public readonly details?: string;
+  constructor(dexId: string, stage: string, message: string, details?: string) {
+    super(`LIVE_DEX_VERIFICATION_FAILED: DEX "${dexId}" failed at stage "${stage}": ${message}`);
+    this.name = 'LiveDexVerificationError';
+    this.dexId = dexId;
+    this.stage = stage;
+    this.details = details;
+    Object.setPrototypeOf(this, LiveDexVerificationError.prototype);
+  }
+}
+
+export class LiveExecutionBlockedError extends Error {
+  public readonly code = 'LIVE_EXECUTION_BLOCKED';
+  public readonly blockingReasons: string[];
+  public readonly reasons: string[];
+  constructor(reasons: string[]) {
+    super(`LIVE_EXECUTION_BLOCKED: Live on-chain execution is strictly blocked by safety gate. Unmet prerequisites: ${reasons.join('; ')}`);
+    this.name = 'LiveExecutionBlockedError';
+    this.blockingReasons = reasons;
+    this.reasons = reasons;
+    Object.setPrototypeOf(this, LiveExecutionBlockedError.prototype);
+  }
+}

@@ -94,7 +94,7 @@ export class ChainRegistry {
 
   public registerChain(key: string, config: ChainConfig): void {
     this.chains.set(key.toLowerCase(), config);
-    if (config.chainId !== undefined && config.chainId > 0) {
+    if (config.chainId !== undefined && config.chainId > 0 && (config.executionEnvironment === 'EVM' || !config.executionEnvironment)) {
       this.chainIdToKey.set(config.chainId, key.toLowerCase());
     }
   }
@@ -104,14 +104,27 @@ export class ChainRegistry {
       const key = this.chainIdToKey.get(keyOrId);
       return key ? this.chains.get(key) : undefined;
     }
-    const directMatch = this.chains.get(keyOrId.toLowerCase());
+    const strKey = String(keyOrId).toLowerCase();
+    const directMatch = this.chains.get(strKey);
     if (directMatch) return directMatch;
 
     const num = Number(keyOrId);
     if (!isNaN(num) && this.chainIdToKey.has(num)) {
       const key = this.chainIdToKey.get(num);
-      return key ? this.chains.get(key) : undefined;
+      if (key) return this.chains.get(key);
     }
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { defaultAuthoritativeNetworkRegistry } = require('./authoritative/authoritativeNetworkRegistry');
+      const resolved = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(keyOrId);
+      if (resolved && this.chains.has(resolved)) {
+        return this.chains.get(resolved);
+      }
+    } catch {
+      // Fallback
+    }
+
     return undefined;
   }
 

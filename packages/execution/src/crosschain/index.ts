@@ -10,3 +10,6 @@ export * from './multiProviderRpcManager';
 export * from './multiProviderRpcClient';
 export * from './statusReconciler';
 export * from './multiProviderMetrics';
+export * from './settlementTelemetry';
+export * from './executionIntegrationPipeline';
+export * from './compositeSettlementMonitoringEngine';

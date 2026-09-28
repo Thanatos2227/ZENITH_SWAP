@@ -8,7 +8,7 @@ import {
   ExecutionStepType,
   NormalizedRoute
 } from '@zenith/types';
-import { defaultChainRegistry } from '@zenith/chains';
+import { defaultChainRegistry, defaultNetworkCapabilityRegistry } from '@zenith/chains';
 import { isNativeToken } from '@zenith/routing';
 import {
   ZERO_ADDRESS,
@@ -83,7 +83,8 @@ export function computeExecutionPlanHash(plan: ExecutionPlan): string {
       targetAddress: (s.targetAddress || '').toLowerCase(),
       approvalTarget: (s.approvalTarget || '').toLowerCase(),
       requiredAmountRaw: s.requiredAmountRaw || '',
-      calldata: s.calldata || ''
+      calldata: s.calldata || '',
+      dependencies: s.dependencies || []
     }))
   });
   return sha256(toUtf8Bytes(normalized)).toLowerCase().replace(/^0x/, '');
@@ -548,6 +549,18 @@ export class ExecutionPlanBuilder {
     const stepIds: string[] = [];
     let isPlanExecutable = true;
     let unexecutableReason: string | undefined = undefined;
+
+    const sourceCap = defaultNetworkCapabilityRegistry.getExecutionCapability(request.sourceChainId);
+    if (sourceCap === 'UNSUPPORTED') {
+      isPlanExecutable = false;
+      unexecutableReason = `Source network "${request.sourceChainId}" capability is UNSUPPORTED`;
+    } else if (isCrossChain) {
+      const destCap = defaultNetworkCapabilityRegistry.getExecutionCapability(request.destinationChainId);
+      if (destCap === 'UNSUPPORTED') {
+        isPlanExecutable = false;
+        unexecutableReason = `Destination network "${request.destinationChainId}" capability is UNSUPPORTED`;
+      }
+    }
     let compositeMode: 'ATOMIC' | 'SOLVER' | 'SEPARATE_DESTINATION_TX' | 'UNSUPPORTED' = 'ATOMIC';
 
     const routeType = isCrossChain
@@ -618,7 +631,9 @@ export class ExecutionPlanBuilder {
 
       if (!executionTo || executionTo === ZERO_ADDRESS) {
         isPlanExecutable = false;
-        unexecutableReason = 'INVALID_EXECUTION_TARGET: DEX router target contract address is missing or zero.';
+        if (!unexecutableReason) {
+          unexecutableReason = 'INVALID_EXECUTION_TARGET: DEX router target contract address is missing or zero.';
+        }
         diagnostics.push({
           code: 'INVALID_EXECUTION_TARGET',
           message: 'DEX router target contract address is invalid.',
@@ -757,12 +772,16 @@ export class ExecutionPlanBuilder {
 
       if (!bridgeTo || bridgeTo === ZERO_ADDRESS) {
         isPlanExecutable = false;
-        unexecutableReason = 'INVALID_EXECUTION_TARGET: Bridge contract target address is missing or zero.';
+        if (!unexecutableReason) {
+          unexecutableReason = 'INVALID_EXECUTION_TARGET: Bridge contract target address is missing or zero.';
+        }
       }
 
       if (!bridgeData || bridgeData === '0x') {
         isPlanExecutable = false;
-        unexecutableReason = ccQuote?.unexecutableReason || 'EXECUTION_UNAVAILABLE: Bridge calldata is missing or unverified.';
+        if (!unexecutableReason) {
+          unexecutableReason = ccQuote?.unexecutableReason || 'EXECUTION_UNAVAILABLE: Bridge calldata is missing or unverified.';
+        }
       }
 
       steps.push({
@@ -942,7 +961,7 @@ export class ExecutionPlanBuilder {
       steps,
       currentStepIndex: 0,
       overallStatus: 'IDLE',
-      selectedProvider: ccQuote?.provider || (route.hops[0]?.dexProtocol ? String(route.hops[0].dexProtocol) : undefined),
+      selectedProvider: ccQuote?.provider || (route.hops?.[0]?.dexProtocol ? String(route.hops[0].dexProtocol) : undefined),
       selectedDex: route.dexQuote?.provider || ccQuote?.sourceDexQuote?.provider || ccQuote?.destDexQuote?.provider,
       calldata: route.execution?.data || ccQuote?.calldata || route.dexQuote?.calldata,
       approvalTarget: route.execution?.approvalTarget || ccQuote?.approvalTarget || route.dexQuote?.approvalTarget,

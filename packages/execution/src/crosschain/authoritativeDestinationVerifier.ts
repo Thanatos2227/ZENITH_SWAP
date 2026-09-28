@@ -1,4 +1,5 @@
 import { Interface } from 'ethers';
+import { defaultSettlementTelemetry } from './settlementTelemetry';
 
 export type DestinationEvidenceTier =
   | 'TIER_1_ONCHAIN_RECEIPT'
@@ -12,7 +13,8 @@ export type DestinationSettlementStatus =
   | 'DESTINATION_SETTLED'
   | 'DESTINATION_STATUS_UNCERTAIN'
   | 'STATUS_CONFLICT'
-  | 'DESTINATION_FAILED';
+  | 'DESTINATION_FAILED'
+  | 'REORG_DETECTED';
 
 export interface DestinationEvidenceItem {
   tier: DestinationEvidenceTier;
@@ -21,22 +23,29 @@ export interface DestinationEvidenceItem {
   status: 'CONFIRMED' | 'REVERTED' | 'NOT_FOUND' | 'MISMATCH' | 'PENDING' | 'UNAVAILABLE';
   txHash?: string | null;
   blockNumber?: number;
+  blockHash?: string | null;
   details?: Record<string, any>;
   timestamp: number;
 }
 
 export interface AuthoritativeDestinationVerificationParams {
-  destinationChainId: number;
+  destinationChainId: number | string;
   destinationTxHash?: string | null;
   expectedRecipient: string;
   expectedToken: string;
   expectedMinAmountRaw: string | bigint;
+  expectedSpokePoolOrTarget?: string | null;
+  expectedBlockHash?: string | null;
+  currentBlockNumber?: number | null;
+  requiredConfirmations?: number | null;
   providerStatus?: string | null;
   providerFillTx?: string | null;
+  bridgeProvider?: string | null;
   preBridgeBalanceRaw?: string | bigint;
   receipt?: {
     status: number | string;
     blockNumber: number;
+    blockHash?: string;
     gasUsed?: string | bigint;
     logs?: Array<{ address: string; topics: string[]; data: string }>;
   } | null;
@@ -44,10 +53,12 @@ export interface AuthoritativeDestinationVerificationParams {
     hash: string;
     from: string;
     to: string;
-    chainId?: number | bigint;
+    chainId?: number | bigint | string;
   } | null;
   currentBalanceRaw?: string | bigint | null;
   localCacheStatus?: string | null;
+  planId?: string;
+  intentId?: string;
 }
 
 export interface AuthoritativeDestinationVerificationResult {
@@ -57,27 +68,27 @@ export interface AuthoritativeDestinationVerificationResult {
   actualDeliveredAmountRaw?: string;
   deliveredToExpectedRecipient: boolean;
   tokenMatched: boolean;
+  confirmations?: number;
+  requiredConfirmations?: number;
+  isFinalized?: boolean;
+  reorgDetected?: boolean;
   revertReason?: string;
   conflictReason?: string;
   blockNumber?: number;
+  blockHash?: string;
   gasUsed?: string;
   timestamp: number;
 }
 
 const ERC20_TRANSFER_EVENT = 'event Transfer(address indexed from, address indexed to, uint256 value)';
 
-/**
- * Authoritative 6-Tier Destination Evidence Verifier
- * Enforces strict hierarchy where On-Chain Receipts and Mined Logs (Tiers 1-3)
- * strictly override Bridge Provider APIs and Local Caches (Tiers 5-6).
- */
 export function verifyDestinationSettlement(
   params: AuthoritativeDestinationVerificationParams
 ): AuthoritativeDestinationVerificationResult {
   const evidences: DestinationEvidenceItem[] = [];
-  const expectedRecipient = params.expectedRecipient.toLowerCase();
-  const expectedToken = params.expectedToken.toLowerCase();
-  const expectedMinAmount = BigInt(params.expectedMinAmountRaw.toString());
+  const expectedRecipient = (params.expectedRecipient || '').toLowerCase();
+  const expectedToken = (params.expectedToken || '').toLowerCase();
+  const expectedMinAmount = BigInt((params.expectedMinAmountRaw || '0').toString());
   const now = Date.now();
 
   // Tier 6: Local Cache
@@ -110,17 +121,35 @@ export function verifyDestinationSettlement(
   }
 
   // Tier 2: Transaction Lookup
+  let txChainMismatch = false;
+  let txTargetMismatch = false;
   if (params.transaction) {
+    if (params.transaction.chainId !== undefined && params.transaction.chainId !== null) {
+      const normalizedTxChain = String(params.transaction.chainId).toLowerCase();
+      const normalizedExpectedChain = String(params.destinationChainId).toLowerCase();
+      if (normalizedTxChain !== normalizedExpectedChain) {
+        txChainMismatch = true;
+      }
+    }
+
+    if (params.expectedSpokePoolOrTarget && params.transaction.to) {
+      if (params.transaction.to.toLowerCase() !== params.expectedSpokePoolOrTarget.toLowerCase()) {
+        txTargetMismatch = true;
+      }
+    }
+
     evidences.push({
       tier: 'TIER_2_ONCHAIN_TX_LOOKUP',
       priority: 2,
-      verified: true,
-      status: 'CONFIRMED',
+      verified: !txChainMismatch && !txTargetMismatch,
+      status: txChainMismatch || txTargetMismatch ? 'MISMATCH' : 'CONFIRMED',
       txHash: params.transaction.hash,
       details: {
         from: params.transaction.from,
         to: params.transaction.to,
-        chainId: params.transaction.chainId?.toString()
+        chainId: params.transaction.chainId?.toString(),
+        txChainMismatch,
+        txTargetMismatch
       },
       timestamp: now
     });
@@ -130,7 +159,13 @@ export function verifyDestinationSettlement(
   let receiptConfirmed = false;
   let receiptReverted = false;
   let receiptBlockNumber: number | undefined;
+  let receiptBlockHash: string | undefined;
   let receiptGasUsed: string | undefined;
+  let reorgDetected = false;
+  let reorgReason: string | undefined;
+  let confirmations: number | undefined;
+  const requiredConfirmations = params.requiredConfirmations || 1;
+  let isFinalized = false;
 
   if (params.receipt) {
     const rawStatus = params.receipt.status;
@@ -138,16 +173,39 @@ export function verifyDestinationSettlement(
     receiptConfirmed = isSuccess;
     receiptReverted = !isSuccess;
     receiptBlockNumber = params.receipt.blockNumber;
+    receiptBlockHash = params.receipt.blockHash;
     receiptGasUsed = params.receipt.gasUsed?.toString();
+
+    // Check block hash reorg
+    if (params.expectedBlockHash && receiptBlockHash) {
+      if (params.expectedBlockHash.toLowerCase() !== receiptBlockHash.toLowerCase()) {
+        reorgDetected = true;
+        reorgReason = `Reorg detected: expected block hash ${params.expectedBlockHash}, got ${receiptBlockHash}`;
+      }
+    }
+
+    // Check confirmation depth
+    if (params.currentBlockNumber !== undefined && params.currentBlockNumber !== null && receiptBlockNumber !== undefined) {
+      if (params.currentBlockNumber < receiptBlockNumber) {
+        reorgDetected = true;
+        reorgReason = `Reorg detected: current block ${params.currentBlockNumber} is behind receipt block ${receiptBlockNumber}`;
+      }
+      confirmations = params.currentBlockNumber - receiptBlockNumber + 1;
+      isFinalized = confirmations >= requiredConfirmations && !reorgDetected;
+    } else {
+      confirmations = 1;
+      isFinalized = true;
+    }
 
     evidences.push({
       tier: 'TIER_1_ONCHAIN_RECEIPT',
       priority: 1,
-      verified: true,
-      status: isSuccess ? 'CONFIRMED' : 'REVERTED',
+      verified: isSuccess && !reorgDetected,
+      status: reorgDetected ? 'MISMATCH' : (isSuccess ? 'CONFIRMED' : 'REVERTED'),
       txHash: params.destinationTxHash || params.transaction?.hash,
       blockNumber: receiptBlockNumber,
-      details: { gasUsed: receiptGasUsed, rawStatus },
+      blockHash: receiptBlockHash,
+      details: { gasUsed: receiptGasUsed, rawStatus, confirmations, requiredConfirmations, isFinalized, reorgDetected },
       timestamp: now
     });
   } else if (params.destinationTxHash) {
@@ -235,28 +293,108 @@ export function verifyDestinationSettlement(
     });
   }
 
+  // Helper to record telemetry and return
+  const finalizeResult = (res: AuthoritativeDestinationVerificationResult): AuthoritativeDestinationVerificationResult => {
+    defaultSettlementTelemetry.record({
+      planId: params.planId || 'plan-unspecified',
+      intentId: params.intentId || 'intent-unspecified',
+      sourceChainId: 'source-unspecified',
+      destinationChainId: params.destinationChainId,
+      destinationTxHash: params.destinationTxHash || params.transaction?.hash || '',
+      destinationBlockHash: receiptBlockHash,
+      destinationBlockNumber: receiptBlockNumber,
+      confirmations,
+      requiredConfirmations,
+      expectedRecipient,
+      actualRecipient: deliveredToExpectedRecipient ? expectedRecipient : undefined,
+      expectedToken,
+      actualToken: tokenMatched ? expectedToken : undefined,
+      expectedMinAmount: expectedMinAmount.toString(),
+      actualDeliveredAmount: actualDeliveredAmountRaw,
+      primaryEvidenceTier: res.primaryEvidenceTier,
+      evidenceSource: res.primaryEvidenceTier,
+      verificationResult: res.settlementStatus === 'DESTINATION_SETTLED'
+        ? 'SETTLED'
+        : (res.settlementStatus === 'STATUS_CONFLICT'
+          ? 'CONFLICT'
+          : (res.settlementStatus === 'REORG_DETECTED'
+            ? 'REORG_DETECTED'
+            : (res.settlementStatus === 'DESTINATION_FAILED' ? 'FAILED' : 'PENDING'))),
+      reorgDetected: res.reorgDetected,
+      conflictReason: res.conflictReason || res.revertReason
+    });
+    return res;
+  };
+
   // ==========================================
   // HIERARCHICAL SETTLEMENT EVALUATION
   // ==========================================
 
-  // 1. Conflict: Receipt is Reverted, but Provider API claimed FILLED
+  // 1. Reorg Detected
+  if (reorgDetected) {
+    return finalizeResult({
+      settlementStatus: 'REORG_DETECTED',
+      primaryEvidenceTier: 'TIER_1_ONCHAIN_RECEIPT',
+      evidences,
+      deliveredToExpectedRecipient: false,
+      tokenMatched,
+      reorgDetected: true,
+      conflictReason: reorgReason,
+      blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
+      gasUsed: receiptGasUsed,
+      timestamp: now
+    });
+  }
+
+  // 2. Chain ID Mismatch
+  if (txChainMismatch) {
+    return finalizeResult({
+      settlementStatus: 'STATUS_CONFLICT',
+      primaryEvidenceTier: 'TIER_2_ONCHAIN_TX_LOOKUP',
+      evidences,
+      deliveredToExpectedRecipient: false,
+      tokenMatched: false,
+      conflictReason: `Transaction chain ID ${params.transaction?.chainId} does not match expected destination chain ${params.destinationChainId}.`,
+      timestamp: now
+    });
+  }
+
+  // 3. Execution Target / SpokePool Mismatch
+  if (txTargetMismatch) {
+    return finalizeResult({
+      settlementStatus: 'STATUS_CONFLICT',
+      primaryEvidenceTier: 'TIER_2_ONCHAIN_TX_LOOKUP',
+      evidences,
+      deliveredToExpectedRecipient: false,
+      tokenMatched: false,
+      conflictReason: `Transaction destination target ${params.transaction?.to} does not match authorized SpokePool ${params.expectedSpokePoolOrTarget}.`,
+      timestamp: now
+    });
+  }
+
+  // 4. Conflict: Receipt is Reverted, but Provider API claimed FILLED
   if (receiptReverted && providerStatus === 'filled') {
-    return {
+    const providerLabel = params.bridgeProvider && params.bridgeProvider.toLowerCase() !== 'across'
+      ? `${params.bridgeProvider.charAt(0).toUpperCase() + params.bridgeProvider.slice(1)} Provider API`
+      : 'Across Provider API';
+    return finalizeResult({
       settlementStatus: 'STATUS_CONFLICT',
       primaryEvidenceTier: 'TIER_1_ONCHAIN_RECEIPT',
       evidences,
       deliveredToExpectedRecipient: false,
       tokenMatched,
-      conflictReason: `Across Provider API reported filled, but on-chain receipt in block ${receiptBlockNumber} was REVERTED.`,
+      conflictReason: `${providerLabel} reported filled, but on-chain receipt in block ${receiptBlockNumber} was REVERTED.`,
       blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
       gasUsed: receiptGasUsed,
       timestamp: now
-    };
+    });
   }
 
-  // 2. Conflict: Receipt is Confirmed, but ERC20 Transfer was delivered to a different recipient
+  // 5. Conflict: Receipt is Confirmed, but ERC20 Transfer delivered to a different recipient
   if (receiptConfirmed && params.receipt?.logs && tokenMatched && !deliveredToExpectedRecipient) {
-    return {
+    return finalizeResult({
       settlementStatus: 'STATUS_CONFLICT',
       primaryEvidenceTier: 'TIER_3_ERC20_TRANSFER_EVENT',
       evidences,
@@ -264,14 +402,32 @@ export function verifyDestinationSettlement(
       tokenMatched: true,
       conflictReason: `Destination transaction succeeded, but token transfer recipient did not match expected ${expectedRecipient}.`,
       blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
       gasUsed: receiptGasUsed,
       timestamp: now
-    };
+    });
   }
 
-  // 3. Reverted on-chain
+  // 6. Conflict: Receipt is Confirmed, provider claims FILLED, but delivered amount is below minimum
+  if (receiptConfirmed && params.receipt?.logs && tokenMatched && deliveredToExpectedRecipient && !transferFound && providerStatus === 'filled') {
+    return finalizeResult({
+      settlementStatus: 'STATUS_CONFLICT',
+      primaryEvidenceTier: 'TIER_3_ERC20_TRANSFER_EVENT',
+      evidences,
+      deliveredToExpectedRecipient: true,
+      tokenMatched: true,
+      actualDeliveredAmountRaw,
+      conflictReason: transferMismatchReason || `Delivered amount ${actualDeliveredAmountRaw} is below expected minimum ${expectedMinAmount.toString()}.`,
+      blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
+      gasUsed: receiptGasUsed,
+      timestamp: now
+    });
+  }
+
+  // 7. Reverted on-chain
   if (receiptReverted) {
-    return {
+    return finalizeResult({
       settlementStatus: 'DESTINATION_FAILED',
       primaryEvidenceTier: 'TIER_1_ONCHAIN_RECEIPT',
       evidences,
@@ -279,14 +435,15 @@ export function verifyDestinationSettlement(
       tokenMatched,
       revertReason: `Destination transaction reverted on-chain in block ${receiptBlockNumber}.`,
       blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
       gasUsed: receiptGasUsed,
       timestamp: now
-    };
+    });
   }
 
-  // 4. Provider reported failure
+  // 8. Provider reported failure
   if (providerStatus === 'refunded' || providerStatus === 'expired') {
-    return {
+    return finalizeResult({
       settlementStatus: 'DESTINATION_FAILED',
       primaryEvidenceTier: 'TIER_5_PROVIDER_API',
       evidences,
@@ -294,28 +451,51 @@ export function verifyDestinationSettlement(
       tokenMatched: false,
       revertReason: `Bridge order was ${providerStatus} by provider.`,
       timestamp: now
-    };
+    });
   }
 
-  // 5. Authoritative On-Chain Settlement
-  // Requires on-chain receipt status 1 AND confirmed ERC-20 transfer to recipient
+  // 9. Authoritative On-Chain Settlement
+  // Requires on-chain receipt status 1 AND confirmed ERC-20 transfer to recipient AND required finality confirmations met
   if (receiptConfirmed && (transferFound || balanceDeltaConfirmed)) {
-    return {
+    if (!isFinalized) {
+      return finalizeResult({
+        settlementStatus: 'DESTINATION_STATUS_UNCERTAIN',
+        primaryEvidenceTier: 'TIER_1_ONCHAIN_RECEIPT',
+        evidences,
+        actualDeliveredAmountRaw,
+        deliveredToExpectedRecipient: true,
+        tokenMatched: true,
+        confirmations,
+        requiredConfirmations,
+        isFinalized: false,
+        conflictReason: `Confirmations (${confirmations}) below required finality threshold (${requiredConfirmations}).`,
+        blockNumber: receiptBlockNumber,
+        blockHash: receiptBlockHash,
+        gasUsed: receiptGasUsed,
+        timestamp: now
+      });
+    }
+
+    return finalizeResult({
       settlementStatus: 'DESTINATION_SETTLED',
       primaryEvidenceTier: transferFound ? 'TIER_3_ERC20_TRANSFER_EVENT' : 'TIER_1_ONCHAIN_RECEIPT',
       evidences,
       actualDeliveredAmountRaw,
       deliveredToExpectedRecipient: true,
       tokenMatched: true,
+      confirmations,
+      requiredConfirmations,
+      isFinalized: true,
       blockNumber: receiptBlockNumber,
+      blockHash: receiptBlockHash,
       gasUsed: receiptGasUsed,
       timestamp: now
-    };
+    });
   }
 
-  // 6. Provider reports filled, but receipt is missing, pending, or unindexed
+  // 10. Provider reports filled, but receipt is missing, pending, or unindexed
   if (providerStatus === 'filled' && !receiptConfirmed) {
-    return {
+    return finalizeResult({
       settlementStatus: 'DESTINATION_STATUS_UNCERTAIN',
       primaryEvidenceTier: 'TIER_5_PROVIDER_API',
       evidences,
@@ -323,16 +503,18 @@ export function verifyDestinationSettlement(
       tokenMatched,
       conflictReason: `Provider reported filled with tx ${params.destinationTxHash || providerFillTx}, but on-chain receipt is pending or unconfirmed.`,
       timestamp: now
-    };
+    });
   }
 
-  // 7. Default: Uncertain / Pending
-  return {
+  // 11. Default: Uncertain / Pending
+  return finalizeResult({
     settlementStatus: 'DESTINATION_STATUS_UNCERTAIN',
     primaryEvidenceTier: evidences.find(e => e.verified)?.tier || 'NONE',
     evidences,
     deliveredToExpectedRecipient,
     tokenMatched,
+    actualDeliveredAmountRaw,
+    conflictReason: transferMismatchReason,
     timestamp: now
-  };
+  });
 }

@@ -8,3 +8,7 @@ export * from './persistence';
 export * from './providers/multiProviderRpcClient';
 export * from './reconciliation/statusReconciler';
 export * from './fixtures/goldenPathExecutionFixture';
+export * from './security';
+export * from './semantics';
+export * from './economic';
+export * from './canary';

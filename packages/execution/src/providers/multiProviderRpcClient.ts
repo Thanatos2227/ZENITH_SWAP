@@ -203,6 +203,13 @@ export class MultiProviderRpcClient {
       // CRITICAL BROADCAST SAFETY: If broadcast error was ambiguous (timeout or transport disconnect),
       // we MUST NEVER fail over to a second RPC. We throw BroadcastUncertainError immediately.
       if (category === 'RETRYABLE') {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { defaultAuthoritativeRpcProviderRegistry } = require('@zenith/chains');
+          defaultAuthoritativeRpcProviderRegistry.recordFailover('BROADCAST_UNCERTAIN', selectedProvider.id);
+        } catch {
+          // Ignore
+        }
         throw new BroadcastUncertainError(
           `Broadcast to provider ${selectedProvider.id} encountered network ambiguity (${err?.message || 'unknown error'}). Automatic failover is blocked to prevent double-spend.`,
           { chainId: String(chainId) }
@@ -297,6 +304,16 @@ export class MultiProviderRpcClient {
         }
 
         failoverCount++;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { defaultAuthoritativeRpcProviderRegistry } = require('@zenith/chains');
+          defaultAuthoritativeRpcProviderRegistry.recordFailover(
+            category === 'READ_ONLY' ? 'READ' : 'PREFLIGHT',
+            endpoint.id
+          );
+        } catch {
+          // Ignore
+        }
 
         // Backoff before trying the next provider
         if (attempt < eligible.length - 1 && attempt < this.maxRetries - 1) {

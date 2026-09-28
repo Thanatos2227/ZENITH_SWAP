@@ -5,3 +5,4 @@ export * from './routeCapabilityFilter';
 export * from './routeNormalizer';
 export * from './routeArbitrator';
 export * from './routeSelectionTelemetry';
+export * from './routeArbitrationBenchmarkEngine';

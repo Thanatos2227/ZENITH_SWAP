@@ -3,6 +3,8 @@ import {
   QuoteRequest
 } from '@zenith/types';
 import { ZERO_ADDRESS, validateEvmAddress } from '@zenith/contracts';
+import { defaultNetworkCapabilityRegistry, NetworkCapabilityRegistry } from '@zenith/chains';
+import { defaultAuthoritativeTokenRegistry } from '@zenith/tokens';
 import { RouteFreshnessValidator } from './routeFreshnessValidator';
 import { CrossChainProviderCapabilityMatrix } from '../crosschain/crossChainProviderCapabilityMatrix';
 import { defaultProviderHealthRegistry, ProviderHealthRegistry } from './providerHealthRegistry';
@@ -11,6 +13,7 @@ export interface RouteFilterOptions {
   currentTime?: number;
   executionMode?: 'READ_ONLY' | 'SIMULATION' | 'PREFLIGHT_ONLY' | 'LIVE_EXECUTION' | 'LIVE_ONCHAIN' | 'DIAGNOSTIC';
   healthRegistry?: ProviderHealthRegistry;
+  networkRegistry?: NetworkCapabilityRegistry;
 }
 
 export interface RouteFilterGateResult {
@@ -39,6 +42,7 @@ export class RouteCapabilityFilter {
     const now = options?.currentTime ?? Date.now();
     const mode = options?.executionMode ?? request.executionMode ?? 'SIMULATION';
     const healthRegistry = options?.healthRegistry ?? defaultProviderHealthRegistry;
+    const networkRegistry = options?.networkRegistry ?? defaultNetworkCapabilityRegistry;
 
     const passedGates: string[] = [];
     const failedGates: string[] = [];
@@ -52,6 +56,28 @@ export class RouteCapabilityFilter {
         if (reason) reasons.push(reason);
       }
     };
+
+    // -------------------------------------------------------------
+    // Gate 0: Network Capability & Architecture
+    // -------------------------------------------------------------
+    let netPassed = true;
+    let netReason: string | undefined = undefined;
+
+    const srcNetCheck = networkRegistry.isExecutable(route.sourceChainId, mode);
+    if (!srcNetCheck.isExecutable) {
+      netPassed = false;
+      netReason = `SOURCE_NETWORK_UNSUPPORTED: ${srcNetCheck.rejectionReason}`;
+    } else {
+      const isCrossChain = String(route.sourceChainId).toLowerCase() !== String(route.destinationChainId).toLowerCase();
+      if (isCrossChain) {
+        const dstNetCheck = networkRegistry.isExecutable(route.destinationChainId, mode);
+        if (!dstNetCheck.isExecutable) {
+          netPassed = false;
+          netReason = `DESTINATION_NETWORK_UNSUPPORTED: ${dstNetCheck.rejectionReason}`;
+        }
+      }
+    }
+    recordGate('GATE_0_NETWORK_CAPABILITY', netPassed, netReason);
 
     // -------------------------------------------------------------
     // Gate 1: Provider Capability
@@ -86,6 +112,21 @@ export class RouteCapabilityFilter {
           capPassed = false;
           capReason = `CAPABILITY_MISMATCH: Provider ${providerId} level "${route.capabilityLevel}" does not meet minimum EXECUTION_AVAILABLE required for PREFLIGHT_ONLY.`;
         }
+      }
+    } else if (route.sourceDex) {
+      if (mode === 'LIVE_EXECUTION' || mode === 'LIVE_ONCHAIN') {
+        if (route.capabilityLevel !== 'LIVE_VERIFIED' && route.capabilityLevel !== 'EXECUTION_AVAILABLE') {
+          capPassed = false;
+          capReason = `DEX_CAPABILITY_MISMATCH: DEX ${route.sourceDex} level "${route.capabilityLevel}" is not executable for LIVE_EXECUTION.`;
+        }
+      } else if (mode === 'PREFLIGHT_ONLY') {
+        if (route.capabilityLevel !== 'LIVE_VERIFIED' && route.capabilityLevel !== 'EXECUTION_AVAILABLE') {
+          capPassed = false;
+          capReason = `DEX_CAPABILITY_MISMATCH: DEX ${route.sourceDex} level "${route.capabilityLevel}" does not meet minimum EXECUTION_AVAILABLE required for PREFLIGHT_ONLY.`;
+        }
+      } else if (route.capabilityLevel === 'UNSUPPORTED') {
+        capPassed = false;
+        capReason = `DEX_CAPABILITY_MISMATCH: DEX ${route.sourceDex} capability is UNSUPPORTED.`;
       }
     }
     recordGate('GATE_1_PROVIDER_CAPABILITY', capPassed, capReason);
@@ -126,6 +167,36 @@ export class RouteCapabilityFilter {
     ) {
       tokenContinuity = false;
       tokenReason = `TOKEN_DISCONTINUITY: Destination token ${route.destinationToken.symbol} does not match requested token ${request.tokenOut.symbol}.`;
+    } else {
+      // Authoritative token boundary validation
+      const srcToken = defaultAuthoritativeTokenRegistry.getTokenByAddress(
+        String(route.sourceChainId),
+        'ERC20',
+        route.sourceToken.address
+      );
+      if (srcToken) {
+        if (!srcToken.isFungible || srcToken.isNFT || srcToken.isMultiToken) {
+          tokenContinuity = false;
+          tokenReason = `TOKEN_STANDARD_UNSUPPORTED: Non-fungible token standard ${srcToken.standard} rejected from swap route`;
+        } else if (srcToken.capabilityLevel === 'UNSUPPORTED') {
+          tokenContinuity = false;
+          tokenReason = `TOKEN_CAPABILITY_INSUFFICIENT: Token ${srcToken.symbol} has capability UNSUPPORTED`;
+        }
+      }
+      const dstToken = defaultAuthoritativeTokenRegistry.getTokenByAddress(
+        String(route.destinationChainId),
+        'ERC20',
+        route.destinationToken.address
+      );
+      if (dstToken && tokenContinuity) {
+        if (!dstToken.isFungible || dstToken.isNFT || dstToken.isMultiToken) {
+          tokenContinuity = false;
+          tokenReason = `TOKEN_STANDARD_UNSUPPORTED: Non-fungible token standard ${dstToken.standard} rejected from swap route`;
+        } else if (dstToken.capabilityLevel === 'UNSUPPORTED') {
+          tokenContinuity = false;
+          tokenReason = `TOKEN_CAPABILITY_INSUFFICIENT: Token ${dstToken.symbol} has capability UNSUPPORTED`;
+        }
+      }
     }
     recordGate('GATE_4_TOKEN_CONTINUITY', tokenContinuity, tokenReason);
 

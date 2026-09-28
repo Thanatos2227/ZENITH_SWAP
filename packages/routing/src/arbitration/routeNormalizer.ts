@@ -7,6 +7,7 @@ import {
   CrossChainQuote
 } from '@zenith/types';
 import { CrossChainProviderCapabilityMatrix } from '../crosschain/crossChainProviderCapabilityMatrix';
+import { defaultAuthoritativeDexRegistry } from '../dex/authoritative/authoritativeDexRegistry';
 
 export class RouteNormalizer {
   /**
@@ -194,8 +195,15 @@ export class RouteNormalizer {
       quotedAt = dexQuote.quoteTimestamp || Date.now();
       expiresAt = dexQuote.expiration || (quotedAt + 15_000);
 
-      // Same-chain DEX pools with verified factory/router are EXECUTION_AVAILABLE / LIVE_VERIFIED
-      capabilityLevel = 'LIVE_VERIFIED';
+      if ((dexQuote as any).capabilityLevel) {
+        capabilityLevel = (dexQuote as any).capabilityLevel;
+      } else {
+        const resolved = defaultAuthoritativeDexRegistry.resolveDexIdentity({
+          canonicalName: dexQuote.provider,
+          networkId: String(sourceChainId)
+        });
+        capabilityLevel = (resolved.dex?.capabilityLevel as ProviderCapabilityLevel) || 'EXECUTION_AVAILABLE';
+      }
 
       calldata = calldata || dexQuote.calldata;
       executionTarget = executionTarget || dexQuote.executionTarget;

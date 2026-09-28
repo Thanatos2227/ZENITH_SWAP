@@ -12,3 +12,4 @@ export * from './pancakeSwapProvider';
 export * from './traderJoeProvider';
 export * from './poolStateReader';
 export * from './dexAggregator';
+export * from './authoritative';

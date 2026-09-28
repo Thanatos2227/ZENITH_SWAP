@@ -8,6 +8,7 @@ import { defaultCrossChainAggregator, CrossChainAggregator } from '@zenith/routi
 import { ExecutionStateMachine } from '../stateMachine';
 import { CrossChainStateRepository } from '../persistence/repository';
 import { defaultMultiProviderRpcClient } from '../providers/multiProviderRpcClient';
+import { verifyDestinationSettlement as verifyAuthDestinationSettlement } from './authoritativeDestinationVerifier';
 
 
 export interface ActiveCrossChainOrder {
@@ -125,6 +126,8 @@ export class CrossChainTracker {
             destinationChainId: order.destinationChainId,
             destinationTxHash: status.destinationTxHash,
             expectedRecipient: order.recipient,
+            expectedToken: order.quote?.destinationToken?.address,
+            expectedMinAmountRaw: order.quote?.destinationAmountRaw,
             provider: destRpcProvider
           });
 
@@ -270,6 +273,9 @@ export class CrossChainTracker {
     destinationChainId: string;
     destinationTxHash: string;
     expectedRecipient: string;
+    expectedToken?: string;
+    expectedMinAmountRaw?: string | bigint;
+    expectedSpokePoolOrTarget?: string;
     provider?: any;
   }): Promise<{ isVerified: boolean; receipt?: any; reason?: string }> {
     const destChain = defaultChainRegistry.getChain(params.destinationChainId);
@@ -290,14 +296,43 @@ export class CrossChainTracker {
           receipt = await defaultMultiProviderRpcClient.getTransactionReceipt(destChain.id, params.destinationTxHash);
         }
 
-        if (receipt && (receipt.status === 1 || receipt.status === '0x1')) {
-          return { isVerified: true, receipt };
-        }
-        if (receipt && (receipt.status === 0 || receipt.status === '0x0')) {
-          return { isVerified: false, receipt, reason: 'Destination transaction reverted on-chain' };
-        }
         if (!receipt) {
           return { isVerified: false, reason: 'Destination transaction receipt pending or not found on-chain' };
+        }
+        if (receipt.status === 0 || receipt.status === '0x0') {
+          return { isVerified: false, receipt, reason: 'Destination transaction reverted on-chain' };
+        }
+
+        if (
+          params.expectedToken &&
+          params.expectedMinAmountRaw !== undefined &&
+          receipt.logs &&
+          Array.isArray(receipt.logs) &&
+          receipt.logs.length > 0
+        ) {
+          const authResult = verifyAuthDestinationSettlement({
+            destinationChainId: params.destinationChainId,
+            destinationTxHash: params.destinationTxHash,
+            expectedRecipient: params.expectedRecipient,
+            expectedToken: params.expectedToken,
+            expectedMinAmountRaw: params.expectedMinAmountRaw,
+            expectedSpokePoolOrTarget: params.expectedSpokePoolOrTarget,
+            receipt
+          });
+
+          if (authResult.settlementStatus === 'DESTINATION_SETTLED') {
+            return { isVerified: true, receipt };
+          } else {
+            return {
+              isVerified: false,
+              receipt,
+              reason: authResult.conflictReason || authResult.revertReason || `Destination verification failed with status: ${authResult.settlementStatus}`
+            };
+          }
+        }
+
+        if (receipt.status === 1 || receipt.status === '0x1') {
+          return { isVerified: true, receipt };
         }
       } catch (err: any) {
         return { isVerified: false, reason: err?.message || 'Destination RPC query failed' };
