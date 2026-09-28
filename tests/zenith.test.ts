@@ -339,7 +339,7 @@ test('13. Cross-Chain Intent Creation, Solver Competition, Nonce & Replay Protec
     destinationToken: tokenOut,
     sourceAmountRaw: '1000000000',
     minDestinationAmountRaw: '995000000',
-    recipient: '0x9999999999999999999999999999999999999999',
+    recipient: '0x8ba1f109551bD432803012645Ac136ddd64DBA72',
     deadline: Date.now() + 100000,
     nonce: 99999,
     status: 'CREATED',
