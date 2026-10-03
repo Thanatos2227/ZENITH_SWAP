@@ -88,6 +88,39 @@ export class AuthoritativeNetworkRegistry {
     }
   }
 
+  private unindexNetwork(canonicalId: string): void {
+    const existing = this.networks.get(canonicalId);
+    if (!existing) return;
+
+    this.networks.delete(canonicalId);
+    this.networkFamilies.delete(canonicalId);
+    this.nativeAssets.delete(canonicalId);
+    this.gasModels.delete(canonicalId);
+    this.finalityModels.delete(canonicalId);
+    this.rpcMetadata.delete(canonicalId);
+    this.explorerMetadata.delete(canonicalId);
+
+    const key = existing.networkIdentityKey.toLowerCase();
+    if (this.identityKeyToNetworkId.get(key) === canonicalId) {
+      this.identityKeyToNetworkId.delete(key);
+    }
+
+    if (existing.family === 'EVM' && typeof existing.numericChainId === 'number') {
+      if (this.evmChainIdToNetworkId.get(existing.numericChainId) === canonicalId) {
+        this.evmChainIdToNetworkId.delete(existing.numericChainId);
+      }
+    }
+
+    if (Array.isArray(existing.aliases)) {
+      for (const alias of existing.aliases) {
+        const lowerAlias = alias.toLowerCase().trim();
+        if (this.aliasToNetworkId.get(lowerAlias) === canonicalId) {
+          this.aliasToNetworkId.delete(lowerAlias);
+        }
+      }
+    }
+  }
+
   /**
    * Registers an AuthoritativeNetworkIdentity record into memory.
    */
@@ -97,6 +130,10 @@ export class AuthoritativeNetworkRegistry {
     }
 
     const canonicalId = network.networkId.toLowerCase().trim();
+    if (this.networks.has(canonicalId)) {
+      this.unindexNetwork(canonicalId);
+    }
+
     const cloned = cloneNetworkIdentity(network);
 
     this.networks.set(canonicalId, cloned);
@@ -127,6 +164,16 @@ export class AuthoritativeNetworkRegistry {
         }
       }
     }
+  }
+
+  /**
+   * Removes a network by networkId.
+   */
+  public removeNetwork(networkId: string | number): boolean {
+    const canonicalId = this.resolveNetworkIdentity(networkId);
+    if (!canonicalId || !this.networks.has(canonicalId)) return false;
+    this.unindexNetwork(canonicalId);
+    return true;
   }
 
   /**

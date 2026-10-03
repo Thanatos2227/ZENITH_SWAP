@@ -21,6 +21,8 @@ export class AuthoritativeTokenRegistry {
   private readonly tokensByNetworkAndNormalizedAddress = new Map<string, TokenIdentity>();
   private readonly tokensByNetworkAndSymbol = new Map<string, Map<string, TokenIdentity[]>>();
   private readonly tokensByNetwork = new Map<string, TokenIdentity[]>();
+  private readonly nativeTokenByNetwork = new Map<string, TokenIdentity>();
+  private readonly wrappedNativeTokenByNetwork = new Map<string, TokenIdentity>();
 
   constructor(initialTokens: readonly TokenIdentity[] = ZENITH_CANONICAL_TOKENS) {
     TokenRegistryValidationEngine.validate([...initialTokens]);
@@ -33,7 +35,7 @@ export class AuthoritativeTokenRegistry {
     return {
       ...token,
       verificationDimensions: token.verificationDimensions
-        ? { ...token.verificationDimensions }
+        ? JSON.parse(JSON.stringify(token.verificationDimensions))
         : ({} as any),
       tags: token.tags ? [...token.tags] : undefined
     };
@@ -55,6 +57,13 @@ export class AuthoritativeTokenRegistry {
       const filtered = netList.filter((entry) => entry.tokenId !== token.tokenId);
       if (filtered.length > 0) this.tokensByNetwork.set(netId, filtered);
       else this.tokensByNetwork.delete(netId);
+    }
+
+    if (this.nativeTokenByNetwork.get(netId)?.tokenId === token.tokenId) {
+      this.nativeTokenByNetwork.delete(netId);
+    }
+    if (this.wrappedNativeTokenByNetwork.get(netId)?.tokenId === token.tokenId) {
+      this.wrappedNativeTokenByNetwork.delete(netId);
     }
 
     if (token.normalizedAddress) {
@@ -102,6 +111,16 @@ export class AuthoritativeTokenRegistry {
       this.tokensByNetwork.set(netId, []);
     }
     this.tokensByNetwork.get(netId)!.push(cloned);
+
+    // Index direct native token
+    if (cloned.isNative && cloned.standard === 'NATIVE') {
+      this.nativeTokenByNetwork.set(netId, cloned);
+    }
+
+    // Index direct wrapped native token
+    if (cloned.isWrappedNative) {
+      this.wrappedNativeTokenByNetwork.set(netId, cloned);
+    }
 
     // Index by address within network
     if (cloned.normalizedAddress) {
@@ -214,13 +233,21 @@ export class AuthoritativeTokenRegistry {
   }
 
   public getNativeToken(networkId: string): TokenIdentity | undefined {
-    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
+    const netId = networkId.trim().toLowerCase();
+    const canonicalNetId = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(netId) || netId;
+    const direct = this.nativeTokenByNetwork.get(canonicalNetId);
+    if (direct) return this.cloneToken(direct);
+    const list = this.tokensByNetwork.get(canonicalNetId) || [];
     const native = list.find((t) => t.isNative && t.standard === 'NATIVE');
     return native ? this.cloneToken(native) : undefined;
   }
 
   public getWrappedNativeToken(networkId: string): TokenIdentity | undefined {
-    const list = this.tokensByNetwork.get(networkId.trim().toLowerCase()) || [];
+    const netId = networkId.trim().toLowerCase();
+    const canonicalNetId = defaultAuthoritativeNetworkRegistry.resolveNetworkIdentity(netId) || netId;
+    const direct = this.wrappedNativeTokenByNetwork.get(canonicalNetId);
+    if (direct) return this.cloneToken(direct);
+    const list = this.tokensByNetwork.get(canonicalNetId) || [];
     const wrapped = list.find((t) => t.isWrappedNative);
     return wrapped ? this.cloneToken(wrapped) : undefined;
   }
@@ -230,6 +257,9 @@ export class AuthoritativeTokenRegistry {
     if (input.tokenId) {
       const token = this.tokensById.get(input.tokenId);
       if (token) {
+        if (input.standard && input.standard !== 'UNSUPPORTED' && token.standard !== input.standard) {
+          return { status: 'UNRESOLVED', error: `Token standard mismatch for "${input.tokenId}": expected ${input.standard}, got ${token.standard}` };
+        }
         return { status: 'RESOLVED_EXACT', token: this.cloneToken(token) };
       }
       return { status: 'UNRESOLVED', error: `No token registered with tokenId "${input.tokenId}"` };
@@ -239,6 +269,9 @@ export class AuthoritativeTokenRegistry {
     if (input.identityKey) {
       const token = this.tokensByIdentityKey.get(input.identityKey);
       if (token) {
+        if (input.standard && input.standard !== 'UNSUPPORTED' && token.standard !== input.standard) {
+          return { status: 'UNRESOLVED', error: `Token standard mismatch for "${input.identityKey}": expected ${input.standard}, got ${token.standard}` };
+        }
         return { status: 'RESOLVED_EXACT', token: this.cloneToken(token) };
       }
       return { status: 'UNRESOLVED', error: `No token registered with identityKey "${input.identityKey}"` };
@@ -265,7 +298,10 @@ export class AuthoritativeTokenRegistry {
     if (input.networkId && input.symbol) {
       const netId = input.networkId.trim().toLowerCase();
       const symMap = this.tokensByNetworkAndSymbol.get(netId);
-      const matches = symMap?.get(input.symbol.trim().toUpperCase()) || [];
+      let matches = symMap?.get(input.symbol.trim().toUpperCase()) || [];
+      if (input.standard && input.standard !== 'UNSUPPORTED') {
+        matches = matches.filter(m => m.standard === input.standard);
+      }
 
       if (matches.length === 1) {
         return { status: 'RESOLVED_EXACT', token: this.cloneToken(matches[0]) };
