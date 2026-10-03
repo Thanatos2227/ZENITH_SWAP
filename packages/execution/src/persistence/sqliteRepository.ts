@@ -252,6 +252,7 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
       CREATE INDEX IF NOT EXISTS idx_tx_hash ON transactions(tx_hash);
       CREATE INDEX IF NOT EXISTS idx_tx_state ON transactions(state);
       CREATE INDEX IF NOT EXISTS idx_intents_status ON intents(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intents_user_nonce ON intents(user_address, source_chain_id, destination_chain_id, nonce);
       CREATE INDEX IF NOT EXISTS idx_steps_intent ON execution_steps(intent_id);
       CREATE INDEX IF NOT EXISTS idx_orders_intent ON provider_orders(intent_id);
       CREATE INDEX IF NOT EXISTS idx_orders_source_tx ON provider_orders(source_tx_hash);
@@ -697,23 +698,22 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
 
   public async acquireLease(resourceId: string, workerId: string, durationMs: number): Promise<boolean> {
     const now = Date.now();
-    const existing: any = this.db.prepare('SELECT * FROM worker_leases WHERE resource_id = ?').get(resourceId);
-
-    if (existing && existing.expires_at > now && existing.worker_id !== workerId) {
-      return false; // Active lease held by another worker
-    }
-
-    const acquiredAt = existing && existing.worker_id === workerId ? existing.acquired_at : now;
     const expiresAt = now + durationMs;
 
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO worker_leases (
+      INSERT INTO worker_leases (
         resource_id, worker_id, acquired_at, expires_at, renewed_at
       ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(resource_id) DO UPDATE SET
+        worker_id = excluded.worker_id,
+        acquired_at = CASE WHEN worker_leases.worker_id = excluded.worker_id THEN worker_leases.acquired_at ELSE excluded.acquired_at END,
+        expires_at = excluded.expires_at,
+        renewed_at = excluded.renewed_at
+      WHERE worker_leases.expires_at <= ? OR worker_leases.worker_id = ?
     `);
 
-    stmt.run(resourceId, workerId, acquiredAt, expiresAt, now);
-    return true;
+    const result = stmt.run(resourceId, workerId, now, expiresAt, now, now, workerId);
+    return Number(result.changes) > 0;
   }
 
   public async renewLease(resourceId: string, workerId: string, durationMs: number): Promise<boolean> {
@@ -889,19 +889,17 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
 
   public async claimIntentLease(intentId: string, workerId: string, leaseDurationMs: number): Promise<boolean> {
     const now = Date.now();
-    const row: any = this.db.prepare('SELECT lease_owner, lease_expires_at FROM intents WHERE intent_id = ?').get(intentId);
-    if (!row) return false;
-
-    if (row.lease_owner && row.lease_expires_at && row.lease_expires_at > now && row.lease_owner !== workerId) {
-      return false; // Active lease held by another worker
-    }
-
     const expiresAt = now + leaseDurationMs;
-    const stmt = this.db.prepare(
-      'UPDATE intents SET lease_owner = ?, lease_expires_at = ?, updated_at = ? WHERE intent_id = ?'
-    );
-    stmt.run(workerId, expiresAt, now, intentId);
-    return true;
+    const stmt = this.db.prepare(`
+      UPDATE intents SET
+        lease_owner = ?,
+        lease_expires_at = ?,
+        updated_at = ?
+      WHERE intent_id = ?
+        AND (lease_owner IS NULL OR lease_expires_at <= ? OR lease_owner = ?)
+    `);
+    const result = stmt.run(workerId, expiresAt, now, intentId, now, workerId);
+    return Number(result.changes) > 0;
   }
 
   public async releaseIntentLease(intentId: string, workerId: string): Promise<void> {
@@ -1071,8 +1069,9 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
   }
 
   public async recordSettlement(settlement: PersistentSettlement): Promise<void> {
+    const now = settlement.verifiedAt || Date.now();
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO settlements (
+      INSERT INTO settlements (
         intent_id, destination_tx_hash, destination_chain_id,
         token_address, token_symbol, recipient,
         expected_amount_raw, actual_amount_raw, verified, verified_at
@@ -1081,6 +1080,17 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
         ?, ?, ?,
         ?, ?, ?, ?
       )
+      ON CONFLICT(intent_id) DO UPDATE SET
+        destination_tx_hash = excluded.destination_tx_hash,
+        destination_chain_id = excluded.destination_chain_id,
+        token_address = excluded.token_address,
+        token_symbol = excluded.token_symbol,
+        recipient = excluded.recipient,
+        expected_amount_raw = excluded.expected_amount_raw,
+        actual_amount_raw = excluded.actual_amount_raw,
+        verified = CASE WHEN settlements.verified = 1 THEN 1 ELSE excluded.verified END,
+        verified_at = CASE WHEN settlements.verified = 1 THEN settlements.verified_at ELSE excluded.verified_at END
+      WHERE settlements.verified = 0 OR excluded.verified = 1
     `);
 
     stmt.run(
@@ -1093,7 +1103,7 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
       settlement.expectedAmountRaw,
       settlement.actualAmountRaw,
       settlement.verified ? 1 : 0,
-      settlement.verifiedAt || Date.now()
+      now
     );
   }
 
@@ -1126,19 +1136,24 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
 
     this.db.exec('BEGIN TRANSACTION');
     try {
-      // 1. Update intent
-      this.db.prepare(`
-        UPDATE intents SET source_tx_hash = ?, status = 'FULFILLING', updated_at = ? WHERE intent_id = ?
+      // 1. Update intent (must not be in terminal state)
+      const intentRes = this.db.prepare(`
+        UPDATE intents SET source_tx_hash = ?, status = 'FULFILLING', updated_at = ?
+        WHERE intent_id = ? AND status NOT IN ('SETTLED', 'REFUNDED', 'CANCELLED', 'FAILED')
       `).run(sourceTxHash, now, intentId);
+
+      if (Number(intentRes.changes) === 0) {
+        throw new Error(`[SQLiteRepo] Cannot record submission for intent ${intentId}: intent not found or in terminal state`);
+      }
 
       // 2. Update step
       this.db.prepare(`
         UPDATE execution_steps SET tx_hash = ?, status = 'ACTIVE', updated_at = ? WHERE step_id = ?
       `).run(sourceTxHash, now, stepId);
 
-      // 3. Register provider order
+      // 3. Register provider order with explicit conflict handling
       this.db.prepare(`
-        INSERT OR REPLACE INTO provider_orders (
+        INSERT INTO provider_orders (
           order_id, intent_id, provider, source_chain_id, destination_chain_id,
           source_tx_hash, destination_tx_hash, recipient, quote_json, status, error_message,
           created_at, updated_at
@@ -1147,6 +1162,10 @@ export class SQLiteCrossChainStateRepository implements CrossChainStateRepositor
           ?, ?, ?, ?, ?, ?,
           ?, ?
         )
+        ON CONFLICT(order_id) DO UPDATE SET
+          source_tx_hash = excluded.source_tx_hash,
+          status = excluded.status,
+          updated_at = excluded.updated_at
       `).run(
         order.orderId,
         intentId,
