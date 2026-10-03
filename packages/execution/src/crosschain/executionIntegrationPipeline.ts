@@ -310,11 +310,22 @@ export class ExecutionIntegrationPipeline {
             if (destVerification.revertReason) {
                 discrepancies.push(destVerification.revertReason);
             }
-            recordStage('STAGE_15_DESTINATION_EVIDENCE', settlementStatus === 'STATUS_CONFLICT' ? 'FAIL' : 'PASS', sStart, {
-                settlementStatus,
-                primaryEvidenceTier,
-                actualDestinationOutputRaw
-            }, destVerification.conflictReason);
+            const isEvidencePass = settlementStatus === 'DESTINATION_SETTLED';
+            const isEvidenceFail =
+                settlementStatus === 'STATUS_CONFLICT' ||
+                settlementStatus === 'DESTINATION_FAILED' ||
+                settlementStatus === 'REORG_DETECTED';
+            recordStage(
+                'STAGE_15_DESTINATION_EVIDENCE',
+                isEvidenceFail ? 'FAIL' : isEvidencePass ? 'PASS' : 'SKIPPED',
+                sStart,
+                {
+                    settlementStatus,
+                    primaryEvidenceTier,
+                    actualDestinationOutputRaw
+                },
+                destVerification.conflictReason || destVerification.revertReason
+            );
             sStart = Date.now();
             const destChain = defaultChainRegistry.getChain(plan.destinationChainId);
             const reorgBlocks = (destChain as any)?.reorgSafetyBlocks ?? 20;
@@ -323,14 +334,20 @@ export class ExecutionIntegrationPipeline {
                     confirmationsMet: destVerification.confirmations,
                     required: reorgBlocks
                 });
-            }
-            else if (settlementStatus === 'REORG_DETECTED') {
-                recordStage('STAGE_16_FINALITY_CONFIRMATION', 'FAIL', sStart, {
-                    reorgDetected: true
-                }, 'Destination chain reorg detected');
-            }
-            else {
-                recordStage('STAGE_16_FINALITY_CONFIRMATION', 'PASS', sStart, {
+            } else if (isEvidenceFail) {
+                recordStage(
+                    'STAGE_16_FINALITY_CONFIRMATION',
+                    'FAIL',
+                    sStart,
+                    {
+                        settlementStatus
+                    },
+                    destVerification.conflictReason ||
+                        destVerification.revertReason ||
+                        'Destination evidence failed or reorg detected'
+                );
+            } else {
+                recordStage('STAGE_16_FINALITY_CONFIRMATION', 'SKIPPED', sStart, {
                     finalityPending: true
                 });
             }
@@ -354,8 +371,7 @@ export class ExecutionIntegrationPipeline {
                 recordStage('STAGE_17_SETTLEMENT', 'PASS', sStart, {
                     status: 'SETTLED'
                 });
-            }
-            else {
+            } else {
                 recordStage('STAGE_17_SETTLEMENT', 'SKIPPED', sStart, {
                     status: settlementStatus
                 });
