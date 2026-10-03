@@ -46,6 +46,21 @@ jobs:
       - name: Protocol Test Suite (All Disciplines)
         run: npm test
 
+      - name: Setup Foundry Toolchain
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: EVM Smart Contract Build Gate
+        run: |
+          cd contracts/evm
+          forge build --sizes
+
+      - name: EVM Smart Contract Test Suite (Unit & Fuzz)
+        run: |
+          cd contracts/evm
+          forge test -vvv
+
       - name: Production Web Application Build Gate
         run: npm run build
 
