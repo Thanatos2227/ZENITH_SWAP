@@ -2451,3 +2451,402 @@ export interface RouteArbitrationBenchmarkResult {
     readonly fundsSpent: 0;
     readonly liveOnChain: false;
 }
+
+// ---------------------------------------------------------------------------
+// Production Observability, Metrics & Alerting Data Models (Task 56)
+// ---------------------------------------------------------------------------
+
+export type MetricType = 'COUNTER' | 'GAUGE' | 'HISTOGRAM';
+
+export type AlertSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export type AlertCategory = 
+    | 'EXECUTION'
+    | 'RPC'
+    | 'BRIDGE'
+    | 'SETTLEMENT'
+    | 'CIRCUIT_BREAKER'
+    | 'SECURITY'
+    | 'INFRASTRUCTURE';
+
+export interface AlertEvent {
+    readonly alertId: string;
+    readonly category: AlertCategory;
+    readonly severity: AlertSeverity;
+    readonly source: string;
+    readonly code: string;
+    readonly message: string;
+    readonly chainId?: string | number;
+    readonly component: string;
+    readonly timestamp: number;
+    readonly remediationHint?: string;
+    readonly metadata?: Record<string, string | number | boolean>;
+}
+
+export type HealthStatus = 'HEALTHY' | 'DEGRADED' | 'UNAVAILABLE';
+
+export interface ComponentHealth {
+    readonly name: string;
+    readonly status: HealthStatus;
+    readonly message?: string;
+    readonly lastCheckedAt: number;
+    readonly details?: Record<string, any>;
+}
+
+export interface SystemHealthReport {
+    readonly status: HealthStatus;
+    readonly uptimeSeconds: number;
+    readonly timestamp: number;
+    readonly version: string;
+    readonly components: Record<string, ComponentHealth>;
+}
+
+export interface OpenTelemetrySpanRecord {
+    readonly traceId: string;
+    readonly spanId: string;
+    readonly parentSpanId?: string;
+    readonly name: string;
+    readonly kind: 'INTERNAL' | 'SERVER' | 'CLIENT' | 'PRODUCER' | 'CONSUMER';
+    readonly startTimeMs: number;
+    readonly endTimeMs: number;
+    readonly durationMs: number;
+    readonly status: 'OK' | 'ERROR' | 'UNSET';
+    readonly attributes: Record<string, string | number | boolean>;
+    readonly error?: {
+        readonly code?: string;
+        readonly message: string;
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Real-Time Cross-Chain Telemetry Aggregation & Operational Health Backend (Task 53)
+// ---------------------------------------------------------------------------
+
+export type CanonicalTelemetryEventType =
+    | 'SYSTEM_STARTED'
+    | 'SYSTEM_HEALTH_CHANGED'
+    | 'RPC_HEALTH_CHANGED'
+    | 'RPC_DISAGREEMENT_DETECTED'
+    | 'RPC_CIRCUIT_OPENED'
+    | 'RPC_CIRCUIT_RECOVERED'
+    | 'NETWORK_VERIFIED'
+    | 'NETWORK_CAPABILITY_CHANGED'
+    | 'DEX_CAPABILITY_CHANGED'
+    | 'TOKEN_CAPABILITY_CHANGED'
+    | 'ROUTE_DISCOVERY_STARTED'
+    | 'ROUTE_DISCOVERY_COMPLETED'
+    | 'ROUTE_REJECTED'
+    | 'ROUTE_SELECTED'
+    | 'ROUTE_ARBITRATION_COMPLETED'
+    | 'QUOTE_REQUESTED'
+    | 'QUOTE_RECEIVED'
+    | 'QUOTE_REJECTED'
+    | 'QUOTE_EXPIRED'
+    | 'INTENT_CREATED'
+    | 'INTENT_VALIDATED'
+    | 'PLAN_CREATED'
+    | 'PLAN_SEALED'
+    | 'SOURCE_PREFLIGHT_STARTED'
+    | 'SOURCE_PREFLIGHT_COMPLETED'
+    | 'SOURCE_BROADCAST'
+    | 'SOURCE_CONFIRMED'
+    | 'SOURCE_FAILED'
+    | 'SOURCE_BROADCAST_UNCERTAIN'
+    | 'ACTUAL_OUTPUT_EXTRACTED'
+    | 'BRIDGE_QUOTE_REQUESTED'
+    | 'BRIDGE_QUOTE_RECEIVED'
+    | 'BRIDGE_QUOTE_REFRESHED'
+    | 'BRIDGE_SUBMITTED'
+    | 'BRIDGE_SOURCE_CONFIRMED'
+    | 'BRIDGE_RELAY_PENDING'
+    | 'BRIDGE_FILLED'
+    | 'BRIDGE_FAILED'
+    | 'BRIDGE_UNCERTAIN'
+    | 'DESTINATION_TX_FOUND'
+    | 'DESTINATION_RECEIPT_VERIFIED'
+    | 'DESTINATION_TRANSFER_VERIFIED'
+    | 'DESTINATION_BALANCE_VERIFIED'
+    | 'FINALITY_PENDING'
+    | 'FINALITY_REACHED'
+    | 'REORG_DETECTED'
+    | 'SETTLEMENT_PENDING'
+    | 'SETTLEMENT_VERIFIED'
+    | 'SETTLEMENT_BLOCKED'
+    | 'SETTLED'
+    | 'RECOVERY_STARTED'
+    | 'RECOVERY_COMPLETED'
+    | 'IDEMPOTENCY_BLOCKED'
+    | 'ERROR_RAISED';
+
+export type TelemetrySeverity = 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+
+export interface CanonicalTelemetryEvent {
+    readonly eventId: string;
+    readonly eventType: CanonicalTelemetryEventType;
+    readonly timestamp: number;
+    readonly sequence: number;
+    readonly source: string;
+    readonly network: string | null;
+    readonly chainId: number | null;
+    readonly intentId: string | null;
+    readonly planId: string | null;
+    readonly stepId: string | null;
+    readonly routeId: string | null;
+    readonly provider: string | null;
+    readonly state: string | null;
+    readonly previousState: string | null;
+    readonly newState: string | null;
+    readonly evidenceTier: string | null;
+    readonly blockNumber: number | null;
+    readonly txHash: string | null;
+    readonly latency: number | null;
+    readonly errorCode: string | null;
+    readonly severity: TelemetrySeverity;
+}
+
+export type OperationalHealthDimension =
+    | 'SYSTEM_HEALTH'
+    | 'NETWORK_HEALTH'
+    | 'RPC_HEALTH'
+    | 'DEX_HEALTH'
+    | 'BRIDGE_HEALTH'
+    | 'ROUTING_HEALTH'
+    | 'EXECUTION_HEALTH'
+    | 'SETTLEMENT_HEALTH';
+
+export type OperationalHealthStatus =
+    | 'HEALTHY'
+    | 'DEGRADED'
+    | 'UNHEALTHY'
+    | 'CIRCUIT_OPEN'
+    | 'RECOVERING'
+    | 'UNKNOWN';
+
+export type CrossChainIntentOverallState =
+    | 'IN_PROGRESS'
+    | 'WAITING_FOR_BRIDGE'
+    | 'WAITING_FOR_DESTINATION'
+    | 'WAITING_FOR_FINALITY'
+    | 'SETTLED'
+    | 'FAILED'
+    | 'UNCERTAIN'
+    | 'RECONCILIATION_BLOCKED'
+    | 'FUNDING_REQUIRED';
+
+export type CanonicalAlertType =
+    | 'RPC_QUORUM_LOST'
+    | 'RPC_DISAGREEMENT'
+    | 'STALE_CHAIN_HEAD'
+    | 'RPC_CIRCUIT_OPEN'
+    | 'BRIDGE_PROVIDER_DOWN'
+    | 'QUOTE_STALE'
+    | 'ROUTE_CAPABILITY_LOST'
+    | 'FUNDING_BLOCKED'
+    | 'DESTINATION_UNCONFIRMED'
+    | 'FINALITY_DELAYED'
+    | 'REORG_DETECTED'
+    | 'SETTLEMENT_BLOCKED'
+    | 'RECONCILIATION_CONFLICT';
+
+export type AlertLifecycleState = 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED';
+
+export interface CanonicalAlert {
+    readonly alertId: string;
+    readonly alertType: CanonicalAlertType;
+    readonly severity: TelemetrySeverity;
+    readonly source: string;
+    readonly timestamp: number;
+    readonly network: string | null;
+    readonly intentId: string | null;
+    readonly message: string;
+    readonly state: AlertLifecycleState;
+    readonly resolvedAt: number | null;
+    readonly metadata?: Record<string, any>;
+}
+
+export type TelemetryEvidenceLabel = 'LIVE' | 'READ_ONLY' | 'PREFLIGHT' | 'SIMULATION' | 'FIXTURE';
+
+export interface LatencyMetricSummary {
+    readonly count: number;
+    readonly success: number;
+    readonly failure: number;
+    readonly p50: number;
+    readonly p95: number;
+    readonly p99: number;
+    readonly maximum: number;
+    readonly average: number;
+    readonly label: TelemetryEvidenceLabel;
+}
+
+export interface UnifiedMetricsSnapshot {
+    readonly routeResolutionLatency: LatencyMetricSummary;
+    readonly quoteLatency: LatencyMetricSummary;
+    readonly arbitrationLatency: LatencyMetricSummary;
+    readonly rpcLatency: LatencyMetricSummary;
+    readonly bridgeQuoteLatency: LatencyMetricSummary;
+    readonly sourceExecutionDuration: LatencyMetricSummary;
+    readonly bridgeDuration: LatencyMetricSummary;
+    readonly destinationDuration: LatencyMetricSummary;
+    readonly finalityDuration: LatencyMetricSummary;
+    readonly settlementDuration: LatencyMetricSummary;
+}
+
+export interface NetworkHealthSnapshot {
+    readonly identity: string;
+    readonly chainId: number;
+    readonly capability: ExecutionCapabilityState;
+    readonly evidence: EvidenceClass;
+    readonly rpcHealth: OperationalHealthStatus;
+    readonly dexHealth: OperationalHealthStatus;
+    readonly bridgeHealth: OperationalHealthStatus;
+    readonly executionEligibility: boolean;
+    readonly fundingState: 'FUNDED' | 'FUNDING_BLOCKED' | 'NOT_APPLICABLE';
+    readonly lastVerifiedBlock: number | null;
+    readonly latestBlock?: number;
+    readonly quorumState?: 'QUORUM_OK' | 'QUORUM_DEGRADED' | 'QUORUM_LOST';
+}
+
+export interface RpcAggregatedNetworkHealth {
+    readonly network: string;
+    readonly chainId: number;
+    readonly providerCount: number;
+    readonly healthyProviders: number;
+    readonly degradedProviders: number;
+    readonly unhealthyProviders: number;
+    readonly circuitOpenProviders: number;
+    readonly quorumState: 'QUORUM_OK' | 'QUORUM_DEGRADED' | 'QUORUM_LOST';
+    readonly latestObservedBlock: number;
+    readonly blockAgeSeconds: number;
+    readonly latencyMs: number;
+    readonly disagreementState: 'NONE' | 'DETECTED' | 'RESOLVED';
+}
+
+export interface RouteHealthSnapshot {
+    readonly routeId: string;
+    readonly networks: string[];
+    readonly dex: string;
+    readonly bridge: string | null;
+    readonly capability: ExecutionCapabilityState;
+    readonly evidence: EvidenceClass;
+    readonly quoteFreshness: 'FRESH' | 'STALE' | 'EXPIRED';
+    readonly providerHealth: OperationalHealthStatus;
+    readonly arbitrationStatus: 'ELIGIBLE' | 'FILTERED' | 'SELECTED' | 'BLOCKED';
+    readonly executionEligibility: boolean;
+    readonly fundingStatus: 'FUNDED' | 'FUNDING_BLOCKED' | 'NOT_APPLICABLE';
+    readonly failureRate: number;
+    readonly latencyStats: {
+        readonly p50Ms: number;
+        readonly p95Ms: number;
+        readonly maxMs: number;
+    };
+}
+
+export interface ActiveIntentHealthSnapshot {
+    readonly intentId: string;
+    readonly overallState: CrossChainIntentOverallState;
+    readonly sourceState: string;
+    readonly bridgeState: string;
+    readonly destinationState: string;
+    readonly finalityState: FinalityState;
+    readonly settlementState: string;
+    readonly lastEvent: CanonicalTelemetryEventType;
+    readonly lastEvidenceTier: string;
+    readonly lastBlock: number | null;
+    readonly lastTxHash: string | null;
+    readonly blockingReason: string | null;
+    readonly elapsedTimeMs: number;
+}
+
+export interface FinalityRecord {
+    readonly chainId: number;
+    readonly txHash: string;
+    readonly transactionBlock: number;
+    readonly latestBlock: number;
+    readonly confirmations: number;
+    readonly requiredConfirmations: number;
+    readonly finalityState: FinalityState;
+    readonly reorgState: 'NONE' | 'REORG_DETECTED' | 'RESOLVED';
+}
+
+export interface NormalizedErrorTelemetry {
+    readonly errorCode: string;
+    readonly category: string;
+    readonly severity: TelemetrySeverity;
+    readonly network: string | null;
+    readonly chainId: number | null;
+    readonly provider: string | null;
+    readonly routeId: string | null;
+    readonly intentId: string | null;
+    readonly planId: string | null;
+    readonly stepId: string | null;
+    readonly retryable: boolean;
+    readonly failClosed: boolean;
+    readonly timestamp: number;
+}
+
+export interface DashboardOverviewResponse {
+    readonly system: {
+        readonly status: OperationalHealthStatus;
+        readonly dimensions: Record<OperationalHealthDimension, OperationalHealthStatus>;
+        readonly uptimeSeconds: number;
+        readonly timestamp: number;
+        readonly version: string;
+    };
+    readonly networks: NetworkHealthSnapshot[];
+    readonly rpc: RpcAggregatedNetworkHealth[];
+    readonly dex: {
+        readonly dexId: string;
+        readonly network: string;
+        readonly status: OperationalHealthStatus;
+        readonly capability: ExecutionCapabilityState;
+    }[];
+    readonly bridges: {
+        readonly bridgeId: string;
+        readonly status: OperationalHealthStatus;
+        readonly capability: ExecutionCapabilityState;
+    }[];
+    readonly routes: RouteHealthSnapshot[];
+    readonly activeIntents: ActiveIntentHealthSnapshot[];
+    readonly settlements: {
+        readonly intentId: string;
+        readonly status: string;
+        readonly evidenceTier: string;
+        readonly destinationTxHash?: string;
+        readonly verifiedAt: number;
+    }[];
+    readonly alerts: CanonicalAlert[];
+    readonly metrics: UnifiedMetricsSnapshot;
+}
+
+export interface IntentStatusApiResponse {
+    readonly intentId: string;
+    readonly route: {
+        readonly routeId: string | null;
+        readonly sourceChainId: number | null;
+        readonly destinationChainId: number | null;
+        readonly provider: string | null;
+    };
+    readonly sourceState: string;
+    readonly bridgeState: string;
+    readonly destinationState: string;
+    readonly evidence: {
+        readonly tier: string;
+        readonly source: string;
+    };
+    readonly finality: {
+        readonly state: FinalityState;
+        readonly confirmations: number;
+        readonly requiredConfirmations: number;
+        readonly blockNumber: number | null;
+        readonly txHash: string | null;
+    };
+    readonly settlement: {
+        readonly state: string;
+        readonly isSettled: boolean;
+        readonly verifiedAt: number | null;
+    };
+    readonly blockingReason: string | null;
+    readonly timeline: CanonicalTelemetryEvent[];
+}
+
+
