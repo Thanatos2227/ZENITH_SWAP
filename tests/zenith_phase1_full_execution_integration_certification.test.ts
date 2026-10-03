@@ -2782,6 +2782,7 @@ describe('ZENITH — PHASE 1 TASK 35: FULL EXECUTION INTEGRATION & PRODUCTION RE
                 value: 0n,
                 chainId: POL_CHAIN_ID
             };
+            validateTransactionPlanEquivalence(tx, plan);
             const start = performance.now();
             const res = validateTransactionPlanEquivalence(tx, plan);
             const elapsed = performance.now() - start;
