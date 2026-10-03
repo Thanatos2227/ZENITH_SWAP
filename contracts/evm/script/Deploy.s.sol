@@ -104,6 +104,7 @@ contract DeployZenith is Script {
         console.log("11. ZenithUnifiedRouter:    ", unifiedRouterAddr);
 
         ZenithCrossChainRouter crossChainRouter = new ZenithCrossChainRouter(
+            governance,
             treasuryAddr,
             feeControllerAddr,
             circuitBreakerAddr,

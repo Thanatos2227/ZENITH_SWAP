@@ -55,12 +55,14 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
     }
 
     constructor(
+        address _owner,
         address _treasury,
         address _feeController,
         address _circuitBreaker,
         address _permit2
     ) {
-        owner = msg.sender;
+        require(_owner != address(0), "ZenithCrossChainRouter: Zero owner");
+        owner = _owner;
         treasury = _treasury != address(0) ? ZenithTreasury(payable(_treasury)) : ZenithTreasury(payable(address(0)));
         feeController = _feeController != address(0) ? ZenithFeeController(_feeController) : ZenithFeeController(address(0));
         circuitBreaker = _circuitBreaker != address(0) ? ZenithCircuitBreaker(_circuitBreaker) : ZenithCircuitBreaker(address(0));
@@ -102,6 +104,51 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
             abi.encodeWithSelector(IERC20.approve.selector, spender, value)
         );
         require(success && (data.length == 0 || abi.decode(data, (bool))), "ZenithCrossChainRouter: Approve failed");
+    }
+
+    function _parseAddress(string memory str) internal pure returns (bool success, address parsed) {
+        bytes memory b = bytes(str);
+        if (b.length != 42 || b[0] != "0" || (b[1] != "x" && b[1] != "X")) {
+            return (false, address(0));
+        }
+        uint160 res = 0;
+        for (uint256 i = 2; i < 42; i++) {
+            uint8 c = uint8(b[i]);
+            uint8 val;
+            if (c >= 48 && c <= 57) {
+                val = c - 48;
+            } else if (c >= 65 && c <= 70) {
+                val = c - 65 + 10;
+            } else if (c >= 97 && c <= 102) {
+                val = c - 97 + 10;
+            } else {
+                return (false, address(0));
+            }
+            res = (res << 4) | val;
+        }
+        return (true, address(res));
+    }
+
+    function _validateDestinationToken(string memory expectedToken, address actualToken) internal pure returns (bool) {
+        (bool isAddress, address parsedAddr) = _parseAddress(expectedToken);
+        if (isAddress) {
+            if (actualToken == address(0)) {
+                return (parsedAddr == address(0) || parsedAddr == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE));
+            }
+            return parsedAddr == actualToken;
+        }
+        bytes32 expectedHash = keccak256(bytes(expectedToken));
+        if (actualToken == address(0)) {
+            return (
+                expectedHash == keccak256(bytes("ETH")) ||
+                expectedHash == keccak256(bytes("POL")) ||
+                expectedHash == keccak256(bytes("MATIC")) ||
+                expectedHash == keccak256(bytes("AVAX")) ||
+                expectedHash == keccak256(bytes("BNB")) ||
+                expectedHash == keccak256(bytes("NATIVE"))
+            );
+        }
+        return false;
     }
 
     function hashOrder(
@@ -217,10 +264,24 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
         nonReentrant
         whenNotPaused
     {
+        require(authorizedSolvers[msg.sender], "ZenithCrossChainRouter: Unauthorized solver");
+
+        CrossChainOrder memory order = _orders[params.orderId];
+        require(order.orderId != bytes32(0), "ZenithCrossChainRouter: Order does not exist");
         require(!fulfilledOrders[params.orderId], "ZenithCrossChainRouter: Order already fulfilled");
         require(!refundedOrders[params.orderId], "ZenithCrossChainRouter: Order already refunded");
+        require(block.timestamp <= order.deadline, "ZenithCrossChainRouter: Order deadline expired");
+
         require(params.recipient != address(0), "ZenithCrossChainRouter: Zero recipient");
+        require(params.recipient == order.recipient, "ZenithCrossChainRouter: Recipient mismatch");
+
         require(params.outputAmount > 0, "ZenithCrossChainRouter: Zero output amount");
+        require(params.outputAmount >= order.minAmountOut, "ZenithCrossChainRouter: Output below minimum");
+
+        require(
+            _validateDestinationToken(order.destinationToken, params.outputToken),
+            "ZenithCrossChainRouter: Destination token mismatch"
+        );
 
         fulfilledOrders[params.orderId] = true;
 
@@ -229,6 +290,7 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
             (bool success, ) = params.recipient.call{value: params.outputAmount}("");
             require(success, "ZenithCrossChainRouter: Native payout failed");
         } else {
+            require(msg.value == 0, "ZenithCrossChainRouter: Unexpected ETH value");
             _safeTransferFrom(params.outputToken, msg.sender, params.recipient, params.outputAmount);
         }
 

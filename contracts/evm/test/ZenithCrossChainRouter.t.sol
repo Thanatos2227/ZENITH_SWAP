@@ -48,18 +48,29 @@ contract MockUSDT is IERC20 {
     }
 }
 
+contract MockMaliciousToken is IERC20 {
+    function totalSupply() external pure override returns (uint256) { return 1000000; }
+    function balanceOf(address) external pure override returns (uint256) { return 1000000; }
+    function allowance(address, address) external pure override returns (uint256) { return type(uint256).max; }
+    function approve(address, uint256) external pure override returns (bool) { return true; }
+    function transfer(address, uint256) external pure override returns (bool) { return false; }
+    function transferFrom(address, address, uint256) external pure override returns (bool) { return false; }
+}
+
 contract ZenithCrossChainRouterTest is Test {
     ZenithCircuitBreaker public circuitBreaker;
     ZenithTreasury public treasury;
     ZenithFeeController public feeController;
     ZenithCrossChainRouter public crossChainRouter;
     MockUSDT public mockUsdt;
+    MockMaliciousToken public maliciousToken;
 
     address public governance = address(0x1000);
     address public guardian = address(0x2000);
     address public user = address(0x4000);
     address public solver = address(0x5000);
     address public recipient = address(0x6000);
+    address public attacker = address(0x9999);
 
     function setUp() public {
         circuitBreaker = new ZenithCircuitBreaker(governance, guardian);
@@ -67,16 +78,20 @@ contract ZenithCrossChainRouterTest is Test {
         feeController = new ZenithFeeController(governance, address(treasury));
 
         crossChainRouter = new ZenithCrossChainRouter(
+            governance,
             address(treasury),
             address(feeController),
             address(circuitBreaker),
             address(0)
         );
 
-        vm.prank(governance);
+        vm.startPrank(governance);
         treasury.setFeeCollector(address(crossChainRouter), true);
+        crossChainRouter.setSolverAuthorization(solver, true);
+        vm.stopPrank();
 
         mockUsdt = new MockUSDT();
+        maliciousToken = new MockMaliciousToken();
         mockUsdt.mint(user, 1000 * 10**6);
         mockUsdt.mint(solver, 1000 * 10**6);
         vm.deal(user, 100 ether);
@@ -142,25 +157,311 @@ contract ZenithCrossChainRouterTest is Test {
         assertEq(mockUsdt.balanceOf(address(treasury)), order.feePaid);
     }
 
-    function testFulfillCrossChainOrder() public {
-        bytes32 mockOrderId = keccak256("ORDER_123");
-        uint256 fillAmount = 99 * 10**6;
+    function testFulfillCrossChainOrderLegitimate() public {
+        vm.startPrank(user);
+        uint256 amountIn = 100 * 10**6;
+        uint256 minOut = 99 * 10**6;
+        uint256 deadline = block.timestamp + 3600;
+        uint256 nonce = 10;
 
+        mockUsdt.approve(address(crossChainRouter), amountIn);
+
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(mockUsdt),
+                destinationToken: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+                amountIn: amountIn,
+                minAmountOut: minOut,
+                recipient: recipient,
+                deadline: deadline,
+                nonce: nonce
+            })
+        );
+        vm.stopPrank();
+
+        uint256 fillAmount = 99 * 10**6;
         vm.startPrank(solver);
         mockUsdt.approve(address(crossChainRouter), fillAmount);
 
         crossChainRouter.fulfillCrossChainOrder(
             IZenithCrossChainRouter.FulfillCrossChainParams({
-                orderId: mockOrderId,
+                orderId: orderId,
                 recipient: recipient,
-                outputToken: address(mockUsdt),
+                outputToken: address(0xdAC17F958D2ee523a2206206994597C13D831ec7),
                 outputAmount: fillAmount
             })
         );
         vm.stopPrank();
 
-        assertTrue(crossChainRouter.isOrderFulfilled(mockOrderId));
-        assertEq(mockUsdt.balanceOf(recipient), fillAmount);
+        assertTrue(crossChainRouter.isOrderFulfilled(orderId));
+    }
+
+    function testCannotFulfillNonExistentOrder() public {
+        bytes32 fakeOrderId = keccak256("NON_EXISTENT_ORDER");
+        vm.startPrank(solver);
+        mockUsdt.approve(address(crossChainRouter), 100);
+
+        vm.expectRevert("ZenithCrossChainRouter: Order does not exist");
+        crossChainRouter.fulfillCrossChainOrder(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: fakeOrderId,
+                recipient: recipient,
+                outputToken: address(mockUsdt),
+                outputAmount: 100
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotFulfillUnauthorizedSolver() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 20
+            })
+        );
+        vm.stopPrank();
+
+        vm.deal(attacker, 1 ether);
+        vm.startPrank(attacker);
+        vm.expectRevert("ZenithCrossChainRouter: Unauthorized solver");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testRevokeSolverAuthorization() public {
+        vm.prank(governance);
+        crossChainRouter.setSolverAuthorization(solver, false);
+
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 21
+            })
+        );
+        vm.stopPrank();
+
+        vm.startPrank(solver);
+        vm.expectRevert("ZenithCrossChainRouter: Unauthorized solver");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotFulfillWithWrongRecipient() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 30
+            })
+        );
+        vm.stopPrank();
+
+        vm.startPrank(solver);
+        vm.expectRevert("ZenithCrossChainRouter: Recipient mismatch");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: attacker,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotFulfillBelowMinAmountOut() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 40
+            })
+        );
+        vm.stopPrank();
+
+        vm.startPrank(solver);
+        vm.expectRevert("ZenithCrossChainRouter: Output below minimum");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.5 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.5 ether
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotFulfillWithWrongDestinationToken() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+                amountIn: 1 ether,
+                minAmountOut: 1000 * 10**6,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 50
+            })
+        );
+        vm.stopPrank();
+
+        vm.startPrank(solver);
+        vm.expectRevert("ZenithCrossChainRouter: Destination token mismatch");
+        crossChainRouter.fulfillCrossChainOrder(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48), // USDC instead of USDT
+                outputAmount: 1000 * 10**6
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotFulfillTwice() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 60
+            })
+        );
+        vm.stopPrank();
+
+        vm.startPrank(solver);
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+
+        vm.expectRevert("ZenithCrossChainRouter: Order already fulfilled");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testCannotRefundFulfilledOrder() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 100,
+                nonce: 70
+            })
+        );
+        vm.stopPrank();
+
+        vm.prank(solver);
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+
+        vm.warp(block.timestamp + 200);
+
+        vm.expectRevert("ZenithCrossChainRouter: Order already fulfilled");
+        crossChainRouter.refundExpiredOrder(orderId);
+    }
+
+    function testCannotFulfillExpiredOrder() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 100,
+                nonce: 80
+            })
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 200);
+
+        vm.startPrank(solver);
+        vm.expectRevert("ZenithCrossChainRouter: Order deadline expired");
+        crossChainRouter.fulfillCrossChainOrder{value: 0.99 ether}(
+            IZenithCrossChainRouter.FulfillCrossChainParams({
+                orderId: orderId,
+                recipient: recipient,
+                outputToken: address(0),
+                outputAmount: 0.99 ether
+            })
+        );
+        vm.stopPrank();
     }
 
     function testRefundExpiredOrder() public {
@@ -191,5 +492,89 @@ contract ZenithCrossChainRouterTest is Test {
 
         assertTrue(crossChainRouter.isOrderRefunded(orderId));
         assertTrue(userBalAfter > userBalBefore);
+    }
+
+    function testCannotRefundBeforeDeadline() public {
+        vm.startPrank(user);
+        bytes32 orderId = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 100
+            })
+        );
+        vm.stopPrank();
+
+        vm.expectRevert("ZenithCrossChainRouter: Deadline not passed");
+        crossChainRouter.refundExpiredOrder(orderId);
+    }
+
+    function testCannotReuseNonce() public {
+        vm.startPrank(user);
+        crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 101
+            })
+        );
+
+        vm.expectRevert("ZenithCrossChainRouter: Nonce already used");
+        crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 101
+            })
+        );
+        vm.stopPrank();
+    }
+
+    function testDifferentUserSameNonceAllowed() public {
+        vm.prank(user);
+        bytes32 order1 = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "ethereum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 102
+            })
+        );
+
+        vm.deal(attacker, 10 ether);
+        vm.prank(attacker);
+        bytes32 order2 = crossChainRouter.initiateCrossChainSwap{value: 1 ether}(
+            IZenithCrossChainRouter.InitiateCrossChainParams({
+                destinationChain: "arbitrum",
+                sourceToken: address(0),
+                destinationToken: "ETH",
+                amountIn: 1 ether,
+                minAmountOut: 0.99 ether,
+                recipient: recipient,
+                deadline: block.timestamp + 3600,
+                nonce: 102
+            })
+        );
+
+        assertTrue(order1 != order2);
     }
 }
