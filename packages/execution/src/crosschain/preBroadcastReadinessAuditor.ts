@@ -147,6 +147,17 @@ export interface PreBroadcastReadinessReport {
     chainIdentityVerified: boolean;
     rpcQuorum: QuorumEvaluationResult;
   };
+  amountConfig: {
+    configuredAmount: string;
+    rawAmount: string;
+    configSource: string;
+  };
+  quoteTimestampValidation: {
+    currentChainTimestamp: number;
+    quoteTimestamp: number;
+    diffSec: number;
+    valid: boolean;
+  };
   contracts: ContractVerificationItem[];
   erc20Metadata: Erc20MetadataVerification[];
   walletReadiness: WalletReadinessReport;
@@ -598,7 +609,22 @@ export class PreBroadcastReadinessAuditor {
         userWalletAddress: previewRecipient
       });
 
-      if (liveQuote?.calldata && liveQuote.calldata !== '0x') {
+      if (liveQuote?.destinationAmountRaw) {
+        simulationCalldata = spokePoolInterface.encodeFunctionData('depositV3', [
+          previewRecipient.toLowerCase(),
+          previewRecipient.toLowerCase(),
+          PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS.toLowerCase(),
+          PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS.toLowerCase(),
+          BigInt(intendedAmountRaw),
+          BigInt(liveQuote.minDestinationAmountRaw || intendedAmountRaw),
+          PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
+          ZERO_ADDRESS,
+          currentBlockTimestamp,
+          currentBlockTimestamp + 1800,
+          0,
+          '0x'
+        ]);
+      } else if (liveQuote?.calldata && liveQuote.calldata !== '0x') {
         simulationCalldata = liveQuote.calldata;
       }
 
@@ -740,6 +766,29 @@ export class PreBroadcastReadinessAuditor {
       { check: 'Broadcast authorization', status: 'BLOCKED', details: `BROADCAST AUTHORIZATION: NOT GRANTED (State: ${signerState})` }
     ];
 
+    const configSource = process.env.ZENITH_TESTNET_AUDIT_AMOUNT
+      ? 'ZENITH_TESTNET_AUDIT_AMOUNT env'
+      : process.env.TESTNET_AMOUNT
+      ? 'TESTNET_AMOUNT env'
+      : options?.intendedAmountRaw
+      ? 'options.intendedAmountRaw'
+      : 'DEFAULT (10 USDC)';
+
+    const amountConfig = {
+      configuredAmount: `${ethers.formatUnits(BigInt(intendedAmountRaw), 6)}`,
+      rawAmount: intendedAmountRaw,
+      configSource
+    };
+
+    const quoteSec = routeAndQuote.quoteTimestamp ? Math.floor(routeAndQuote.quoteTimestamp / 1000) : currentBlockTimestamp;
+    const diffSec = Math.abs(currentBlockTimestamp - quoteSec);
+    const quoteTimestampValidation = {
+      currentChainTimestamp: currentBlockTimestamp,
+      quoteTimestamp: quoteSec,
+      diffSec,
+      valid: diffSec <= 1800
+    };
+
     return {
       timestamp: Date.now(),
       sourceChain: {
@@ -756,6 +805,8 @@ export class PreBroadcastReadinessAuditor {
         chainIdentityVerified: dstIdentityVerified,
         rpcQuorum: arbQuorum
       },
+      amountConfig,
+      quoteTimestampValidation,
       contracts,
       erc20Metadata,
       walletReadiness,
