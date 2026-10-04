@@ -202,7 +202,8 @@ export async function verifyZenithBytecode(provider: {
         v3Factory: deployment.v3Factory,
         v3Router: deployment.v3Router,
         v3PositionManager: deployment.v3PositionManager,
-        unifiedRouter: deployment.unifiedRouter
+        unifiedRouter: deployment.unifiedRouter,
+        crossChainRouter: deployment.crossChainRouter
     };
     const deployedContracts: Record<string, boolean> = {};
     const missingBytecode: string[] = [];

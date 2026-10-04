@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveScopedSignerKey, ChainScope } from '../scripts/secure-runtime-loader';
 import { defaultAuthoritativeNetworkRegistry, defaultChainRegistry } from '../packages/chains/src';
+import { verifyZenithBytecode, registerZenithDeployment, ZENITH_DEPLOYMENTS } from '../packages/contracts/src/deployments';
 
 test('ZENITH Protocol — Deployment Identity & Signer Boundary Suite', async (t) => {
   await t.test('1. Null Mainnet Deployments are Strictly Classified as NOT_DEPLOYED', () => {
@@ -117,5 +118,92 @@ test('ZENITH Protocol — Deployment Identity & Signer Boundary Suite', async (t
       if (origAnvil) process.env.ANVIL_PRIVATE_KEY = origAnvil;
       else delete process.env.ANVIL_PRIVATE_KEY;
     }
+  });
+
+  await t.test('9. Bytecode Verification: Case A — Missing crossChainRouter address fails full deployment', async () => {
+    const testChainId = 999991;
+    registerZenithDeployment(testChainId, {
+      treasury: '0x0123456789012345678901234567890123456789',
+      feeController: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+      v1Factory: '0x71C84167B3aFdae37c4FEdf64082269c4c478a22',
+      v1Router: '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7',
+      v2Factory: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+      v2Router: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+      v3Factory: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+      v3Router: '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
+      v3PositionManager: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
+      unifiedRouter: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
+      crossChainRouter: null
+    });
+
+    const mockProvider = {
+      getCode: async () => '0x608060405234801561001057600080fd5b50'
+    };
+
+    const result = await verifyZenithBytecode(mockProvider, testChainId);
+    assert.equal(result.isFullyDeployed, false);
+    assert.equal(result.deployedContracts.crossChainRouter, false);
+    assert.ok(result.missingBytecode.some(item => item.includes('crossChainRouter')));
+    delete ZENITH_DEPLOYMENTS[testChainId];
+  });
+
+  await t.test('10. Bytecode Verification: Case B — crossChainRouter configured with empty bytecode (0x) fails full deployment', async () => {
+    const testChainId = 999992;
+    const crossChainRouterAddr = '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720';
+    registerZenithDeployment(testChainId, {
+      treasury: '0x0123456789012345678901234567890123456789',
+      feeController: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+      v1Factory: '0x71C84167B3aFdae37c4FEdf64082269c4c478a22',
+      v1Router: '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7',
+      v2Factory: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+      v2Router: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+      v3Factory: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+      v3Router: '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
+      v3PositionManager: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
+      unifiedRouter: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
+      crossChainRouter: crossChainRouterAddr
+    });
+
+    const mockProvider = {
+      getCode: async (addr: string) => {
+        if (addr.toLowerCase() === crossChainRouterAddr.toLowerCase()) {
+          return '0x';
+        }
+        return '0x608060405234801561001057600080fd5b50';
+      }
+    };
+
+    const result = await verifyZenithBytecode(mockProvider, testChainId);
+    assert.equal(result.isFullyDeployed, false);
+    assert.equal(result.deployedContracts.crossChainRouter, false);
+    assert.ok(result.missingBytecode.some(item => item.includes('crossChainRouter')));
+    delete ZENITH_DEPLOYMENTS[testChainId];
+  });
+
+  await t.test('11. Bytecode Verification: Case C — All contracts including crossChainRouter return non-empty bytecode', async () => {
+    const testChainId = 999993;
+    registerZenithDeployment(testChainId, {
+      treasury: '0x0123456789012345678901234567890123456789',
+      feeController: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+      v1Factory: '0x71C84167B3aFdae37c4FEdf64082269c4c478a22',
+      v1Router: '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7',
+      v2Factory: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+      v2Router: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+      v3Factory: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+      v3Router: '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
+      v3PositionManager: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
+      unifiedRouter: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
+      crossChainRouter: '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720'
+    });
+
+    const mockProvider = {
+      getCode: async () => '0x608060405234801561001057600080fd5b50'
+    };
+
+    const result = await verifyZenithBytecode(mockProvider, testChainId);
+    assert.equal(result.isFullyDeployed, true);
+    assert.equal(result.deployedContracts.crossChainRouter, true);
+    assert.equal(result.missingBytecode.length, 0);
+    delete ZENITH_DEPLOYMENTS[testChainId];
   });
 });
