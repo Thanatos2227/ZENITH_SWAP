@@ -14,3 +14,4 @@ export * from './rpc/rpcProvider.types';
 export * from './rpc/rpcDisagreementEngine';
 export * from './rpc/networkRpcAdapter';
 export * from './rpc/authoritativeRpcProviderRegistry';
+export * from './rpc/rpcHealthValidator';
