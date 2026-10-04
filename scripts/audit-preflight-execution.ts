@@ -55,17 +55,24 @@ async function main() {
 
   // 5. Test Wallet Readiness & Balances
   console.log('--- 5. Signer State Model & Wallet Readiness ---');
-  console.log(`Signer Configured:       ${report.walletReadiness.signerConfigured ? 'YES' : 'NO'}`);
-  console.log(`Signer State:            ${report.walletReadiness.signerState}`);
-  console.log(`Signer Address:          ${report.walletReadiness.signerAddress || 'NOT AVAILABLE (No key configured)'}`);
-  console.log(`Depositor Address:       ${report.walletReadiness.depositorAddress || 'NOT AVAILABLE (No key configured)'}`);
-  console.log(`Source Native Balance:   ${report.walletReadiness.sourceNativeBalance}`);
-  console.log(`Source USDC Balance:     ${report.walletReadiness.sourceUsdcBalance}`);
-  console.log(`Dest Native Balance:     ${report.walletReadiness.destinationNativeBalance}`);
-  console.log(`Dest USDC Balance:       ${report.walletReadiness.destinationUsdcBalance}`);
-  console.log(`Current Allowance:       ${report.walletReadiness.currentAllowanceFormatted} (Required: ${report.walletReadiness.requiredAllowanceRaw} raw)`);
-  console.log(`Allowance Sufficient:    ${report.walletReadiness.allowanceSufficient ? 'YES' : 'NO'}`);
-  console.log(`Gas Readiness:           ${report.walletReadiness.gasReadiness}\n`);
+  console.log(`Signer Environment:`);
+  console.log(`  TESTNET_PRIVATE_KEY:        ${report.walletReadiness.environmentDiagnostic.testnetPrivateKeyPresent ? 'PRESENT' : 'ABSENT'}`);
+  console.log(`  ZENITH_TESTNET_PRIVATE_KEY: ${report.walletReadiness.environmentDiagnostic.zenithTestnetPrivateKeyPresent ? 'PRESENT' : 'ABSENT'}`);
+  if (report.walletReadiness.environmentDiagnostic.multipleSourcesDetected) {
+    console.log(`  Multiple signer sources detected. Precedence: options > TESTNET_PRIVATE_KEY > ZENITH_TESTNET_PRIVATE_KEY`);
+  }
+  console.log(`Authoritative Signer Source:  ${report.walletReadiness.environmentDiagnostic.authoritativeSource}`);
+  console.log(`Signer Configured:            ${report.walletReadiness.signerConfigured ? 'YES' : 'NO'}`);
+  console.log(`Signer State:                 ${report.walletReadiness.signerState}`);
+  console.log(`Signer Address:               ${report.walletReadiness.signerAddress || 'NOT AVAILABLE (No key configured)'}`);
+  console.log(`Depositor Address:            ${report.walletReadiness.depositorAddress || 'NOT AVAILABLE (No key configured)'}`);
+  console.log(`Source Native Balance:        ${report.walletReadiness.sourceNativeBalance}`);
+  console.log(`Source USDC Balance:          ${report.walletReadiness.sourceUsdcBalance}`);
+  console.log(`Dest Native Balance:          ${report.walletReadiness.destinationNativeBalance}`);
+  console.log(`Dest USDC Balance:            ${report.walletReadiness.destinationUsdcBalance}`);
+  console.log(`Current Allowance:            ${report.walletReadiness.currentAllowanceFormatted} (Required: ${report.walletReadiness.requiredAllowanceRaw} raw)`);
+  console.log(`Allowance Sufficient:         ${report.walletReadiness.allowanceSufficient ? 'YES' : 'NO'}`);
+  console.log(`Gas Readiness:                ${report.walletReadiness.gasReadiness}\n`);
 
   // 6. Simulation Identity & Address Semantics
   console.log('--- 6. Simulation Identity & Address Semantics ---');

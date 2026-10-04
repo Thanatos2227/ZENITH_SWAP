@@ -55,6 +55,13 @@ export interface Erc20MetadataVerification {
   matched: boolean;
 }
 
+export interface SignerEnvironmentDiagnostic {
+  testnetPrivateKeyPresent: boolean;
+  zenithTestnetPrivateKeyPresent: boolean;
+  multipleSourcesDetected: boolean;
+  authoritativeSource: string;
+}
+
 export interface WalletReadinessReport {
   signerConfigured: boolean;
   signerState: BroadcastLifecycleState;
@@ -76,6 +83,7 @@ export interface WalletReadinessReport {
   gasEstimatedFormatted?: string;
   gasPriceWei?: string;
   gasReadiness: 'READY' | 'INSUFFICIENT_FUNDS' | 'NOT_CHECKED';
+  environmentDiagnostic: SignerEnvironmentDiagnostic;
 }
 
 export type SimulationIdentityReport =
@@ -545,6 +553,27 @@ export class PreBroadcastReadinessAuditor {
     }
 
     // 5. Verify Test Wallet, Balances & Allowance (Strict State Machine)
+    const testnetPrivateKeyPresent = Boolean(process.env.TESTNET_PRIVATE_KEY && process.env.TESTNET_PRIVATE_KEY.trim());
+    const zenithTestnetPrivateKeyPresent = Boolean(process.env.ZENITH_TESTNET_PRIVATE_KEY && process.env.ZENITH_TESTNET_PRIVATE_KEY.trim());
+    const programmaticKeyPresent = Boolean(options?.testnetPrivateKey && options.testnetPrivateKey.trim());
+    const multipleSourcesDetected = (testnetPrivateKeyPresent ? 1 : 0) + (zenithTestnetPrivateKeyPresent ? 1 : 0) + (programmaticKeyPresent ? 1 : 0) > 1;
+
+    let authoritativeSource = 'NONE_AVAILABLE';
+    if (programmaticKeyPresent) {
+      authoritativeSource = 'PROGRAMMATIC_OPTIONS';
+    } else if (testnetPrivateKeyPresent) {
+      authoritativeSource = 'PROCESS_ENV (TESTNET_PRIVATE_KEY)';
+    } else if (zenithTestnetPrivateKeyPresent) {
+      authoritativeSource = 'PROCESS_ENV (ZENITH_TESTNET_PRIVATE_KEY)';
+    }
+
+    const environmentDiagnostic: SignerEnvironmentDiagnostic = {
+      testnetPrivateKeyPresent,
+      zenithTestnetPrivateKeyPresent,
+      multipleSourcesDetected,
+      authoritativeSource
+    };
+
     const rawKey = options?.testnetPrivateKey || process.env.TESTNET_PRIVATE_KEY || process.env.ZENITH_TESTNET_PRIVATE_KEY;
     let signerAddress: string | null = null;
     let signerConfigured = false;
@@ -672,7 +701,8 @@ export class PreBroadcastReadinessAuditor {
       gasEstimatedWei: signerConfigured ? gasEstimatedWei : undefined,
       gasEstimatedFormatted: signerConfigured ? `${ethers.formatEther(BigInt(gasEstimatedWei))} ETH` : undefined,
       gasPriceWei: signerConfigured ? gasPriceWei : undefined,
-      gasReadiness
+      gasReadiness,
+      environmentDiagnostic
     };
 
     // Explicit Simulation Identity (Zero Synthetic Fallbacks)
