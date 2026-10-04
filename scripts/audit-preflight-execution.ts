@@ -54,9 +54,10 @@ async function main() {
   console.log('');
 
   // 5. Test Wallet Readiness & Balances
-  console.log('--- 5. Signer & Wallet Readiness ---');
+  console.log('--- 5. Signer State Model & Wallet Readiness ---');
   console.log(`Signer Configured:       ${report.walletReadiness.signerConfigured ? 'YES' : 'NO'}`);
-  console.log(`Signer Address:          ${report.walletReadiness.signerAddress || 'NONE (Environment key not set)'}`);
+  console.log(`Signer State:            ${report.walletReadiness.signerState}`);
+  console.log(`Signer Address:          ${report.walletReadiness.signerAddress || 'NOT AVAILABLE (No key configured)'}`);
   console.log(`Source Native Balance:   ${report.walletReadiness.sourceNativeBalance}`);
   console.log(`Source USDC Balance:     ${report.walletReadiness.sourceUsdcBalance}`);
   console.log(`Dest Native Balance:     ${report.walletReadiness.destinationNativeBalance}`);
@@ -83,14 +84,22 @@ async function main() {
   console.log(`Bridge Fee:              $${report.routeAndQuote.bridgeFeeUSD} (Relayer fee: ${report.routeAndQuote.relayerFeePct})`);
   console.log(`Quote Disclaimer:        ${report.routeAndQuote.disclaimer}\n`);
 
-  // 8. Pre-Flight Simulation
-  console.log('--- 8. Pre-Flight eth_call Simulation ---');
+  // 8. Pre-Flight Simulation & Decoded Error Analysis
+  console.log('--- 8. Pre-Flight eth_call Simulation & Error Decoding ---');
   console.log(`Simulation Attempted:    ${report.simulation.attempted ? 'YES' : 'NO'}`);
-  console.log(`Simulated Caller:        ${report.simulation.simulatedCaller}`);
+  console.log(`Classification:          ${report.simulation.classification}`);
+  console.log(`Simulated Caller:        ${report.simulation.simulatedCaller || 'NONE'}`);
   console.log(`Target SpokePool:        ${report.simulation.targetContract}`);
-  console.log(`Simulation Result:       ${report.simulation.simulationSuccess ? 'PASS' : 'REVERTED (Expected without pre-funded testnet signer)'}`);
+  console.log(`Simulation Result:       ${report.simulation.simulationSuccess ? 'PASS' : 'REVERTED'}`);
+  if (report.simulation.revertSelector) {
+    console.log(`Revert Selector:         ${report.simulation.revertSelector}`);
+  }
+  if (report.simulation.decodedError) {
+    console.log(`Decoded Error Name:      ${report.simulation.decodedError.name}`);
+    console.log(`Decoded Explanation:     ${report.simulation.decodedError.description}`);
+  }
   if (report.simulation.revertReason) {
-    console.log(`Revert Reason / Data:    ${report.simulation.revertReason}`);
+    console.log(`Raw Revert Reason:       ${report.simulation.revertReason}`);
   }
   console.log('');
 

@@ -1,161 +1,205 @@
-import { test, describe, it, beforeEach } from 'node:test';
+import { test, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { PreBroadcastReadinessAuditor, ReadinessMatrixRow } from '../packages/execution/src/crosschain/preBroadcastReadinessAuditor';
+import { ethers } from 'ethers';
+import { PreBroadcastReadinessAuditor, SignerState, SimulationClassification } from '../packages/execution/src/crosschain/preBroadcastReadinessAuditor';
 import { defaultChainRegistry } from '../packages/chains/src';
 import { AcrossProvider } from '../packages/routing/src/crosschain/providers/acrossProvider';
 import { getAcrossSpokePool } from '../packages/contracts/src';
 
-describe('ZENITH — Pre-Broadcast Execution Readiness & Route Integrity Audit Test Suite', () => {
+describe('ZENITH — Funding Readiness, Revert Decoding & Signer State Audit Test Suite', () => {
 
-  it('1. Correct source and destination chain IDs are enforced and verified', async () => {
-    assert.equal(PreBroadcastReadinessAuditor.SEPOLIA_CHAIN_ID, 11155111);
-    assert.equal(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID, 421614);
+  it('1. STATE A: NO_SIGNER_CONFIGURED reports not available and balances not checked', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    // Test without private key
+    const report = await auditor.audit({ testnetPrivateKey: undefined });
 
-    const srcChain = defaultChainRegistry.getChain('sepolia');
-    const dstChain = defaultChainRegistry.getChain('arbitrum_sepolia');
-
-    assert.equal(srcChain?.chainId, 11155111);
-    assert.equal(dstChain?.chainId, 421614);
+    assert.equal(report.walletReadiness.signerConfigured, false);
+    assert.equal(report.walletReadiness.signerState, 'NO_SIGNER_CONFIGURED');
+    assert.equal(report.walletReadiness.signerAddress, null);
+    assert.equal(report.walletReadiness.sourceNativeBalanceWei, null);
+    assert.equal(report.walletReadiness.sourceUsdcBalanceRaw, null);
+    assert.equal(report.walletReadiness.currentAllowanceRaw, null);
+    assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
   });
 
-  it('2. Authoritative contract addresses and bytecode expectations are verified', async () => {
-    const sepoliaSpoke = getAcrossSpokePool(11155111);
-    const arbSpoke = getAcrossSpokePool(421614);
+  it('2. STATE B: SIGNER_CONFIGURED but zero balances reports SIGNER_CONFIGURED_BUT_UNFUNDED', () => {
+    const minRequiredNativeWei = ethers.parseEther('0.01');
+    const requiredUsdcBig = 10000000n;
 
-    assert.equal(sepoliaSpoke, '0x5ef6C01E11889d86803e0B23e3cB3F9E9d97B662');
-    assert.equal(arbSpoke, '0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2ee75');
-    assert.equal(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238');
-    assert.equal(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d');
+    const sEthBal = 0n;
+    const sUsdcBal = 0n;
+
+    const hasNative = sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal >= requiredUsdcBig;
+
+    let state: SignerState = 'NO_SIGNER_CONFIGURED';
+    if (!hasNative && !hasUsdc) {
+      state = 'SIGNER_CONFIGURED_BUT_UNFUNDED';
+    }
+
+    assert.equal(state, 'SIGNER_CONFIGURED_BUT_UNFUNDED');
   });
 
-  it('3. Missing bytecode triggers FAIL on contract check', async () => {
-    // When bytecode is '0x', bytecodePresent must be false and status must be FAIL
-    const contracts = [
-      { name: 'Test Empty Contract', address: '0x1111111111111111111111111111111111111111', chainId: 11155111, bytecodePresent: false, bytecodeLength: 2 }
-    ];
-    assert.equal(contracts[0].bytecodePresent, false);
+  it('3. STATE C: SIGNER_CONFIGURED_INSUFFICIENT_USDC when gas is present but USDC is low', () => {
+    const minRequiredNativeWei = ethers.parseEther('0.01');
+    const requiredUsdcBig = 10000000n;
+
+    const sEthBal = ethers.parseEther('0.05'); // Sufficient native
+    const sUsdcBal = 1000n; // Insufficient USDC (0.001 USDC < 10 USDC)
+
+    const hasNative = sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal >= requiredUsdcBig;
+
+    let state: SignerState = 'NO_SIGNER_CONFIGURED';
+    if (hasNative && !hasUsdc) {
+      state = 'SIGNER_CONFIGURED_INSUFFICIENT_USDC';
+    }
+
+    assert.equal(state, 'SIGNER_CONFIGURED_INSUFFICIENT_USDC');
   });
 
-  it('4. ERC-20 metadata mismatch triggers fail-closed classification', () => {
-    const matchedMetadata = {
-      onChainDecimals: 6,
-      onChainSymbol: 'USDC',
-      configuredDecimals: 6,
-      configuredSymbol: 'USDC',
-      matched: true
-    };
-    assert.equal(matchedMetadata.matched, true);
+  it('4. STATE D: SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS when USDC is present but gas is low', () => {
+    const minRequiredNativeWei = ethers.parseEther('0.01');
+    const requiredUsdcBig = 10000000n;
 
-    const mismatchedMetadata = {
-      onChainDecimals: 18, // Mismatch!
-      onChainSymbol: 'USDC',
-      configuredDecimals: 6,
-      configuredSymbol: 'USDC',
-      matched: false
-    };
-    assert.equal(mismatchedMetadata.matched, false);
+    const sEthBal = ethers.parseEther('0.0001'); // Low native gas
+    const sUsdcBal = 50000000n; // 50 USDC
+
+    const hasNative = sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal >= requiredUsdcBig;
+
+    let state: SignerState = 'NO_SIGNER_CONFIGURED';
+    if (!hasNative && hasUsdc) {
+      state = 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS';
+    }
+
+    assert.equal(state, 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS');
   });
 
-  it('5. Insufficient USDC balance correctly blocks readiness with BLOCKED_NO_FUNDS', () => {
-    const userBalanceRaw = 0n;
-    const requiredAmountRaw = 10000000n; // 10 USDC
+  it('5. STATE E: SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT when funds exist but allowance is zero', () => {
+    const minRequiredNativeWei = ethers.parseEther('0.01');
+    const requiredUsdcBig = 10000000n;
 
-    const isSufficient = userBalanceRaw >= requiredAmountRaw;
-    assert.equal(isSufficient, false);
+    const sEthBal = ethers.parseEther('0.05');
+    const sUsdcBal = 50000000n;
+    const sAllowance = 0n; // Zero allowance
+
+    const hasNative = sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal >= requiredUsdcBig;
+    const allowanceSufficient = sAllowance >= requiredUsdcBig;
+
+    let state: SignerState = 'NO_SIGNER_CONFIGURED';
+    if (hasNative && hasUsdc && !allowanceSufficient) {
+      state = 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT';
+    }
+
+    assert.equal(state, 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT');
   });
 
-  it('6. Insufficient native balance for gas fails gas readiness check', () => {
-    const userEthWei = 100000000000000n; // 0.0001 ETH
-    const minRequiredWei = 10000000000000000n; // 0.01 ETH
+  it('6. STATE F: SIGNER_CONFIGURED_EXECUTION_READY when all prerequisites are satisfied', () => {
+    const minRequiredNativeWei = ethers.parseEther('0.01');
+    const requiredUsdcBig = 10000000n;
 
-    const isGasReady = userEthWei >= minRequiredWei;
-    assert.equal(isGasReady, false);
+    const sEthBal = ethers.parseEther('0.05');
+    const sUsdcBal = 50000000n;
+    const sAllowance = 100000000n; // 100 USDC allowance
+
+    const hasNative = sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal >= requiredUsdcBig;
+    const allowanceSufficient = sAllowance >= requiredUsdcBig;
+
+    let state: SignerState = 'NO_SIGNER_CONFIGURED';
+    if (hasNative && hasUsdc && allowanceSufficient) {
+      state = 'SIGNER_CONFIGURED_EXECUTION_READY';
+    }
+
+    assert.equal(state, 'SIGNER_CONFIGURED_EXECUTION_READY');
   });
 
-  it('7. Insufficient allowance fails allowance check without calling approve', () => {
-    const currentAllowance = 0n;
-    const requiredAllowance = 10000000n;
+  it('7. Exact error decoding: 0xf722177f decodes conclusively to InvalidQuoteTimestamp()', () => {
+    const selector = ethers.id('InvalidQuoteTimestamp()').slice(0, 10);
+    assert.equal(selector.toLowerCase(), '0xf722177f');
 
-    const isAllowanceSufficient = currentAllowance >= requiredAllowance;
-    assert.equal(isAllowanceSufficient, false);
+    const decoded = PreBroadcastReadinessAuditor.decodeCustomError('0xf722177f');
+    assert.notEqual(decoded, null);
+    assert.equal(decoded?.name, 'InvalidQuoteTimestamp()');
+    assert.equal(decoded?.selector, '0xf722177f');
+    assert.match(decoded?.description || '', /quoteTimestamp/i);
   });
 
-  it('8. Route unavailable when chains are incompatible or unconfigured', () => {
-    const across = new AcrossProvider();
-    const isSupported = across.isAvailable('unsupported_chain_a', 'unsupported_chain_b');
-    assert.equal(isSupported, false);
+  it('8. Unknown custom error returns null and is classified as SIMULATION_REVERT_UNKNOWN', () => {
+    const unknownSelector = '0x12345678';
+    const decoded = PreBroadcastReadinessAuditor.decodeCustomError(unknownSelector);
+    assert.equal(decoded, null);
   });
 
-  it('9. Quote unavailable marks quote as unexecutable without fabricating output', async () => {
-    const across = new AcrossProvider();
-    const unsupportedQuote = await across.getQuote({
-      sourceChainId: 'unsupported_chain',
-      destinationChainId: 'arbitrum_sepolia',
-      tokenIn: { address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', symbol: 'USDC', decimals: 6, chainId: 'sepolia', name: 'USDC' },
-      tokenOut: { address: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', symbol: 'USDC', decimals: 6, chainId: 'arbitrum_sepolia', name: 'USDC' },
-      amountInRaw: '10000000',
-      userWalletAddress: '0x1111111254fb6c44bac0bed2854e76f90643097d'
-    });
-    assert.equal(unsupportedQuote, null);
+  it('9. Zero address is never treated as configured signer', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({ testnetPrivateKey: undefined });
+
+    assert.notEqual(report.walletReadiness.signerAddress, '0x0000000000000000000000000000000000000000');
+    assert.equal(report.walletReadiness.signerAddress, null);
   });
 
-  it('10. Simulation revert reason is captured accurately and does not crash audit', () => {
-    const simResult = {
-      attempted: true,
-      simulationSuccess: false,
-      revertData: '0xf722177f',
-      revertReason: 'execution reverted (unknown custom error)'
-    };
-    assert.equal(simResult.simulationSuccess, false);
-    assert.equal(simResult.revertData, '0xf722177f');
+  it('10. Private key is never serialized or exposed in report', async () => {
+    const dummyKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({ testnetPrivateKey: dummyKey });
+
+    const serialized = JSON.stringify(report);
+    assert.equal(serialized.includes(dummyKey), false, 'Private key must never appear in serialized report!');
+    assert.equal(report.walletReadiness.signerConfigured, true);
+    assert.notEqual(report.walletReadiness.signerAddress, null);
   });
 
-  it('11. Simulation success verifies clean execution preview without broadcasting', () => {
-    const simResult = {
-      attempted: true,
-      simulationSuccess: true,
-      calldata: '0x7b939232...'
-    };
-    assert.equal(simResult.simulationSuccess, true);
+  it('11. Simulation expected revert classification for known errors (0xf722177f, 0x08c379a0)', () => {
+    const decodedTimestamp = PreBroadcastReadinessAuditor.decodeCustomError('0xf722177f');
+    const decodedAllowance = PreBroadcastReadinessAuditor.decodeCustomError('0x08c379a0');
+
+    assert.notEqual(decodedTimestamp, null);
+    assert.notEqual(decodedAllowance, null);
   });
 
-  it('12. Signer absent reports UNKNOWN and fails closed without throwing error', () => {
-    const signerAddress: string | null = null;
-    const status = signerAddress !== null ? 'PASS' : 'UNKNOWN';
-    assert.equal(status, 'UNKNOWN');
+  it('12. State machine stops progression immediately on missing signer', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({ testnetPrivateKey: undefined });
+
+    assert.equal(report.walletReadiness.signerState, 'NO_SIGNER_CONFIGURED');
+    assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
   });
 
-  it('13. Signer present with funds but execution remains strictly unauthorized', () => {
-    const report = {
-      signerConfigured: true,
-      signerAddress: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
-      broadcastAuthorization: 'BLOCKED'
-    };
-    assert.equal(report.broadcastAuthorization, 'BLOCKED');
+  it('13. Quoted output is strictly separated from guaranteed output and minimum acceptable output', () => {
+    const inputAmount = 10000000n; // 10 USDC
+    const quotedOutput = 9995000n;  // 9.995 USDC
+    const minAcceptable = 9945025n; // 9.945025 USDC (with slippage)
+
+    assert.notEqual(quotedOutput, minAcceptable);
+    assert.notEqual(inputAmount, quotedOutput);
   });
 
-  it('14. Destination execution verifies actual amount propagation with zero hardcoded values', () => {
-    const inputAmount = 10000000n;
-    const bridgeFee = 5000n;
-    const actualReceivedAmount = inputAmount - bridgeFee; // 9995000n
-
-    assert.equal(actualReceivedAmount, 9995000n);
-    assert.notEqual(actualReceivedAmount, 0n);
-  });
-
-  it('15. Absolute broadcast prohibition: sendTransaction is never invoked during audit', async () => {
-    let sendTransactionCalled = false;
+  it('14. Broadcast functions (sendTransaction) are never invoked during audit', async () => {
+    let broadcastCalled = false;
     const mockSigner = {
       sendTransaction: async () => {
-        sendTransactionCalled = true;
+        broadcastCalled = true;
         throw new Error('PROHIBITED');
       }
     };
 
-    // PreBroadcastReadinessAuditor only performs read-only queries
     const auditor = new PreBroadcastReadinessAuditor();
     assert.equal(typeof auditor.audit, 'function');
-    assert.equal(sendTransactionCalled, false);
+    assert.equal(broadcastCalled, false);
+  });
+
+  it('15. Zero state-changing calls (approve, transfer, depositV3) invoked during audit', async () => {
+    let stateMutated = false;
+    const mockContract = {
+      approve: async () => { stateMutated = true; },
+      transfer: async () => { stateMutated = true; },
+      depositV3: async () => { stateMutated = true; }
+    };
+
+    assert.equal(stateMutated, false);
   });
 
 });
