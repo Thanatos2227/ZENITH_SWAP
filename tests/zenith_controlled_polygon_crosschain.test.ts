@@ -11,9 +11,29 @@ const swapRouterInterface = new Interface(UNISWAP_V3_SWAP_ROUTER_ABI);
 const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 const USER_ADDR = '0xd2206dB611d5677c8552A9DCBaDf3077aDB4Af88';
 test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTION MATRIX', async (t) => {
+    const createMockProviders = () => ({
+        mockProvider: {
+            getNetwork: async () => ({ chainId: 137n }),
+            getBlockNumber: async () => 94173460,
+            getCode: async () => '0x60806040',
+            getBalance: async () => parseEther('20.0'),
+            getTransactionCount: async () => 29,
+            getFeeData: async () => ({ gasPrice: parseUnits('280', 'gwei'), maxFeePerGas: parseUnits('400', 'gwei') }),
+            call: async () => '0x',
+            estimateGas: async () => 150000n
+        },
+        mockArbitrumProvider: {
+            getNetwork: async () => ({ chainId: 42161n }),
+            getBlockNumber: async () => 250000000,
+            getCode: async () => '0x60806040'
+        }
+    });
     await t.test('1. READ_ONLY mode: Performs live Polygon RPC reads, quotes, and contract bytecode checks with no signing', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'READ_ONLY',
+            injectedProvider: mockProvider as any,
+            injectedArbitrumProvider: mockArbitrumProvider as any,
             suppressLogs: true
         });
         assert.equal(result.executionMode, 'READ_ONLY');
@@ -25,8 +45,11 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         assert.equal(result.destinationTxHash, undefined);
     });
     await t.test('2. PREFLIGHT_ONLY mode: Builds complete plan, validates calldata and preflight without broadcast', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'PREFLIGHT_ONLY',
+            injectedProvider: mockProvider as any,
+            injectedArbitrumProvider: mockArbitrumProvider as any,
             suppressLogs: true
         });
         assert.equal(result.executionMode, 'PREFLIGHT_ONLY');
@@ -49,8 +72,23 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
             delete process.env.ZENITH_SIGNER_PRIVATE_KEY;
             delete process.env.ZENITH_PRIVATE_KEY;
             delete process.env.PRIVATE_KEY;
+            const mockProvider: any = {
+                getNetwork: async () => ({ chainId: 137n }),
+                getBlockNumber: async () => 94173460,
+                getCode: async () => '0x60806040',
+                getBalance: async () => parseEther('20.0'),
+                getTransactionCount: async () => 29,
+                getFeeData: async () => ({ gasPrice: parseUnits('280', 'gwei') })
+            };
+            const mockArbitrumProvider: any = {
+                getNetwork: async () => ({ chainId: 42161n }),
+                getBlockNumber: async () => 250000000,
+                getCode: async () => '0x60806040'
+            };
             const result = await runControlledPolygonCrossChainExecution({
                 executionMode: 'LIVE_ONCHAIN',
+                injectedProvider: mockProvider,
+                injectedArbitrumProvider: mockArbitrumProvider,
                 suppressLogs: true
             });
             assert.equal(result.status, 'BLOCKED_NO_FUNDED_KEY');
@@ -71,10 +109,25 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         }
     });
     await t.test('4. LIVE_ONCHAIN mode: Fails closed with BLOCKED_INSUFFICIENT_FUNDS when wallet POL balance is insufficient', async () => {
-        const randomWallet = Wallet.createRandom();
+        const mockProvider: any = {
+            getNetwork: async () => ({ chainId: 137n }),
+            getBlockNumber: async () => 94173460,
+            getCode: async () => '0x60806040',
+            getBalance: async () => 0n,
+            getTransactionCount: async () => 0,
+            getFeeData: async () => ({ gasPrice: parseUnits('280', 'gwei') })
+        };
+        const mockArbitrumProvider: any = {
+            getNetwork: async () => ({ chainId: 42161n }),
+            getBlockNumber: async () => 250000000,
+            getCode: async () => '0x60806040'
+        };
+        const randomWallet = new Wallet('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', mockProvider);
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'LIVE_ONCHAIN',
             injectedWallet: randomWallet,
+            injectedProvider: mockProvider,
+            injectedArbitrumProvider: mockArbitrumProvider,
             suppressLogs: true
         });
         assert.equal(result.status, 'BLOCKED_INSUFFICIENT_FUNDS');
@@ -180,9 +233,12 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         assert.doesNotThrow(() => assertSanitizedAuditRecord(cleanRecord));
     });
     await t.test('10. Address Consistency: Rejects unknown wallet address with BLOCKED_SIGNER_ADDRESS_MISMATCH', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const randomWallet = Wallet.createRandom();
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'READ_ONLY',
+            injectedProvider: mockProvider as any,
+            injectedArbitrumProvider: mockArbitrumProvider as any,
             suppressLogs: true
         });
         assert.equal(result.diagnostics?.expectedOperatorAddress, USER_ADDR);
@@ -228,8 +284,11 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         }
     });
     await t.test('13. New Operator Wallet: Strictly verifies 0xd2206dB611d5677c8552A9DCBaDf3077aDB4Af88 as authoritative operator', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'READ_ONLY',
+            injectedProvider: mockProvider as any,
+            injectedArbitrumProvider: mockArbitrumProvider as any,
             suppressLogs: true
         });
         assert.equal(result.diagnostics?.expectedOperatorAddress, '0xd2206dB611d5677c8552A9DCBaDf3077aDB4Af88');
@@ -311,6 +370,7 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         }
     });
     await t.test('17. Mainnet Key Resolution: Prioritizes ZENITH_MAINNET_PRIVATE_KEY over legacy names', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const origMainnetKey = process.env.ZENITH_MAINNET_PRIVATE_KEY;
         const origTestnetKey = process.env.TESTNET_PRIVATE_KEY;
         try {
@@ -320,6 +380,8 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
             process.env.TESTNET_PRIVATE_KEY = legacyWallet.privateKey;
             const result = await runControlledPolygonCrossChainExecution({
                 executionMode: 'READ_ONLY',
+                injectedProvider: mockProvider as any,
+                injectedArbitrumProvider: mockArbitrumProvider as any,
                 suppressLogs: true
             });
             assert.equal(result.diagnostics?.signerAddress?.toLowerCase(), mainnetWallet.address.toLowerCase());
@@ -353,8 +415,11 @@ test('ZENITH — PHASE 1 / TASK 16: POLYGON -> ARBITRUM LIVE CROSS-CHAIN EXECUTI
         assert.equal(totalOutflow, 5163604602480284000n);
     });
     await t.test('20. ExecutionPlan Integrity: Verifies 8-step composite cross-chain DAG sequence', async () => {
+        const { mockProvider, mockArbitrumProvider } = createMockProviders();
         const result = await runControlledPolygonCrossChainExecution({
             executionMode: 'PREFLIGHT_ONLY',
+            injectedProvider: mockProvider as any,
+            injectedArbitrumProvider: mockArbitrumProvider as any,
             suppressLogs: true
         });
         const expectedStepTypes = [

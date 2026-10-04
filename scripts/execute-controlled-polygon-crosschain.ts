@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Wallet, Contract, Interface, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
+import { JsonRpcProvider, Wallet, Contract, Interface, formatEther, formatUnits, parseEther, parseUnits, FetchRequest } from 'ethers';
 import { createHash } from 'crypto';
 import { defaultChainRegistry } from '@zenith/chains';
 import { ACROSS_SPOKE_POOLS, ACROSS_SPOKE_POOL_ABI, validateEvmAddress, validateExecutionTarget, validateTokenAddress, validateRecipientAddress, UNISWAP_V3_SWAP_ROUTERS, UNISWAP_V3_SWAP_ROUTER_ABI, BlockedOperatorConfirmationError, ZERO_ADDRESS } from '@zenith/contracts';
@@ -254,8 +254,12 @@ export async function runControlledPolygonCrossChainExecution(options: {
     };
     const polygonRpc = process.env.POLYGON_MAINNET_RPC_URL || process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com';
     const arbitrumRpc = process.env.ARBITRUM_MAINNET_RPC_URL || process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc';
-    const provider = options.injectedProvider || new JsonRpcProvider(polygonRpc, 137);
-    const arbitrumProvider = options.injectedArbitrumProvider || new JsonRpcProvider(arbitrumRpc, 42161);
+    const polyReq = new FetchRequest(polygonRpc);
+    polyReq.timeout = 8000;
+    const arbReq = new FetchRequest(arbitrumRpc);
+    arbReq.timeout = 8000;
+    const provider = options.injectedProvider || new JsonRpcProvider(polyReq, 137, { staticNetwork: true });
+    const arbitrumProvider = options.injectedArbitrumProvider || new JsonRpcProvider(arbReq, 42161, { staticNetwork: true });
     let sourceChainId = 137n;
     try {
         if (typeof (provider as any).getNetwork === 'function') {
