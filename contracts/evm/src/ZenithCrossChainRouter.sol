@@ -207,29 +207,46 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
 
         executedNonces[msg.sender][params.nonce] = true;
 
-        uint256 protocolFee = 0;
+        (uint256 protocolFee, uint256 netDeposit) = _handleDeposit(params.sourceToken, params.amountIn);
+
+        _storeCrossChainOrder(orderId, msg.sender, params, netDeposit, protocolFee);
+
+        _emitCrossChainOrderInitiated(orderId, msg.sender, params, protocolFee);
+    }
+
+    function _handleDeposit(
+        address sourceToken,
+        uint256 amountIn
+    ) private returns (uint256 protocolFee, uint256 netDeposit) {
         if (address(feeController) != address(0)) {
-            protocolFee = feeController.calculateCrossChainFee(params.amountIn);
+            protocolFee = feeController.calculateCrossChainFee(amountIn);
         }
+        netDeposit = amountIn - protocolFee;
 
-        uint256 netDeposit = params.amountIn - protocolFee;
-
-        if (params.sourceToken == address(0)) {
-            require(msg.value == params.amountIn, "ZenithCrossChainRouter: Mismatched msg.value");
+        if (sourceToken == address(0)) {
+            require(msg.value == amountIn, "ZenithCrossChainRouter: Mismatched msg.value");
             if (protocolFee > 0 && address(treasury) != address(0)) {
                 treasury.depositNativeFee{value: protocolFee}();
             }
         } else {
-            _safeTransferFrom(params.sourceToken, msg.sender, address(this), params.amountIn);
+            _safeTransferFrom(sourceToken, msg.sender, address(this), amountIn);
             if (protocolFee > 0 && address(treasury) != address(0)) {
-                _safeApprove(params.sourceToken, address(treasury), protocolFee);
-                treasury.depositERC20Fee(params.sourceToken, protocolFee);
+                _safeApprove(sourceToken, address(treasury), protocolFee);
+                treasury.depositERC20Fee(sourceToken, protocolFee);
             }
         }
+    }
 
+    function _storeCrossChainOrder(
+        bytes32 orderId,
+        address user,
+        InitiateCrossChainParams calldata params,
+        uint256 netDeposit,
+        uint256 protocolFee
+    ) private {
         _orders[orderId] = CrossChainOrder({
             orderId: orderId,
-            user: msg.sender,
+            user: user,
             sourceToken: params.sourceToken,
             amountIn: netDeposit,
             destinationChain: params.destinationChain,
@@ -241,10 +258,17 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
             feePaid: protocolFee,
             timestamp: block.timestamp
         });
+    }
 
+    function _emitCrossChainOrderInitiated(
+        bytes32 orderId,
+        address user,
+        InitiateCrossChainParams calldata params,
+        uint256 protocolFee
+    ) private {
         emit CrossChainOrderInitiated(
             orderId,
-            msg.sender,
+            user,
             params.destinationChain,
             params.sourceToken,
             params.destinationToken,
@@ -266,7 +290,7 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
     {
         require(authorizedSolvers[msg.sender], "ZenithCrossChainRouter: Unauthorized solver");
 
-        CrossChainOrder memory order = _orders[params.orderId];
+        CrossChainOrder storage order = _orders[params.orderId];
         require(order.orderId != bytes32(0), "ZenithCrossChainRouter: Order does not exist");
         require(!fulfilledOrders[params.orderId], "ZenithCrossChainRouter: Order already fulfilled");
         require(!refundedOrders[params.orderId], "ZenithCrossChainRouter: Order already refunded");
@@ -309,7 +333,7 @@ contract ZenithCrossChainRouter is IZenithCrossChainRouter {
         nonReentrant
         whenNotPaused
     {
-        CrossChainOrder memory order = _orders[orderId];
+        CrossChainOrder storage order = _orders[orderId];
         require(order.orderId != bytes32(0), "ZenithCrossChainRouter: Order not found");
         require(!fulfilledOrders[orderId], "ZenithCrossChainRouter: Order already fulfilled");
         require(!refundedOrders[orderId], "ZenithCrossChainRouter: Order already refunded");
