@@ -385,11 +385,11 @@ export class PreBroadcastReadinessAuditor {
     recipientAddress?: string;
     refundAddress?: string;
   }): Promise<PreBroadcastReadinessReport> {
-    // Configurable amount: process.env.ZENITH_TESTNET_AUDIT_AMOUNT -> options -> default 10 USDC
+    // Configurable amount: process.env.ZENITH_TESTNET_AUDIT_AMOUNT -> options -> default 5 USDC (testnet pool limit is ~8 USDC)
     const intendedAmountRaw = options?.intendedAmountRaw ||
       process.env.ZENITH_TESTNET_AUDIT_AMOUNT ||
       process.env.TESTNET_AMOUNT ||
-      '10000000'; // 10 USDC
+      '5000000'; // 5 USDC
 
     // 1. Resolve RPC endpoints
     const sepoliaRpcs = options?.sepoliaRpcs || [
@@ -755,8 +755,15 @@ export class PreBroadcastReadinessAuditor {
         userWalletAddress: quoteRecipient
       });
 
-      if (liveQuoteData && liveQuoteData.isExecutable) {
-        if (liveQuoteData.quoteTimestamp) {
+      const hasValidLiveQuote = Boolean(
+        liveQuoteData &&
+        (liveQuoteData.isExecutable || (liveQuoteData.destinationAmountRaw && BigInt(liveQuoteData.destinationAmountRaw) > 0n && liveQuoteData.protocolTimestampSec))
+      );
+
+      if (hasValidLiveQuote) {
+        if (liveQuoteData.protocolTimestampSec) {
+          quoteTimestampSec = Number(liveQuoteData.protocolTimestampSec);
+        } else if (liveQuoteData.quoteTimestamp) {
           quoteTimestampSec = liveQuoteData.quoteTimestamp > 1e11
             ? Math.floor(liveQuoteData.quoteTimestamp / 1000)
             : Number(liveQuoteData.quoteTimestamp);
