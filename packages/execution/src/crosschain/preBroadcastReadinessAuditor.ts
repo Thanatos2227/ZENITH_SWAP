@@ -19,20 +19,12 @@ import { evaluateRpcQuorum, QuorumEvaluationResult } from '@zenith/chains';
 import { ACROSS_SPOKE_POOL_ABI, ZERO_ADDRESS } from '@zenith/contracts';
 import { AcrossProvider } from '@zenith/routing';
 import { Token } from '@zenith/types';
-
-export type SignerState =
-  | 'NO_SIGNER_CONFIGURED'
-  | 'SIGNER_CONFIGURED_BUT_UNFUNDED'
-  | 'SIGNER_CONFIGURED_INSUFFICIENT_USDC'
-  | 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS'
-  | 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT'
-  | 'SIGNER_CONFIGURED_EXECUTION_READY';
-
-export type SimulationClassification =
-  | 'SIMULATION_PASS'
-  | 'SIMULATION_REVERT_EXPECTED'
-  | 'SIMULATION_REVERT_UNKNOWN'
-  | 'SIMULATION_UNAVAILABLE';
+import {
+  BroadcastAuthorizationGate,
+  BroadcastLifecycleState,
+  SimulationExecutionStatus,
+  SimulationClassification
+} from '../security/broadcastAuthorizationGate';
 
 export interface ContractVerificationItem {
   name: string;
@@ -57,7 +49,7 @@ export interface Erc20MetadataVerification {
 
 export interface WalletReadinessReport {
   signerConfigured: boolean;
-  signerState: SignerState;
+  signerState: BroadcastLifecycleState;
   signerAddress: string | null;
   sourceNativeBalance: string;
   sourceNativeBalanceWei: string | null;
@@ -105,10 +97,13 @@ export interface RouteQuoteAuditReport {
 
 export interface SimulationAuditReport {
   attempted: boolean;
+  executionStatus: SimulationExecutionStatus;
   classification: SimulationClassification;
+  readinessStatus: 'READY' | 'BLOCKED';
   simulatedCaller: string | null;
   targetContract: string;
   calldata: string;
+  calldataHash: string;
   simulationSuccess: boolean;
   revertData?: string;
   revertSelector?: string;
@@ -164,6 +159,7 @@ export interface PreBroadcastReadinessReport {
     sendTransactionInvoked: false;
     stateChangingCallsInvoked: false;
     executionAuthorization: 'BLOCKED';
+    lifecycleState: BroadcastLifecycleState;
     reason: string;
   };
 }
@@ -475,35 +471,29 @@ export class PreBroadcastReadinessAuditor {
     const requiredUsdcBig = BigInt(intendedAmountRaw);
     const minRequiredNativeWei = ethers.parseEther('0.01');
 
-    let signerState: SignerState = 'NO_SIGNER_CONFIGURED';
+    const hasNative = sEthBal !== null && sEthBal >= minRequiredNativeWei;
+    const hasUsdc = sUsdcBal !== null && sUsdcBal >= requiredUsdcBig;
+    const allowanceSufficient = sAllowance !== null && sAllowance >= requiredUsdcBig && requiredUsdcBig > 0n;
+
+    const readinessEvaluation = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured,
+      signerAddress,
+      nativeBalanceSufficient: hasNative,
+      usdcBalanceSufficient: hasUsdc,
+      allowanceSufficient,
+      sourceRpcHealthy: sepoliaQuorum.quorumStatus !== 'FAILED',
+      destinationRpcHealthy: arbQuorum.quorumStatus !== 'FAILED',
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'REVERTED',
+      simulationClassification: 'EXPECTED_UNAPPROVED_CALLER'
+    });
+
+    const signerState: BroadcastLifecycleState = readinessEvaluation.state;
     let gasReadiness: 'READY' | 'INSUFFICIENT_FUNDS' | 'NOT_CHECKED' = 'NOT_CHECKED';
-    let allowanceSufficient = false;
-
-    if (!signerConfigured) {
-      signerState = 'NO_SIGNER_CONFIGURED';
-      gasReadiness = 'NOT_CHECKED';
-    } else {
-      const hasNative = sEthBal !== null && sEthBal >= minRequiredNativeWei;
-      const hasUsdc = sUsdcBal !== null && sUsdcBal >= requiredUsdcBig;
-      allowanceSufficient = sAllowance !== null && sAllowance >= requiredUsdcBig && requiredUsdcBig > 0n;
-
-      if (hasNative) {
-        gasReadiness = 'READY';
-      } else {
-        gasReadiness = 'INSUFFICIENT_FUNDS';
-      }
-
-      if (!hasNative && !hasUsdc) {
-        signerState = 'SIGNER_CONFIGURED_BUT_UNFUNDED';
-      } else if (hasNative && !hasUsdc) {
-        signerState = 'SIGNER_CONFIGURED_INSUFFICIENT_USDC';
-      } else if (!hasNative && hasUsdc) {
-        signerState = 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS';
-      } else if (!allowanceSufficient) {
-        signerState = 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT';
-      } else {
-        signerState = 'SIGNER_CONFIGURED_EXECUTION_READY';
-      }
+    if (signerConfigured) {
+      gasReadiness = hasNative ? 'READY' : 'INSUFFICIENT_FUNDS';
     }
 
     const walletReadiness: WalletReadinessReport = {
@@ -646,13 +636,17 @@ export class PreBroadcastReadinessAuditor {
       };
     }
 
-    // 8. Pre-Flight Simulation & Exact Error Classification (eth_call only)
+    // 8. Pre-Flight Simulation & Strict Semantic Separation (eth_call only)
+    const calldataHash = BroadcastAuthorizationGate.computeCalldataHash(simulationCalldata);
     let simulation: SimulationAuditReport = {
       attempted: false,
-      classification: 'SIMULATION_UNAVAILABLE',
+      executionStatus: 'UNAVAILABLE',
+      classification: 'UNEXPECTED_REVERT',
+      readinessStatus: 'BLOCKED',
       simulatedCaller: signerAddress,
       targetContract: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
       calldata: simulationCalldata,
+      calldataHash,
       simulationSuccess: false
     };
 
@@ -668,9 +662,13 @@ export class PreBroadcastReadinessAuditor {
           from: caller
         });
         simulation.simulationSuccess = true;
+        simulation.executionStatus = 'SUCCESS';
         simulation.classification = 'SIMULATION_PASS';
+        simulation.readinessStatus = signerConfigured && allowanceSufficient ? 'READY' : 'BLOCKED';
       } catch (simErr: any) {
         simulation.simulationSuccess = false;
+        simulation.executionStatus = 'REVERTED';
+        simulation.readinessStatus = 'BLOCKED';
         const revertData: string = simErr?.data || simErr?.info?.error?.data || '';
         simulation.revertData = revertData;
         simulation.revertReason = simErr?.reason || simErr?.message || 'execution reverted';
@@ -681,21 +679,27 @@ export class PreBroadcastReadinessAuditor {
           const decoded = PreBroadcastReadinessAuditor.decodeCustomError(selector);
           if (decoded) {
             simulation.decodedError = decoded;
-            // Known expected failures on unapproved/unfunded pre-flight calls
-            if (selector === '0xf722177f' || selector === '0x08c379a0' || selector === '0xfb8f41b2' || selector === '0xe450d38c') {
-              simulation.classification = 'SIMULATION_REVERT_EXPECTED';
+            if (selector === '0xf722177f') {
+              simulation.classification = 'EXPECTED_STALE_QUOTE';
+            } else if (selector === '0x08c379a0' || selector === '0xfb8f41b2') {
+              simulation.classification = 'EXPECTED_UNAPPROVED_CALLER';
+            } else if (selector === '0xe450d38c') {
+              simulation.classification = 'EXPECTED_UNFUNDED_CALLER';
             } else {
-              simulation.classification = 'SIMULATION_REVERT_UNKNOWN';
+              simulation.classification = 'UNEXPECTED_REVERT';
             }
           } else {
-            simulation.classification = 'SIMULATION_REVERT_UNKNOWN';
+            simulation.classification = 'UNEXPECTED_REVERT';
           }
         } else {
-          // If revert reason contains standard allowance / balance message
-          if (simulation.revertReason?.includes('allowance') || simulation.revertReason?.includes('balance') || simulation.revertReason?.includes('0xf722177f')) {
-            simulation.classification = 'SIMULATION_REVERT_EXPECTED';
+          if (simulation.revertReason?.includes('allowance')) {
+            simulation.classification = 'EXPECTED_UNAPPROVED_CALLER';
+          } else if (simulation.revertReason?.includes('balance')) {
+            simulation.classification = 'EXPECTED_UNFUNDED_CALLER';
+          } else if (simulation.revertReason?.includes('0xf722177f') || simulation.revertReason?.includes('timestamp')) {
+            simulation.classification = 'EXPECTED_STALE_QUOTE';
           } else {
-            simulation.classification = 'SIMULATION_REVERT_UNKNOWN';
+            simulation.classification = 'UNEXPECTED_REVERT';
           }
         }
       }
@@ -723,17 +727,17 @@ export class PreBroadcastReadinessAuditor {
       { check: 'Source SpokePool bytecode', status: contracts[0].bytecodePresent ? 'PASS' : 'FAIL', details: `Address: ${PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL}` },
       { check: 'Destination SpokePool bytecode', status: contracts[3].bytecodePresent ? 'PASS' : 'FAIL', details: `Address: ${PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL}` },
       { check: 'USDC metadata', status: erc20Metadata.every(m => m.matched) ? 'PASS' : 'FAIL', details: 'Decimals: 6, Symbol: USDC verified on-chain' },
-      { check: 'Source wallet discovered', status: signerConfigured ? 'PASS' : 'UNKNOWN', details: signerAddress || 'No signer configured (State: NO_SIGNER_CONFIGURED)' },
+      { check: 'Source wallet discovered', status: signerConfigured ? 'PASS' : 'UNKNOWN', details: signerAddress || `State: ${signerState}` },
       { check: 'Source native balance', status: !signerConfigured ? 'UNKNOWN' : (walletReadiness.gasReadiness === 'READY' ? 'PASS' : 'FAIL'), details: walletReadiness.sourceNativeBalance },
       { check: 'Source USDC balance', status: !signerConfigured ? 'UNKNOWN' : (sUsdcBal !== null && sUsdcBal >= requiredUsdcBig ? 'PASS' : 'FAIL'), details: walletReadiness.sourceUsdcBalance },
       { check: 'Allowance', status: !signerConfigured ? 'UNKNOWN' : (allowanceSufficient ? 'PASS' : 'FAIL'), details: `${walletReadiness.currentAllowanceFormatted} (Required: ${ethers.formatUnits(requiredUsdcBig, 6)} USDC)` },
       { check: 'Across capability', status: acrossCapability.abiCompatible ? 'PASS' : 'FAIL', details: `Selector: ${acrossCapability.functionSelector} (depositV3)` },
       { check: 'Route discovery', status: routeSupported ? 'PASS' : 'FAIL', details: 'Sepolia USDC -> Across -> Arbitrum Sepolia USDC' },
       { check: 'Live quote', status: routeAndQuote.routeSupported ? 'PASS' : 'FAIL', details: `${routeAndQuote.minDestinationAmountFormatted} (Relayer fee: ${routeAndQuote.relayerFeePct})` },
-      { check: 'Pre-flight simulation', status: simulation.attempted ? (simulation.simulationSuccess ? 'PASS' : (simulation.classification === 'SIMULATION_REVERT_EXPECTED' ? 'PASS' : 'FAIL')) : 'NOT_SUPPORTED', details: simulation.simulationSuccess ? 'eth_call simulated cleanly' : `Classification: ${simulation.classification} (${simulation.decodedError?.name || simulation.revertReason || 'reverted'})` },
+      { check: 'Pre-flight simulation', status: simulation.simulationSuccess ? 'PASS' : 'FAIL', details: `Execution: ${simulation.executionStatus} | Classification: ${simulation.classification} | Readiness: ${simulation.readinessStatus}` },
       { check: 'Destination execution capability', status: destinationExecution.destinationEngineOperational ? 'PASS' : 'FAIL', details: 'Authoritative destination verifier verified' },
       { check: 'Actual amount propagation', status: destinationExecution.actualAmountPropagationVerified ? 'PASS' : 'FAIL', details: 'Zero hardcoded destination amounts' },
-      { check: 'Broadcast authorization', status: 'BLOCKED', details: 'Read-only audit complete. Live broadcast strictly prohibited.' }
+      { check: 'Broadcast authorization', status: 'BLOCKED', details: `BROADCAST AUTHORIZATION: NOT GRANTED (State: ${signerState})` }
     ];
 
     return {
@@ -764,6 +768,7 @@ export class PreBroadcastReadinessAuditor {
         sendTransactionInvoked: false,
         stateChangingCallsInvoked: false,
         executionAuthorization: 'BLOCKED',
+        lifecycleState: signerState,
         reason: 'Read-only pre-broadcast execution readiness audit certified. Execution remains fail-closed.'
       }
     };

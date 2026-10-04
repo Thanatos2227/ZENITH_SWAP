@@ -87,10 +87,12 @@ async function main() {
   // 8. Pre-Flight Simulation & Decoded Error Analysis
   console.log('--- 8. Pre-Flight eth_call Simulation & Error Decoding ---');
   console.log(`Simulation Attempted:    ${report.simulation.attempted ? 'YES' : 'NO'}`);
+  console.log(`Execution Status:        ${report.simulation.executionStatus}`);
   console.log(`Classification:          ${report.simulation.classification}`);
+  console.log(`Readiness Status:        ${report.simulation.readinessStatus}`);
   console.log(`Simulated Caller:        ${report.simulation.simulatedCaller || 'NONE'}`);
   console.log(`Target SpokePool:        ${report.simulation.targetContract}`);
-  console.log(`Simulation Result:       ${report.simulation.simulationSuccess ? 'PASS' : 'REVERTED'}`);
+  console.log(`Calldata Hash:           ${report.simulation.calldataHash}`);
   if (report.simulation.revertSelector) {
     console.log(`Revert Selector:         ${report.simulation.revertSelector}`);
   }
@@ -131,6 +133,7 @@ async function main() {
   console.log('\n--------------------------------------------------------------------------------');
   console.log(`TRANSACTION BROADCAST:       NO`);
   console.log(`STATE-CHANGING CALLS:        NO`);
+  console.log(`BROADCAST AUTHORIZATION:     NOT GRANTED (State: ${report.broadcastProhibition.lifecycleState})`);
   console.log(`EXECUTION AUTHORIZATION:     ${report.broadcastProhibition.executionAuthorization}`);
   console.log(`SAFETY STATUS:               ${report.broadcastProhibition.reason}`);
   console.log('--------------------------------------------------------------------------------\n');

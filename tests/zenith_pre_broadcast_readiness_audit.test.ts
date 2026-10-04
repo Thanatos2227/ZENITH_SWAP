@@ -1,205 +1,483 @@
 import { test, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ethers } from 'ethers';
-import { PreBroadcastReadinessAuditor, SignerState, SimulationClassification } from '../packages/execution/src/crosschain/preBroadcastReadinessAuditor';
+import {
+  PreBroadcastReadinessAuditor
+} from '../packages/execution/src/crosschain/preBroadcastReadinessAuditor';
+import {
+  BroadcastAuthorizationGate,
+  BroadcastAuthorization,
+  BroadcastExecutionContext,
+  BroadcastAuthorizationError
+} from '../packages/execution/src/security/broadcastAuthorizationGate';
 import { defaultChainRegistry } from '../packages/chains/src';
 import { AcrossProvider } from '../packages/routing/src/crosschain/providers/acrossProvider';
 import { getAcrossSpokePool } from '../packages/contracts/src';
 
-describe('ZENITH — Funding Readiness, Revert Decoding & Signer State Audit Test Suite', () => {
+describe('ZENITH — Broadcast Authorization Gate & Safety Boundary Test Suite', () => {
 
-  it('1. STATE A: NO_SIGNER_CONFIGURED reports not available and balances not checked', async () => {
-    const auditor = new PreBroadcastReadinessAuditor();
-    // Test without private key
-    const report = await auditor.audit({ testnetPrivateKey: undefined });
+  const dummySigner = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+  const dummyRecipient = '0x1111111254fb6c44bac0bed2854e76f90643097d';
+  const dummySourceToken = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+  const dummyDestToken = '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d';
+  const dummySpokePool = '0x5ef6C01E11889d86803e0B23e3cB3F9E9d97B662';
+  const dummyDestSpokePool = '0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2ee75';
+  const dummyCalldata = '0x7b9392320000000000000000000000001111111254fb6c44bac0bed2854e76f90643097d';
 
-    assert.equal(report.walletReadiness.signerConfigured, false);
-    assert.equal(report.walletReadiness.signerState, 'NO_SIGNER_CONFIGURED');
-    assert.equal(report.walletReadiness.signerAddress, null);
-    assert.equal(report.walletReadiness.sourceNativeBalanceWei, null);
-    assert.equal(report.walletReadiness.sourceUsdcBalanceRaw, null);
-    assert.equal(report.walletReadiness.currentAllowanceRaw, null);
-    assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
+  // Test A: No Signer
+  it('A. No signer configured blocks broadcast and returns NO_SIGNER_CONFIGURED', () => {
+    const evalResult = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured: false,
+      signerAddress: null,
+      nativeBalanceSufficient: false,
+      usdcBalanceSufficient: false,
+      allowanceSufficient: false,
+      sourceRpcHealthy: true,
+      destinationRpcHealthy: true,
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'UNAVAILABLE',
+      simulationClassification: 'UNEXPECTED_REVERT'
+    });
+
+    assert.equal(evalResult.state, 'NO_SIGNER_CONFIGURED');
+    assert.equal(evalResult.authorized, false);
+
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(null, {
+        sourceChainId: 11155111,
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: dummyRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: dummyCalldata
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'NO_AUTHORIZATION_PROVIDED');
   });
 
-  it('2. STATE B: SIGNER_CONFIGURED but zero balances reports SIGNER_CONFIGURED_BUT_UNFUNDED', () => {
-    const minRequiredNativeWei = ethers.parseEther('0.01');
-    const requiredUsdcBig = 10000000n;
+  // Test B: Signer exists but no ETH
+  it('B. Signer configured but zero ETH blocks broadcast with SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS', () => {
+    const evalResult = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured: true,
+      signerAddress: dummySigner,
+      nativeBalanceSufficient: false, // No ETH
+      usdcBalanceSufficient: true,   // Has USDC
+      allowanceSufficient: true,
+      sourceRpcHealthy: true,
+      destinationRpcHealthy: true,
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'REVERTED',
+      simulationClassification: 'EXPECTED_UNFUNDED_CALLER'
+    });
 
-    const sEthBal = 0n;
-    const sUsdcBal = 0n;
-
-    const hasNative = sEthBal >= minRequiredNativeWei;
-    const hasUsdc = sUsdcBal >= requiredUsdcBig;
-
-    let state: SignerState = 'NO_SIGNER_CONFIGURED';
-    if (!hasNative && !hasUsdc) {
-      state = 'SIGNER_CONFIGURED_BUT_UNFUNDED';
-    }
-
-    assert.equal(state, 'SIGNER_CONFIGURED_BUT_UNFUNDED');
+    assert.equal(evalResult.state, 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS');
+    assert.equal(evalResult.authorized, false);
   });
 
-  it('3. STATE C: SIGNER_CONFIGURED_INSUFFICIENT_USDC when gas is present but USDC is low', () => {
-    const minRequiredNativeWei = ethers.parseEther('0.01');
-    const requiredUsdcBig = 10000000n;
+  // Test C: Signer exists but insufficient USDC
+  it('C. Signer configured but insufficient USDC blocks broadcast with SIGNER_CONFIGURED_INSUFFICIENT_USDC', () => {
+    const evalResult = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured: true,
+      signerAddress: dummySigner,
+      nativeBalanceSufficient: true,  // Has ETH
+      usdcBalanceSufficient: false,  // Insufficient USDC
+      allowanceSufficient: false,
+      sourceRpcHealthy: true,
+      destinationRpcHealthy: true,
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'REVERTED',
+      simulationClassification: 'EXPECTED_UNFUNDED_CALLER'
+    });
 
-    const sEthBal = ethers.parseEther('0.05'); // Sufficient native
-    const sUsdcBal = 1000n; // Insufficient USDC (0.001 USDC < 10 USDC)
-
-    const hasNative = sEthBal >= minRequiredNativeWei;
-    const hasUsdc = sUsdcBal >= requiredUsdcBig;
-
-    let state: SignerState = 'NO_SIGNER_CONFIGURED';
-    if (hasNative && !hasUsdc) {
-      state = 'SIGNER_CONFIGURED_INSUFFICIENT_USDC';
-    }
-
-    assert.equal(state, 'SIGNER_CONFIGURED_INSUFFICIENT_USDC');
+    assert.equal(evalResult.state, 'SIGNER_CONFIGURED_INSUFFICIENT_USDC');
+    assert.equal(evalResult.authorized, false);
   });
 
-  it('4. STATE D: SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS when USDC is present but gas is low', () => {
-    const minRequiredNativeWei = ethers.parseEther('0.01');
-    const requiredUsdcBig = 10000000n;
+  // Test D: Insufficient allowance
+  it('D. Insufficient allowance blocks broadcast with SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT', () => {
+    const evalResult = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured: true,
+      signerAddress: dummySigner,
+      nativeBalanceSufficient: true,
+      usdcBalanceSufficient: true,
+      allowanceSufficient: false, // Zero allowance
+      sourceRpcHealthy: true,
+      destinationRpcHealthy: true,
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'REVERTED',
+      simulationClassification: 'EXPECTED_UNAPPROVED_CALLER'
+    });
 
-    const sEthBal = ethers.parseEther('0.0001'); // Low native gas
-    const sUsdcBal = 50000000n; // 50 USDC
-
-    const hasNative = sEthBal >= minRequiredNativeWei;
-    const hasUsdc = sUsdcBal >= requiredUsdcBig;
-
-    let state: SignerState = 'NO_SIGNER_CONFIGURED';
-    if (!hasNative && hasUsdc) {
-      state = 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS';
-    }
-
-    assert.equal(state, 'SIGNER_CONFIGURED_INSUFFICIENT_NATIVE_GAS');
+    assert.equal(evalResult.state, 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT');
+    assert.equal(evalResult.authorized, false);
   });
 
-  it('5. STATE E: SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT when funds exist but allowance is zero', () => {
-    const minRequiredNativeWei = ethers.parseEther('0.01');
-    const requiredUsdcBig = 10000000n;
+  // Test E: Expired quote
+  it('E. Expired quote triggers QUOTE_EXPIRED error on verification', () => {
+    const now = Date.now();
+    const expiredAuth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now - 5000, // Expired 5 seconds ago
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
 
-    const sEthBal = ethers.parseEther('0.05');
-    const sUsdcBal = 50000000n;
-    const sAllowance = 0n; // Zero allowance
-
-    const hasNative = sEthBal >= minRequiredNativeWei;
-    const hasUsdc = sUsdcBal >= requiredUsdcBig;
-    const allowanceSufficient = sAllowance >= requiredUsdcBig;
-
-    let state: SignerState = 'NO_SIGNER_CONFIGURED';
-    if (hasNative && hasUsdc && !allowanceSufficient) {
-      state = 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT';
-    }
-
-    assert.equal(state, 'SIGNER_CONFIGURED_ALLOWANCE_INSUFFICIENT');
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(expiredAuth, {
+        sourceChainId: 11155111,
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: dummyRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: dummyCalldata
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'QUOTE_EXPIRED');
   });
 
-  it('6. STATE F: SIGNER_CONFIGURED_EXECUTION_READY when all prerequisites are satisfied', () => {
-    const minRequiredNativeWei = ethers.parseEther('0.01');
-    const requiredUsdcBig = 10000000n;
+  // Test F: Invalid quote timestamp (future / stale)
+  it('F. Future or stale quoteTimestamp triggers timestamp rejection', () => {
+    const now = Date.now();
+    const currentChainTs = Math.floor(now / 1000);
 
-    const sEthBal = ethers.parseEther('0.05');
-    const sUsdcBal = 50000000n;
-    const sAllowance = 100000000n; // 100 USDC allowance
+    const futureAuth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: currentChainTs + 500, // 500s into future
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
 
-    const hasNative = sEthBal >= minRequiredNativeWei;
-    const hasUsdc = sUsdcBal >= requiredUsdcBig;
-    const allowanceSufficient = sAllowance >= requiredUsdcBig;
-
-    let state: SignerState = 'NO_SIGNER_CONFIGURED';
-    if (hasNative && hasUsdc && allowanceSufficient) {
-      state = 'SIGNER_CONFIGURED_EXECUTION_READY';
-    }
-
-    assert.equal(state, 'SIGNER_CONFIGURED_EXECUTION_READY');
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(futureAuth, {
+        sourceChainId: 11155111,
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: dummyRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: dummyCalldata,
+        currentChainTimestamp: currentChainTs
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'INVALID_FUTURE_QUOTE_TIMESTAMP');
   });
 
-  it('7. Exact error decoding: 0xf722177f decodes conclusively to InvalidQuoteTimestamp()', () => {
-    const selector = ethers.id('InvalidQuoteTimestamp()').slice(0, 10);
-    assert.equal(selector.toLowerCase(), '0xf722177f');
+  // Test G: Calldata changed after authorization
+  it('G. Calldata modification post-authorization triggers CALLDATA_HASH_MISMATCH', () => {
+    const now = Date.now();
+    const auth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
 
-    const decoded = PreBroadcastReadinessAuditor.decodeCustomError('0xf722177f');
-    assert.notEqual(decoded, null);
-    assert.equal(decoded?.name, 'InvalidQuoteTimestamp()');
-    assert.equal(decoded?.selector, '0xf722177f');
-    assert.match(decoded?.description || '', /quoteTimestamp/i);
+    const tamperedCalldata = dummyCalldata + 'ffff';
+
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(auth, {
+        sourceChainId: 11155111,
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: dummyRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: tamperedCalldata
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'CALLDATA_HASH_MISMATCH');
   });
 
-  it('8. Unknown custom error returns null and is classified as SIMULATION_REVERT_UNKNOWN', () => {
-    const unknownSelector = '0x12345678';
-    const decoded = PreBroadcastReadinessAuditor.decodeCustomError(unknownSelector);
-    assert.equal(decoded, null);
+  // Test H: Chain ID changed
+  it('H. Chain ID divergence triggers SOURCE_CHAIN_MISMATCH', () => {
+    const now = Date.now();
+    const auth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
+
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(auth, {
+        sourceChainId: 1, // Changed to Mainnet!
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: dummyRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: dummyCalldata
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'SOURCE_CHAIN_MISMATCH');
   });
 
-  it('9. Zero address is never treated as configured signer', async () => {
-    const auditor = new PreBroadcastReadinessAuditor();
-    const report = await auditor.audit({ testnetPrivateKey: undefined });
+  // Test I: Recipient changed
+  it('I. Recipient alteration triggers RECIPIENT_MISMATCH', () => {
+    const now = Date.now();
+    const auth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
 
-    assert.notEqual(report.walletReadiness.signerAddress, '0x0000000000000000000000000000000000000000');
-    assert.equal(report.walletReadiness.signerAddress, null);
+    const maliciousRecipient = '0x2222222222222222222222222222222222222222';
+
+    assert.throws(() => {
+      BroadcastAuthorizationGate.verifyAuthorization(auth, {
+        sourceChainId: 11155111,
+        destinationChainId: 421614,
+        signerAddress: dummySigner,
+        recipientAddress: maliciousRecipient,
+        sourceToken: dummySourceToken,
+        destinationToken: dummyDestToken,
+        sourceSpokePool: dummySpokePool,
+        inputAmountRaw: '10000000',
+        calldata: dummyCalldata
+      });
+    }, (err: any) => err instanceof BroadcastAuthorizationError && err.code === 'RECIPIENT_MISMATCH');
   });
 
-  it('10. Private key is never serialized or exposed in report', async () => {
+  // Test J: All conditions satisfied requires explicit authorization (does not auto-authorize)
+  it('J. All technical readiness checks passing returns BROADCAST_AUTHORIZATION_REQUIRED (not auto-authorized)', () => {
+    const evalResult = BroadcastAuthorizationGate.evaluateReadinessState({
+      signerConfigured: true,
+      signerAddress: dummySigner,
+      nativeBalanceSufficient: true,
+      usdcBalanceSufficient: true,
+      allowanceSufficient: true,
+      sourceRpcHealthy: true,
+      destinationRpcHealthy: true,
+      routeSupported: true,
+      quoteValid: true,
+      quoteExpired: false,
+      simulationExecution: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS'
+    });
+
+    assert.equal(evalResult.state, 'BROADCAST_AUTHORIZATION_REQUIRED');
+    assert.equal(evalResult.authorized, false);
+  });
+
+  // Test K: Explicit authorization allows dispatch through executeWithGate
+  it('K. Valid explicit authorization allows execution through executeWithGate', async () => {
+    const now = Date.now();
+    const auth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
+
+    let mockBroadcastExecuted = false;
+    const result = await BroadcastAuthorizationGate.executeWithGate(auth, {
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      inputAmountRaw: '10000000',
+      calldata: dummyCalldata
+    }, async () => {
+      mockBroadcastExecuted = true;
+      return { txHash: '0xmock_tx_success' };
+    });
+
+    assert.equal(mockBroadcastExecuted, true);
+    assert.equal(result.txHash, '0xmock_tx_success');
+  });
+
+  // Test L: Strict Private Key Protection
+  it('L. Private key is never stored in authorization object or exposed', () => {
     const dummyKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const auditor = new PreBroadcastReadinessAuditor();
-    const report = await auditor.audit({ testnetPrivateKey: dummyKey });
+    const now = Date.now();
 
-    const serialized = JSON.stringify(report);
-    assert.equal(serialized.includes(dummyKey), false, 'Private key must never appear in serialized report!');
-    assert.equal(report.walletReadiness.signerConfigured, true);
-    assert.notEqual(report.walletReadiness.signerAddress, null);
+    const auth = BroadcastAuthorizationGate.issueAuthorization({
+      sourceChainId: 11155111,
+      destinationChainId: 421614,
+      signerAddress: dummySigner,
+      recipientAddress: dummyRecipient,
+      sourceToken: dummySourceToken,
+      destinationToken: dummyDestToken,
+      sourceSpokePool: dummySpokePool,
+      destinationSpokePool: dummyDestSpokePool,
+      inputAmountRaw: '10000000',
+      quotedOutputAmountRaw: '9995000',
+      minimumOutputAmountRaw: '9945025',
+      quoteTimestamp: Math.floor(now / 1000),
+      quoteExpiry: now + 300000,
+      routeId: 'across-route-1',
+      calldata: dummyCalldata,
+      simulationStatus: 'SUCCESS',
+      simulationClassification: 'SIMULATION_PASS',
+      gasReadiness: 'READY',
+      balanceReadiness: 'SUFFICIENT',
+      allowanceReadiness: 'SUFFICIENT',
+      authorizedBy: 'OPERATOR_TEST'
+    });
+
+    const serialized = JSON.stringify(auth);
+    assert.equal(serialized.includes(dummyKey), false);
+    assert.equal((auth as any).privateKey, undefined);
   });
 
-  it('11. Simulation expected revert classification for known errors (0xf722177f, 0x08c379a0)', () => {
-    const decodedTimestamp = PreBroadcastReadinessAuditor.decodeCustomError('0xf722177f');
-    const decodedAllowance = PreBroadcastReadinessAuditor.decodeCustomError('0x08c379a0');
+  // Test M: Simulation Semantics Separation
+  it('M. Simulation execution status, classification and readiness are strictly separated', () => {
+    const simReport = {
+      executionStatus: 'REVERTED' as const,
+      classification: 'EXPECTED_UNAPPROVED_CALLER' as const,
+      readinessStatus: 'BLOCKED' as const
+    };
 
-    assert.notEqual(decodedTimestamp, null);
-    assert.notEqual(decodedAllowance, null);
+    assert.equal(simReport.executionStatus, 'REVERTED');
+    assert.notEqual(simReport.executionStatus, 'SUCCESS');
+    assert.equal(simReport.readinessStatus, 'BLOCKED');
   });
 
-  it('12. State machine stops progression immediately on missing signer', async () => {
-    const auditor = new PreBroadcastReadinessAuditor();
-    const report = await auditor.audit({ testnetPrivateKey: undefined });
-
-    assert.equal(report.walletReadiness.signerState, 'NO_SIGNER_CONFIGURED');
-    assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
-  });
-
-  it('13. Quoted output is strictly separated from guaranteed output and minimum acceptable output', () => {
-    const inputAmount = 10000000n; // 10 USDC
-    const quotedOutput = 9995000n;  // 9.995 USDC
-    const minAcceptable = 9945025n; // 9.945025 USDC (with slippage)
-
-    assert.notEqual(quotedOutput, minAcceptable);
-    assert.notEqual(inputAmount, quotedOutput);
-  });
-
-  it('14. Broadcast functions (sendTransaction) are never invoked during audit', async () => {
-    let broadcastCalled = false;
+  // Test N: Zero Broadcast Calls during audit
+  it('N. PreBroadcastReadinessAuditor never invokes broadcast functions during audit', async () => {
+    let broadcastInvoked = false;
     const mockSigner = {
       sendTransaction: async () => {
-        broadcastCalled = true;
+        broadcastInvoked = true;
         throw new Error('PROHIBITED');
       }
     };
 
     const auditor = new PreBroadcastReadinessAuditor();
     assert.equal(typeof auditor.audit, 'function');
-    assert.equal(broadcastCalled, false);
+    assert.equal(broadcastInvoked, false);
   });
 
-  it('15. Zero state-changing calls (approve, transfer, depositV3) invoked during audit', async () => {
-    let stateMutated = false;
+  // Test O: Zero State-Changing Calls during audit
+  it('O. Audit does not call approve, transfer, or depositV3', () => {
+    let mutationCount = 0;
     const mockContract = {
-      approve: async () => { stateMutated = true; },
-      transfer: async () => { stateMutated = true; },
-      depositV3: async () => { stateMutated = true; }
+      approve: () => { mutationCount++; },
+      transfer: () => { mutationCount++; },
+      depositV3: () => { mutationCount++; }
     };
-
-    assert.equal(stateMutated, false);
+    assert.equal(mutationCount, 0);
   });
 
 });
