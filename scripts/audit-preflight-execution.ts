@@ -58,6 +58,7 @@ async function main() {
   console.log(`Signer Configured:       ${report.walletReadiness.signerConfigured ? 'YES' : 'NO'}`);
   console.log(`Signer State:            ${report.walletReadiness.signerState}`);
   console.log(`Signer Address:          ${report.walletReadiness.signerAddress || 'NOT AVAILABLE (No key configured)'}`);
+  console.log(`Depositor Address:       ${report.walletReadiness.depositorAddress || 'NOT AVAILABLE (No key configured)'}`);
   console.log(`Source Native Balance:   ${report.walletReadiness.sourceNativeBalance}`);
   console.log(`Source USDC Balance:     ${report.walletReadiness.sourceUsdcBalance}`);
   console.log(`Dest Native Balance:     ${report.walletReadiness.destinationNativeBalance}`);
@@ -71,8 +72,8 @@ async function main() {
   console.log(`Simulation Type:         ${report.simulationIdentity.simulationType}`);
   console.log(`Synthetic/Preview ID:    ${report.simulationIdentity.isSyntheticOrPreview ? 'YES (0x1111111254fb6c44bac0bed2854e76f90643097d)' : 'NO (Real Signer)'}`);
   console.log(`Simulation Caller:       ${report.simulationIdentity.simulationCaller}`);
-  console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress}`);
-  console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress}`);
+  console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress || 'NONE'}`);
+  console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress || 'NONE'}`);
   console.log(`Actual Signer:           ${report.simulationIdentity.signerConfigured ? report.simulationIdentity.signerAddress : 'NOT CONFIGURED'}`);
   console.log(`Role Explanation:        ${report.simulationIdentity.roleExplanation}\n`);
 
@@ -93,15 +94,20 @@ async function main() {
   // 9. Route & Live Quote Audit
   console.log('--- 9. Route & Live Quote Audit ---');
   console.log(`Route Supported:         ${report.routeAndQuote.routeSupported ? 'YES (Sepolia USDC -> Across -> Arb Sepolia USDC)' : 'NO'}`);
-  console.log(`Quote Type:              ${report.routeAndQuote.isLiveQuote ? 'LIVE API QUOTE' : 'INFORMATIONAL FALLBACK'}`);
-  console.log(`Source Amount:           ${report.routeAndQuote.sourceAmountFormatted} (${report.routeAndQuote.sourceAmountRaw} raw)`);
-  console.log(`Est Destination Amount:  ${report.routeAndQuote.destinationAmountFormatted} (${report.routeAndQuote.destinationAmountRaw} raw)`);
-  console.log(`Min Destination Amount:  ${report.routeAndQuote.minDestinationAmountFormatted} (${report.routeAndQuote.minDestinationAmountRaw} raw)`);
-  console.log(`Bridge Fee:              $${report.routeAndQuote.bridgeFeeUSD} (Relayer fee: ${report.routeAndQuote.relayerFeePct})`);
-  console.log(`Quote Timestamp (Quote): ${report.quoteTimestampValidation.quoteTimestampFromQuote}`);
+  console.log(`Quote Status:            ${report.routeAndQuote.quoteStatus}`);
+  console.log(`Quote Type:              ${report.routeAndQuote.isLiveQuote ? 'LIVE API QUOTE' : 'UNAVAILABLE'}`);
+  console.log(`Source Amount:           ${report.routeAndQuote.sourceAmountFormatted || 'N/A'}`);
+  console.log(`Est Destination Amount:  ${report.routeAndQuote.destinationAmountFormatted || 'N/A'}`);
+  console.log(`Min Destination Amount:  ${report.routeAndQuote.minDestinationAmountFormatted || 'N/A'}`);
+  console.log(`Bridge Fee:              ${report.routeAndQuote.bridgeFeeUSD !== null ? `$${report.routeAndQuote.bridgeFeeUSD}` : 'N/A'}`);
+  console.log(`Quote Timestamp (Quote): ${report.quoteTimestampValidation.quoteTimestampFromQuote ?? 'N/A'}`);
   console.log(`Current Chain Timestamp: ${report.quoteTimestampValidation.currentChainTimestamp}`);
-  console.log(`Calldata Quote Timestamp:${report.quoteTimestampValidation.calldataQuoteTimestamp}`);
-  console.log(`Freshness Check:         Status: ${report.quoteTimestampValidation.status} (Age: ${report.quoteTimestampValidation.diffSec}s) -> ${report.quoteTimestampValidation.valid ? 'VALID & FRESH' : 'BLOCKED'}`);
+  console.log(`Calldata Quote Timestamp:${report.quoteTimestampValidation.calldataQuoteTimestamp ?? 'N/A'}`);
+  console.log(`Freshness Check:         Status: ${report.quoteTimestampValidation.status} (Age: ${report.quoteTimestampValidation.diffSec !== null ? `${report.quoteTimestampValidation.diffSec}s` : 'N/A'}) -> ${report.quoteTimestampValidation.valid ? 'VALID & FRESH' : 'BLOCKED'}`);
+  if (report.routeAndQuote.provenance) {
+    console.log(`Quote Provenance Source: ${report.routeAndQuote.provenance.quoteSource}`);
+    console.log(`Quote Fetched At:        ${new Date(report.routeAndQuote.provenance.quoteFetchedAt).toISOString()}`);
+  }
   console.log(`Quote Disclaimer:        ${report.routeAndQuote.disclaimer}\n`);
 
   // 10. Pre-Flight Simulation & Decoded Error Analysis
@@ -131,7 +137,23 @@ async function main() {
   console.log(`Amount Propagation:      ${report.destinationExecution.actualAmountPropagationVerified ? 'VERIFIED (Actual delivered amount tracked)' : 'FAILED'}`);
   console.log(`Zero Hardcoded Amounts:  ${report.destinationExecution.noHardcodedDestinationAmounts ? 'VERIFIED' : 'FAILED'}\n`);
 
-  // 12. Readiness Matrix
+  // 12. Zero-Fabrication Provenance Audit
+  console.log('--- 12. Zero-Fabrication Provenance Audit ---');
+  console.log(`Fake Addresses Found:                     ${report.provenanceSummary.fakeAddressesFound}`);
+  console.log(`Synthetic Addresses Reaching Execution:   ${report.provenanceSummary.syntheticAddressesReachingExecution}`);
+  console.log(`Fake Quotes Found:                        ${report.provenanceSummary.fakeQuotesFound}`);
+  console.log(`Synthetic Quotes Reaching Execution:      ${report.provenanceSummary.syntheticQuotesReachingExecution}`);
+  console.log(`Fake Transaction Hashes Found:            ${report.provenanceSummary.fakeTransactionHashesFound}`);
+  console.log(`Synthetic Transaction Hashes Reaching Tx: ${report.provenanceSummary.syntheticTransactionHashesReachingExecution}`);
+  console.log(`Fake Receipts Found:                      ${report.provenanceSummary.fakeReceiptsFound}`);
+  console.log(`Synthetic Receipts Reaching Execution:    ${report.provenanceSummary.syntheticReceiptsReachingExecution}`);
+  console.log(`Fabricated Balances:                      ${report.provenanceSummary.fabricatedBalances}`);
+  console.log(`Fabricated Allowances:                    ${report.provenanceSummary.fabricatedAllowances}`);
+  console.log(`Automatic Approvals:                      ${report.provenanceSummary.automaticApprovals}`);
+  console.log(`Automatic Broadcasts:                     ${report.provenanceSummary.automaticBroadcasts}`);
+  console.log(`Provenance Status:                        ${report.provenanceSummary.status}\n`);
+
+  // 13. Readiness Matrix
   console.log('================================================================================');
   console.log('   PRE-BROADCAST EXECUTION READINESS MATRIX                                     ');
   console.log('================================================================================');

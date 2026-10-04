@@ -541,30 +541,41 @@ describe('ZENITH — Quote Timestamp Freshness Validation Test Matrix (Cases A -
 
 });
 
-describe('ZENITH — Simulation Identity & Address Semantics Test Suite', () => {
+describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', () => {
 
-  it('1. Constants: READ_ONLY_SIMULATION_PREVIEW_ADDRESS is the canonical 1inch v5 Router', () => {
-    assert.equal(READ_ONLY_SIMULATION_PREVIEW_ADDRESS.toLowerCase(), '0x1111111254fb6c44bac0bed2854e76f90643097d'.toLowerCase());
-  });
-
-  it('2. Unconfigured environment explicitly reports synthetic/preview simulation identity', async () => {
+  it('1. Address Rule: No signer => No depositor, No fake signer address, NOT_CHECKED balances', async () => {
     const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit({
       sepoliaRpcs: ['https://ethereum-sepolia-rpc.publicnode.com'],
       arbitrumSepoliaRpcs: ['https://sepolia-rollup.arbitrum.io/rpc']
     });
 
+    // Zero fake signer
     assert.equal(report.walletReadiness.signerConfigured, false);
     assert.equal(report.walletReadiness.signerAddress, null);
-    assert.equal(report.simulationIdentity.isSyntheticOrPreview, true);
+    assert.equal(report.walletReadiness.depositorAddress, null);
+
+    // Zero fake balances
+    assert.equal(report.walletReadiness.sourceNativeBalance, 'NOT_CHECKED');
+    assert.equal(report.walletReadiness.sourceUsdcBalance, 'NOT_CHECKED');
+    assert.equal(report.walletReadiness.destinationNativeBalance, 'NOT_CHECKED');
+    assert.equal(report.walletReadiness.destinationUsdcBalance, 'NOT_CHECKED');
+    assert.equal(report.walletReadiness.currentAllowanceFormatted, 'NOT_CHECKED');
+    assert.equal(report.walletReadiness.currentAllowanceRaw, null);
+
+    // Simulation identity
+    assert.equal(report.simulationIdentity.signerAddress, null);
+    assert.equal(report.simulationIdentity.depositorAddress, null);
     assert.equal(report.simulationIdentity.simulationType, 'PREVIEW_SIMULATION');
-    assert.equal(report.simulationIdentity.simulationCaller, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
-    assert.equal(report.simulationIdentity.depositorAddress, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
-    assert.equal(report.simulationIdentity.recipientAddress, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+
+    // Provenance summary
+    assert.equal(report.provenanceSummary.fakeAddressesFound, 0);
+    assert.equal(report.provenanceSummary.fabricatedBalances, 0);
+    assert.equal(report.provenanceSummary.fabricatedAllowances, 0);
+    assert.equal(report.provenanceSummary.status, 'CERTIFIED_ZERO_FABRICATION');
   });
 
-  it('3. Configured environment derives real signer address for caller, depositor and recipient', async () => {
-    // Generate a test wallet
+  it('2. Address Rule: Real signer derives public address and strictly binds depositorAddress === signerAddress', async () => {
     const testWallet = ethers.Wallet.createRandom();
     const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit({
@@ -574,11 +585,45 @@ describe('ZENITH — Simulation Identity & Address Semantics Test Suite', () => 
 
     assert.equal(report.walletReadiness.signerConfigured, true);
     assert.equal(report.walletReadiness.signerAddress, testWallet.address);
+    assert.equal(report.walletReadiness.depositorAddress, testWallet.address);
     assert.equal(report.simulationIdentity.isSyntheticOrPreview, false);
     assert.equal(report.simulationIdentity.simulationType, 'REAL_SIGNER_SIMULATION');
     assert.equal(report.simulationIdentity.simulationCaller, testWallet.address);
     assert.equal(report.simulationIdentity.depositorAddress, testWallet.address);
     assert.equal(report.simulationIdentity.recipientAddress, '0x9999999999999999999999999999999999999999');
+  });
+
+  it('3. Quote Rule: When live quote fails, returns QUOTE_UNAVAILABLE with zero fallback fabrication', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    // Providing invalid RPCs and invalid destination to force quote failure
+    const report = await auditor.audit({
+      sepoliaRpcs: ['https://127.0.0.1:9999'],
+      arbitrumSepoliaRpcs: ['https://127.0.0.1:9998'],
+      intendedAmountRaw: '0' // Zero amount to ensure Across fails
+    });
+
+    if (!report.routeAndQuote.isLiveQuote) {
+      assert.equal(report.routeAndQuote.quoteStatus, 'QUOTE_UNAVAILABLE');
+      assert.equal(report.routeAndQuote.sourceAmountRaw, null);
+      assert.equal(report.routeAndQuote.destinationAmountRaw, null);
+      assert.equal(report.routeAndQuote.minDestinationAmountRaw, null);
+      assert.equal(report.routeAndQuote.bridgeFeeUSD, null);
+      assert.equal(report.routeAndQuote.provenance, null);
+      assert.equal(report.quoteTimestampValidation.status, 'QUOTE_UNAVAILABLE');
+      assert.equal(report.quoteTimestampValidation.valid, false);
+    }
+  });
+
+  it('4. Zero Fake Transaction Rule: eth_call simulation never produces a txHash or receipt', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit();
+
+    assert.equal((report.simulation as any).txHash, undefined);
+    assert.equal((report.simulation as any).receipt, undefined);
+    assert.equal((report.simulation as any).depositId, undefined);
+    assert.equal(report.broadcastProhibition.sendTransactionInvoked, false);
+    assert.equal(report.broadcastProhibition.stateChangingCallsInvoked, false);
+    assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
   });
 
 });
