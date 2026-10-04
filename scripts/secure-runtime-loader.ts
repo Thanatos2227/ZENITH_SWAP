@@ -2,11 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { normalizePrivateKey } from './execute-controlled-polygon-crosschain';
+
 export type SignerRuntimeSource = 'PROCESS_ENV' | 'LOCAL_GITIGNORED_ENV' | 'WINDOWS_USER_REGISTRY' | 'NONE_AVAILABLE';
+
 export interface SecureRuntimeSignerResult {
     rawKey: string | null;
     runtimeSource: SignerRuntimeSource;
 }
+
 export function isGitIgnoredFile(repoRoot: string, filename: string): boolean {
     try {
         const gitignorePath = path.join(repoRoot, '.gitignore');
@@ -29,13 +32,14 @@ export function isGitIgnoredFile(repoRoot: string, filename: string): boolean {
         return false;
     }
 }
-function parseKeyFromEnvFile(filePath: string): string | null {
+
+function parseKeyFromEnvFile(filePath: string, allowedKeys?: string[]): string | null {
     try {
         if (!fs.existsSync(filePath))
             return null;
         const content = fs.readFileSync(filePath, 'utf8');
         const lines = content.split(/\r?\n/);
-        const targetKeys = [
+        const targetKeys = allowedKeys || [
             'ZENITH_MAINNET_PRIVATE_KEY',
             'TESTNET_PRIVATE_KEY',
             'ZENITH_PRIVATE_KEY',
@@ -61,50 +65,28 @@ function parseKeyFromEnvFile(filePath: string): string | null {
         return null;
     }
 }
-function queryWindowsUserRegistry(): string | null {
-    if (process.platform !== 'win32')
-        return null;
-    try {
-        const targetKeys = ['ZENITH_MAINNET_PRIVATE_KEY', 'TESTNET_PRIVATE_KEY', 'ZENITH_PRIVATE_KEY'];
-        for (const keyName of targetKeys) {
-            try {
-                const cmd = `reg query HKCU\\Environment /v ${keyName}`;
-                const output = execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
-                const lines = output.split(/\r?\n/);
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith(keyName)) {
-                        const parts = trimmed.split(/\s+/);
-                        if (parts.length >= 3) {
-                            const val = parts.slice(2).join(' ').trim();
-                            if (val)
-                                return val;
-                        }
-                    }
-                }
-            }
-            catch {
-            }
-        }
-        return null;
-    }
-    catch {
-        return null;
-    }
-}
+
 export type EnvironmentScope = 'MAINNET' | 'TESTNET' | 'LOCAL';
+export enum ChainScope {
+    LOCAL = 'LOCAL',
+    TESTNET = 'TESTNET',
+    MAINNET = 'MAINNET'
+}
 
 export function resolveScopedSignerKey(
-    envScope: EnvironmentScope,
+    envScope: EnvironmentScope | ChainScope,
     repoRoot: string = process.cwd()
 ): SecureRuntimeSignerResult {
+    const scopeStr = String(envScope).toUpperCase();
     let targetKeyNames: string[];
-    if (envScope === 'MAINNET') {
+    if (scopeStr === 'MAINNET') {
         targetKeyNames = ['ZENITH_MAINNET_PRIVATE_KEY'];
-    } else if (envScope === 'TESTNET') {
+    } else if (scopeStr === 'TESTNET') {
         targetKeyNames = ['TESTNET_PRIVATE_KEY', 'ZENITH_TESTNET_PRIVATE_KEY'];
-    } else {
+    } else if (scopeStr === 'LOCAL') {
         targetKeyNames = ['ZENITH_LOCAL_PRIVATE_KEY', 'ANVIL_PRIVATE_KEY'];
+    } else {
+        throw new Error(`[Security] Unknown chain scope: ${envScope}`);
     }
 
     for (const keyName of targetKeyNames) {
@@ -121,29 +103,12 @@ export function resolveScopedSignerKey(
     for (const file of candidateFiles) {
         if (isGitIgnoredFile(repoRoot, file)) {
             const fullPath = path.join(repoRoot, file);
-            try {
-                if (fs.existsSync(fullPath)) {
-                    const content = fs.readFileSync(fullPath, 'utf8');
-                    const lines = content.split(/\r?\n/);
-                    for (const keyName of targetKeyNames) {
-                        for (const line of lines) {
-                            const trimmed = line.trim();
-                            if (trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-                            const [k, ...vParts] = trimmed.split('=');
-                            if (k.trim() === keyName) {
-                                const val = vParts.join('=').trim();
-                                if (val) {
-                                    return {
-                                        rawKey: val,
-                                        runtimeSource: 'LOCAL_GITIGNORED_ENV'
-                                    };
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                // Ignore file read error
+            const val = parseKeyFromEnvFile(fullPath, targetKeyNames);
+            if (val && val.trim()) {
+                return {
+                    rawKey: val.trim(),
+                    runtimeSource: 'LOCAL_GITIGNORED_ENV'
+                };
             }
         }
     }
@@ -223,3 +188,37 @@ export function resolveSecureSignerKey(repoRoot: string = process.cwd()): Secure
     };
 }
 
+function queryWindowsUserRegistry(): string | null {
+    if (process.platform !== 'win32') return null;
+    const targetKeyNames = [
+        'ZENITH_MAINNET_PRIVATE_KEY',
+        'TESTNET_PRIVATE_KEY',
+        'ZENITH_PRIVATE_KEY',
+        'ZENITH_SIGNER_PRIVATE_KEY',
+        'PRIVATE_KEY'
+    ];
+    try {
+        for (const keyName of targetKeyNames) {
+            try {
+                const cmd = `reg query HKCU\\Environment /v ${keyName}`;
+                const output = execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+                const lines = output.split(/\r?\n/);
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith(keyName)) {
+                        const parts = trimmed.split(/\s+/);
+                        if (parts.length >= 3) {
+                            const val = parts.slice(2).join(' ').trim();
+                            if (val) return val;
+                        }
+                    }
+                }
+            } catch {
+                // Ignore key not found
+            }
+        }
+    } catch {
+        // Ignore registry query error
+    }
+    return null;
+}

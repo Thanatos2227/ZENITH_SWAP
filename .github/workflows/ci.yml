@@ -31,6 +31,12 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Authoritative Runtime Validation Gate
+        run: npm run validate:runtime
+
+      - name: Authoritative Network Registry Validation Gate
+        run: npm run validate:networks
+
       - name: Anti-Mock & Secret Audit Gate
         run: npm run audit:anti-mock
 
