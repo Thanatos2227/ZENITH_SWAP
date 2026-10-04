@@ -55,11 +55,13 @@ contract ZenithV3Router is IZenithV3SwapCallback {
         bytes calldata data
     ) external override {
         require(amount0Delta > 0 || amount1Delta > 0, "ZenithV3Router: CALLBACK_INVALID");
-        (address tokenIn, address tokenOut, uint24 fee, address payer) = abi.decode(data, (address, address, uint24, address));
-        address expectedPool = ZenithV3Factory(factory).getPool(tokenIn, tokenOut, fee);
-        require(msg.sender == expectedPool, "ZenithV3Router: UNAUTHORIZED_CALLBACK");
+        _payCallback(amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta), data);
+    }
 
-        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+    function _payCallback(uint256 amountToPay, bytes calldata data) private {
+        (address tokenIn, address tokenOut, uint24 fee, address payer) = abi.decode(data, (address, address, uint24, address));
+        require(msg.sender == ZenithV3Factory(factory).getPool(tokenIn, tokenOut, fee), "ZenithV3Router: UNAUTHORIZED_CALLBACK");
+
         if (payer == address(this)) {
             _safeTransfer(tokenIn, msg.sender, amountToPay);
         } else {
@@ -73,14 +75,28 @@ contract ZenithV3Router is IZenithV3SwapCallback {
         ensure(params.deadline)
         returns (uint256 amountOut)
     {
-        bool isNativeIn = msg.value > 0;
-        if (isNativeIn) {
+        if (msg.value > 0) {
             require(params.tokenIn == WETH9, "ZenithV3Router: NOT_WETH9");
             require(msg.value == params.amountIn, "ZenithV3Router: VALUE_MISMATCH");
             IWETH9(WETH9).deposit{value: msg.value}();
         }
 
+        address payer = msg.value > 0 ? address(this) : msg.sender;
         bool zeroForOne = params.tokenIn < params.tokenOut;
+
+        (int256 amount0, int256 amount1) = _executeSwap(params, zeroForOne, payer);
+
+        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+        if (amountOut < params.amountOutMinimum) {
+            revert V3TooLittleReceived();
+        }
+    }
+
+    function _executeSwap(
+        ExactInputSingleParams calldata params,
+        bool zeroForOne,
+        address payer
+    ) private returns (int256 amount0, int256 amount1) {
         address pool = ZenithV3Factory(factory).getPool(params.tokenIn, params.tokenOut, params.fee);
         require(pool != address(0), "ZenithV3Router: POOL_NOT_FOUND");
 
@@ -88,20 +104,13 @@ contract ZenithV3Router is IZenithV3SwapCallback {
             ? (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1)
             : params.sqrtPriceLimitX96;
 
-        address payer = isNativeIn ? address(this) : msg.sender;
-
-        (int256 amount0, int256 amount1) = ZenithV3Pool(pool).swap(
+        return ZenithV3Pool(pool).swap(
             params.recipient,
             zeroForOne,
             int256(params.amountIn),
             sqrtPriceLimitX96,
             abi.encode(params.tokenIn, params.tokenOut, params.fee, payer)
         );
-
-        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
-        if (amountOut < params.amountOutMinimum) {
-            revert V3TooLittleReceived();
-        }
     }
 
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results) {
