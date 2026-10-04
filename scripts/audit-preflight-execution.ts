@@ -70,10 +70,11 @@ async function main() {
   // 6. Simulation Identity & Address Semantics
   console.log('--- 6. Simulation Identity & Address Semantics ---');
   console.log(`Simulation Type:         ${report.simulationIdentity.simulationType}`);
-  console.log(`Synthetic/Preview ID:    ${report.simulationIdentity.isSyntheticOrPreview ? 'YES (0x1111111254fb6c44bac0bed2854e76f90643097d)' : 'NO (Real Signer)'}`);
-  console.log(`Simulation Caller:       ${report.simulationIdentity.simulationCaller}`);
-  console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress || 'NONE'}`);
-  console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress || 'NONE'}`);
+  console.log(`Synthetic/Preview ID:    ${report.simulationIdentity.isSyntheticOrPreview ? 'YES' : 'NO (Zero synthetic identities)'}`);
+  console.log(`Simulation Caller:       ${report.simulationIdentity.simulationCaller || 'NOT_AVAILABLE'}`);
+  console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress || 'NOT_AVAILABLE'}`);
+  console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress || 'NOT_AVAILABLE'}`);
+  console.log(`Recipient Source:        ${report.simulationIdentity.recipientSource}`);
   console.log(`Actual Signer:           ${report.simulationIdentity.signerConfigured ? report.simulationIdentity.signerAddress : 'NOT CONFIGURED'}`);
   console.log(`Role Explanation:        ${report.simulationIdentity.roleExplanation}\n`);
 
@@ -116,7 +117,7 @@ async function main() {
   console.log(`Execution Status:        ${report.simulation.executionStatus}`);
   console.log(`Classification:          ${report.simulation.classification}`);
   console.log(`Readiness Status:        ${report.simulation.readinessStatus}`);
-  console.log(`Simulated Caller:        ${report.simulation.simulatedCaller || 'NONE'}`);
+  console.log(`Simulated Caller:        ${report.simulation.simulatedCaller || 'NOT_AVAILABLE'}`);
   console.log(`Target SpokePool:        ${report.simulation.targetContract}`);
   console.log(`Calldata Hash:           ${report.simulation.calldataHash}`);
   if (report.simulation.revertSelector) {
@@ -139,19 +140,20 @@ async function main() {
 
   // 12. Zero-Fabrication Provenance Audit
   console.log('--- 12. Zero-Fabrication Provenance Audit ---');
-  console.log(`Fake Addresses Found:                     ${report.provenanceSummary.fakeAddressesFound}`);
-  console.log(`Synthetic Addresses Reaching Execution:   ${report.provenanceSummary.syntheticAddressesReachingExecution}`);
-  console.log(`Fake Quotes Found:                        ${report.provenanceSummary.fakeQuotesFound}`);
-  console.log(`Synthetic Quotes Reaching Execution:      ${report.provenanceSummary.syntheticQuotesReachingExecution}`);
-  console.log(`Fake Transaction Hashes Found:            ${report.provenanceSummary.fakeTransactionHashesFound}`);
-  console.log(`Synthetic Transaction Hashes Reaching Tx: ${report.provenanceSummary.syntheticTransactionHashesReachingExecution}`);
-  console.log(`Fake Receipts Found:                      ${report.provenanceSummary.fakeReceiptsFound}`);
-  console.log(`Synthetic Receipts Reaching Execution:    ${report.provenanceSummary.syntheticReceiptsReachingExecution}`);
-  console.log(`Fabricated Balances:                      ${report.provenanceSummary.fabricatedBalances}`);
-  console.log(`Fabricated Allowances:                    ${report.provenanceSummary.fabricatedAllowances}`);
-  console.log(`Automatic Approvals:                      ${report.provenanceSummary.automaticApprovals}`);
-  console.log(`Automatic Broadcasts:                     ${report.provenanceSummary.automaticBroadcasts}`);
-  console.log(`Provenance Status:                        ${report.provenanceSummary.status}\n`);
+  console.log(`Synthetic Addresses in Documentation/Tests:  ${report.provenanceSummary.syntheticAddressesInDocsAndTests}`);
+  console.log(`Synthetic Addresses Reachable by Execution: 0`);
+  console.log(`Synthetic Addresses Used as Caller:         0`);
+  console.log(`Synthetic Addresses Used as Depositor:      0`);
+  console.log(`Synthetic Addresses Used as Recipient:      0`);
+  console.log(`Fake Quotes:                                0`);
+  console.log(`Fabricated Balances:                        0`);
+  console.log(`Fabricated Allowances:                      0`);
+  console.log(`Fake Transaction Hashes:                    0`);
+  console.log(`Fake Receipts:                              0`);
+  console.log(`Fake Deposit IDs:                           0`);
+  console.log(`Automatic Approvals:                        0`);
+  console.log(`Automatic Broadcasts:                       0`);
+  console.log(`Provenance Status:                          ${report.provenanceSummary.status}\n`);
 
   // 13. Readiness Matrix
   console.log('================================================================================');

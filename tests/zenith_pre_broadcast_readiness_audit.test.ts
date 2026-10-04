@@ -484,7 +484,7 @@ describe('ZENITH — Broadcast Authorization Gate & Safety Boundary Test Suite',
 
 });
 
-describe('ZENITH — Quote Timestamp Freshness Validation Test Matrix (Cases A - E)', () => {
+describe('ZENITH — Quote Timestamp Freshness Validation Test Matrix (Cases A - I)', () => {
 
   const chainTimestamp = 1791114000;
 
@@ -510,40 +510,79 @@ describe('ZENITH — Quote Timestamp Freshness Validation Test Matrix (Cases A -
     assert.equal(res.calldataQuoteTimestamp, quoteTimestamp);
   });
 
-  // Case C: Quote timestamp 31 minutes old (1860 seconds)
-  it('Case C: Quote timestamp 31 minutes old (1860s) is STALE and BLOCKED', () => {
-    const quoteTimestamp = chainTimestamp - 1860;
-    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
-    assert.equal(res.status, 'STALE');
-    assert.equal(res.valid, false);
-    assert.equal(res.diffSec, 1860);
-    assert.match(res.reason, /stale/i);
-  });
-
-  // Case D: Future quote timestamp within allowed tolerance (30s <= 60s)
-  it('Case D: Future quote timestamp within allowed tolerance (+30s) is VALID', () => {
-    const quoteTimestamp = chainTimestamp + 30;
+  // Case C: Quote timestamp 30 seconds behind chain
+  it('Case C: Quote timestamp 30 seconds behind chain is VALID within protocol tolerance', () => {
+    const quoteTimestamp = chainTimestamp - 30;
     const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
     assert.equal(res.status, 'VALID');
     assert.equal(res.valid, true);
-    assert.equal(res.diffSec, -30);
+    assert.equal(res.diffSec, 30);
   });
 
-  // Case E: Future quote timestamp beyond allowed tolerance (+120s > 60s)
-  it('Case E: Future quote timestamp beyond allowed tolerance (+120s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
+  // Case D: Quote timestamp 1800 seconds old (boundary)
+  it('Case D: Quote timestamp exactly 1800s old is VALID (protocol boundary)', () => {
+    const quoteTimestamp = chainTimestamp - 1800;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'VALID');
+    assert.equal(res.valid, true);
+    assert.equal(res.diffSec, 1800);
+  });
+
+  // Case E: Quote timestamp 1801 seconds old (stale)
+  it('Case E: Quote timestamp 1801s old exceeds maxAge and is STALE / BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp - 1801;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'STALE');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, 1801);
+    assert.match(res.reason, /stale/i);
+  });
+
+  // Case F: Quote timestamp 1 second in the future (STRICT ZERO TOLERANCE)
+  it('Case F: Future quote timestamp (+1s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp + 1;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'INVALID_FUTURE_QUOTE_TIMESTAMP');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, -1);
+    assert.match(res.reason, /future/i);
+  });
+
+  // Case G: Quote timestamp 30 seconds in the future
+  it('Case G: Future quote timestamp (+30s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp + 30;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'INVALID_FUTURE_QUOTE_TIMESTAMP');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, -30);
+    assert.match(res.reason, /future/i);
+  });
+
+  // Case H: Quote timestamp 60 seconds in the future
+  it('Case H: Future quote timestamp (+60s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp + 60;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'INVALID_FUTURE_QUOTE_TIMESTAMP');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, -60);
+    assert.match(res.reason, /future/i);
+  });
+
+  // Case I: Future quote timestamp 120 seconds in the future
+  it('Case I: Future quote timestamp (+120s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
     const quoteTimestamp = chainTimestamp + 120;
     const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
     assert.equal(res.status, 'INVALID_FUTURE_QUOTE_TIMESTAMP');
     assert.equal(res.valid, false);
     assert.equal(res.diffSec, -120);
-    assert.match(res.reason, /future beyond allowed tolerance/i);
+    assert.match(res.reason, /future/i);
   });
 
 });
 
 describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', () => {
 
-  it('1. Address Rule: No signer => No depositor, No fake signer address, NOT_CHECKED balances', async () => {
+  it('1. Address Rule: No signer => No depositor, No fake signer address, NOT_CHECKED balances, simulation NOT_AVAILABLE', async () => {
     const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit({
       sepoliaRpcs: ['https://ethereum-sepolia-rpc.publicnode.com'],
@@ -563,24 +602,45 @@ describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', ()
     assert.equal(report.walletReadiness.currentAllowanceFormatted, 'NOT_CHECKED');
     assert.equal(report.walletReadiness.currentAllowanceRaw, null);
 
-    // Simulation identity
+    // Simulation identity is fail-closed with null addresses
     assert.equal(report.simulationIdentity.signerAddress, null);
     assert.equal(report.simulationIdentity.depositorAddress, null);
+    assert.equal(report.simulationIdentity.recipientAddress, null);
+    assert.equal(report.simulationIdentity.simulationCaller, null);
     assert.equal(report.simulationIdentity.simulationType, 'PREVIEW_SIMULATION');
 
+    // Simulation is NOT_AVAILABLE and NOT attempted without a real signer
+    assert.equal(report.simulation.attempted, false);
+    assert.equal(report.simulation.executionStatus, 'UNAVAILABLE');
+    assert.equal(report.simulation.classification, 'NO_SIGNER_CONFIGURED');
+    assert.equal(report.simulation.readinessStatus, 'BLOCKED');
+    assert.equal(report.simulation.simulatedCaller, null);
+    assert.equal(report.simulation.calldata, '0x');
+    assert.equal(report.simulation.calldataHash, '0x');
+
+    // Preview address NEVER enters calldata or simulation
+    assert.equal(report.simulation.calldata.includes('1111111254fb6c44bac0bed2854e76f90643097d'), false);
+
     // Provenance summary
-    assert.equal(report.provenanceSummary.fakeAddressesFound, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesReachingExecution, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsCaller, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsDepositor, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsRecipient, 0);
     assert.equal(report.provenanceSummary.fabricatedBalances, 0);
     assert.equal(report.provenanceSummary.fabricatedAllowances, 0);
+    assert.equal(report.provenanceSummary.fakeTransactionHashesFound, 0);
+    assert.equal(report.provenanceSummary.fakeReceiptsFound, 0);
+    assert.equal(report.provenanceSummary.fakeDepositIds, 0);
     assert.equal(report.provenanceSummary.status, 'CERTIFIED_ZERO_FABRICATION');
   });
 
-  it('2. Address Rule: Real signer derives public address and strictly binds depositorAddress === signerAddress', async () => {
+  it('2. Address Rule: Real signer derives public address, binds depositorAddress === signerAddress, and configures caller', async () => {
     const testWallet = ethers.Wallet.createRandom();
+    const operatorRecipient = '0x2222222222222222222222222222222222222222';
     const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit({
       testnetPrivateKey: testWallet.privateKey,
-      recipientAddress: '0x9999999999999999999999999999999999999999'
+      recipientAddress: operatorRecipient
     });
 
     assert.equal(report.walletReadiness.signerConfigured, true);
@@ -590,16 +650,35 @@ describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', ()
     assert.equal(report.simulationIdentity.simulationType, 'REAL_SIGNER_SIMULATION');
     assert.equal(report.simulationIdentity.simulationCaller, testWallet.address);
     assert.equal(report.simulationIdentity.depositorAddress, testWallet.address);
-    assert.equal(report.simulationIdentity.recipientAddress, '0x9999999999999999999999999999999999999999');
+    assert.equal(report.simulationIdentity.recipientAddress, operatorRecipient);
+    assert.equal(report.simulationIdentity.recipientSource, 'OPERATOR_CONFIGURED');
+
+    // Private key NEVER appears in report
+    const serializedReport = JSON.stringify(report);
+    assert.equal(serializedReport.includes(testWallet.privateKey), false);
   });
 
-  it('3. Quote Rule: When live quote fails, returns QUOTE_UNAVAILABLE with zero fallback fabrication', async () => {
+  it('3. Address Rule: Real signer with no explicit recipient derives recipientAddress === signerAddress', async () => {
+    const testWallet = ethers.Wallet.createRandom();
     const auditor = new PreBroadcastReadinessAuditor();
-    // Providing invalid RPCs and invalid destination to force quote failure
+    const report = await auditor.audit({
+      testnetPrivateKey: testWallet.privateKey
+    });
+
+    assert.equal(report.walletReadiness.signerConfigured, true);
+    assert.equal(report.walletReadiness.signerAddress, testWallet.address);
+    assert.equal(report.walletReadiness.depositorAddress, testWallet.address);
+    assert.equal(report.simulationIdentity.simulationType, 'REAL_SIGNER_SIMULATION');
+    assert.equal(report.simulationIdentity.recipientAddress, testWallet.address);
+    assert.equal(report.simulationIdentity.recipientSource, 'SIGNER_DERIVED');
+  });
+
+  it('4. Quote Rule: When live quote fails, returns QUOTE_UNAVAILABLE with zero fallback fabrication', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit({
       sepoliaRpcs: ['https://127.0.0.1:9999'],
       arbitrumSepoliaRpcs: ['https://127.0.0.1:9998'],
-      intendedAmountRaw: '0' // Zero amount to ensure Across fails
+      intendedAmountRaw: '0'
     });
 
     if (!report.routeAndQuote.isLiveQuote) {
@@ -614,13 +693,14 @@ describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', ()
     }
   });
 
-  it('4. Zero Fake Transaction Rule: eth_call simulation never produces a txHash or receipt', async () => {
+  it('5. Zero Fake Transaction Rule: eth_call simulation never produces a txHash, receipt, or depositId', async () => {
     const auditor = new PreBroadcastReadinessAuditor();
     const report = await auditor.audit();
 
     assert.equal((report.simulation as any).txHash, undefined);
     assert.equal((report.simulation as any).receipt, undefined);
     assert.equal((report.simulation as any).depositId, undefined);
+    assert.equal((report.simulation as any).settlementId, undefined);
     assert.equal(report.broadcastProhibition.sendTransactionInvoked, false);
     assert.equal(report.broadcastProhibition.stateChangingCallsInvoked, false);
     assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');

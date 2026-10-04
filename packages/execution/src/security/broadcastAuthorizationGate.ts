@@ -36,6 +36,7 @@ export type SimulationClassification =
   | 'EXPECTED_STALE_QUOTE'
   | 'EXPECTED_UNAPPROVED_CALLER'
   | 'EXPECTED_UNFUNDED_CALLER'
+  | 'NO_SIGNER_CONFIGURED'
   | 'UNEXPECTED_REVERT';
 
 export interface BroadcastAuthorization {
@@ -293,7 +294,7 @@ export class BroadcastAuthorizationGate {
 
     // 3. Check Quote Timestamp Age vs On-Chain Time
     const currentChainTs = context.currentChainTimestamp || Math.floor(now / 1000);
-    if (auth.quoteTimestamp > currentChainTs + 60) {
+    if (auth.quoteTimestamp > currentChainTs) {
       throw new BroadcastAuthorizationError('INVALID_FUTURE_QUOTE_TIMESTAMP', `Quote timestamp (${auth.quoteTimestamp}) is in the future relative to chain timestamp (${currentChainTs}).`, { quoteTimestamp: auth.quoteTimestamp, currentChainTs });
     }
     if (currentChainTs - auth.quoteTimestamp > this.MAX_QUOTE_AGE_SEC) {
