@@ -216,6 +216,7 @@ All remaining occurrences of testnet keywords are categorized and justified:
 ## 17. Git Commit
 
 - **Working Branch:** `fix/zenith-v3-execution`
+- **Commit Hash:** `c9432016db6b3b2abef9d83f6584737901e7f0dc`
 - **Commit Message:** `chore(phase3): decommission testnet operational surface`
 - **Scope:** Cleaned operational scripts, updated test runner, validated production build and signer isolation.
 
