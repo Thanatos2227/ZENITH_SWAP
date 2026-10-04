@@ -74,6 +74,7 @@ async function main() {
   console.log(`Simulation Caller:       ${report.simulationIdentity.simulationCaller || 'NOT_AVAILABLE'}`);
   console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress || 'NOT_AVAILABLE'}`);
   console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress || 'NOT_AVAILABLE'}`);
+  console.log(`Refund Address:          ${report.simulationIdentity.refundAddress || 'NOT_AVAILABLE'}`);
   console.log(`Recipient Source:        ${report.simulationIdentity.recipientSource}`);
   console.log(`Actual Signer:           ${report.simulationIdentity.signerConfigured ? report.simulationIdentity.signerAddress : 'NOT CONFIGURED'}`);
   console.log(`Role Explanation:        ${report.simulationIdentity.roleExplanation}\n`);
@@ -145,6 +146,7 @@ async function main() {
   console.log(`Synthetic Addresses Used as Caller:         0`);
   console.log(`Synthetic Addresses Used as Depositor:      0`);
   console.log(`Synthetic Addresses Used as Recipient:      0`);
+  console.log(`Synthetic Addresses Used as Refund:         0`);
   console.log(`Fake Quotes:                                0`);
   console.log(`Fabricated Balances:                        0`);
   console.log(`Fabricated Allowances:                      0`);

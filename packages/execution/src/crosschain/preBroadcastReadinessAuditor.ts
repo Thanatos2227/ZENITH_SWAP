@@ -85,6 +85,7 @@ export type SimulationIdentityReport =
       simulationCaller: string;
       depositorAddress: string;
       recipientAddress: string;
+      refundAddress: string;
       signerAddress: string;
       signerConfigured: true;
       recipientSource: 'SIGNER_DERIVED' | 'OPERATOR_CONFIGURED';
@@ -96,6 +97,7 @@ export type SimulationIdentityReport =
       simulationCaller: null;
       depositorAddress: null;
       recipientAddress: string | null;
+      refundAddress: null;
       signerAddress: null;
       signerConfigured: false;
       recipientSource: 'OPERATOR_CONFIGURED' | 'NOT_AVAILABLE';
@@ -255,6 +257,7 @@ export interface ZeroFabricationProvenanceSummary {
   syntheticAddressesUsedAsCaller: 0;
   syntheticAddressesUsedAsDepositor: 0;
   syntheticAddressesUsedAsRecipient: 0;
+  syntheticAddressesUsedAsRefund: 0;
   fakeQuotesFound: 0;
   syntheticQuotesReachingExecution: 0;
   fakeTransactionHashesFound: 0;
@@ -380,6 +383,7 @@ export class PreBroadcastReadinessAuditor {
     testnetPrivateKey?: string;
     intendedAmountRaw?: string;
     recipientAddress?: string;
+    refundAddress?: string;
   }): Promise<PreBroadcastReadinessReport> {
     // Configurable amount: process.env.ZENITH_TESTNET_AUDIT_AMOUNT -> options -> default 10 USDC
     const intendedAmountRaw = options?.intendedAmountRaw ||
@@ -631,10 +635,22 @@ export class PreBroadcastReadinessAuditor {
       }
     }
 
+    let validatedOperatorRefund: string | null = null;
+    if (options?.refundAddress) {
+      try {
+        validatedOperatorRefund = ethers.getAddress(options.refundAddress);
+      } catch {
+        validatedOperatorRefund = null;
+      }
+    }
+
     const depositorAddress: string | null = signerConfigured && signerAddress ? signerAddress : null;
     const recipientAddress: string | null = signerConfigured && signerAddress
       ? (validatedOperatorRecipient || signerAddress)
       : (validatedOperatorRecipient || null);
+    const refundAddress: string | null = signerConfigured && signerAddress
+      ? (validatedOperatorRefund || signerAddress)
+      : (validatedOperatorRefund || null);
 
     const walletReadiness: WalletReadinessReport = {
       signerConfigured,
@@ -667,6 +683,7 @@ export class PreBroadcastReadinessAuditor {
           simulationCaller: signerAddress,
           depositorAddress: signerAddress,
           recipientAddress: recipientAddress || signerAddress,
+          refundAddress: refundAddress || signerAddress,
           signerAddress,
           signerConfigured: true,
           recipientSource: validatedOperatorRecipient ? 'OPERATOR_CONFIGURED' : 'SIGNER_DERIVED',
@@ -678,6 +695,7 @@ export class PreBroadcastReadinessAuditor {
           simulationCaller: null,
           depositorAddress: null,
           recipientAddress,
+          refundAddress: null,
           signerAddress: null,
           signerConfigured: false,
           recipientSource: validatedOperatorRecipient ? 'OPERATOR_CONFIGURED' : 'NOT_AVAILABLE',
@@ -978,6 +996,7 @@ export class PreBroadcastReadinessAuditor {
       syntheticAddressesUsedAsCaller: 0,
       syntheticAddressesUsedAsDepositor: 0,
       syntheticAddressesUsedAsRecipient: 0,
+      syntheticAddressesUsedAsRefund: 0,
       fakeQuotesFound: 0,
       syntheticQuotesReachingExecution: 0,
       fakeTransactionHashesFound: 0,

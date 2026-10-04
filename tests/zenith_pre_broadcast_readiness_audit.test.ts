@@ -706,4 +706,42 @@ describe('ZENITH — Zero Fabrication & Identity Integrity Regression Suite', ()
     assert.equal(report.broadcastProhibition.executionAuthorization, 'BLOCKED');
   });
 
+  it('6. Real Signer Refund Address: Binds custom refund address or defaults to signer address', async () => {
+    const testWallet = ethers.Wallet.createRandom();
+    const customRefund = '0x3333333333333333333333333333333333333333';
+    const auditor = new PreBroadcastReadinessAuditor();
+
+    const reportWithCustom = await auditor.audit({
+      testnetPrivateKey: testWallet.privateKey,
+      refundAddress: customRefund
+    });
+    assert.equal(reportWithCustom.simulationIdentity.refundAddress, customRefund);
+
+    const reportDefault = await auditor.audit({
+      testnetPrivateKey: testWallet.privateKey
+    });
+    assert.equal(reportDefault.simulationIdentity.refundAddress, testWallet.address);
+  });
+
+  it('7. Real Signer Calldata Hash & Secret Protection Invariant', async () => {
+    const testWallet = ethers.Wallet.createRandom();
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({
+      testnetPrivateKey: testWallet.privateKey
+    });
+
+    // Zero secret leakage in report or metadata
+    const reportJson = JSON.stringify(report);
+    assert.equal(reportJson.includes(testWallet.privateKey), false);
+    assert.equal(reportJson.includes('privateKey'), false);
+
+    // Provenance metrics
+    assert.equal(report.provenanceSummary.syntheticAddressesReachingExecution, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsCaller, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsDepositor, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsRecipient, 0);
+    assert.equal(report.provenanceSummary.syntheticAddressesUsedAsRefund, 0);
+    assert.equal(report.provenanceSummary.status, 'CERTIFIED_ZERO_FABRICATION');
+  });
+
 });
