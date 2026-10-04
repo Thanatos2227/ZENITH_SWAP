@@ -89,24 +89,12 @@ contract ZenithV3PositionManager is IZenithV3MintCallback {
             uint256 amount1
         )
     {
-        address pool = ZenithV3Factory(factory).getPool(params.token0, params.token1, params.fee);
-        require(pool != address(0), "ZenithV3PositionManager: POOL_NOT_FOUND");
-
-        (uint160 sqrtPriceX96, , ) = ZenithV3Pool(pool).slot0();
-        require(sqrtPriceX96 > 0, "ZenithV3PositionManager: UNINITIALIZED_POOL");
-
         uint128 liquidityDesired = uint128(
             (params.amount0Desired > params.amount1Desired ? params.amount0Desired : params.amount1Desired) / 2
         );
         if (liquidityDesired == 0) liquidityDesired = 1000;
 
-        (amount0, amount1) = ZenithV3Pool(pool).mint(
-            address(this),
-            params.tickLower,
-            params.tickUpper,
-            liquidityDesired,
-            abi.encode(params.token0, params.token1, params.fee, msg.sender)
-        );
+        (amount0, amount1) = _executeMint(params, liquidityDesired);
 
         require(amount0 >= params.amount0Min && amount1 >= params.amount1Min, "ZenithV3PositionManager: SLIPPAGE");
 
@@ -124,7 +112,26 @@ contract ZenithV3PositionManager is IZenithV3MintCallback {
 
         _mintNFT(params.recipient, tokenId);
         liquidity = liquidityDesired;
-        emit IncreaseLiquidity(tokenId, liquidity, amount0, amount1);
+        emit IncreaseLiquidity(tokenId, liquidityDesired, amount0, amount1);
+    }
+
+    function _executeMint(
+        MintParams calldata params,
+        uint128 liquidityDesired
+    ) private returns (uint256 amount0, uint256 amount1) {
+        address pool = ZenithV3Factory(factory).getPool(params.token0, params.token1, params.fee);
+        require(pool != address(0), "ZenithV3PositionManager: POOL_NOT_FOUND");
+
+        (uint160 sqrtPriceX96, , ) = ZenithV3Pool(pool).slot0();
+        require(sqrtPriceX96 > 0, "ZenithV3PositionManager: UNINITIALIZED_POOL");
+
+        return ZenithV3Pool(pool).mint(
+            address(this),
+            params.tickLower,
+            params.tickUpper,
+            liquidityDesired,
+            abi.encode(params.token0, params.token1, params.fee, msg.sender)
+        );
     }
 
     function decreaseLiquidity(
