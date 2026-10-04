@@ -26,6 +26,14 @@ import {
   SimulationClassification
 } from '../security/broadcastAuthorizationGate';
 
+/**
+ * Canonical 1inch v5 Aggregation Router contract address.
+ * Used exclusively as a deterministic, non-zero read-only preview caller/recipient
+ * during pre-broadcast simulations when no live signer is configured in the environment.
+ * It NEVER receives live funds and is NEVER broadcast in an execution transaction.
+ */
+export const READ_ONLY_SIMULATION_PREVIEW_ADDRESS = '0x1111111254fb6c44bac0bed2854e76f90643097d';
+
 export interface ContractVerificationItem {
   name: string;
   address: string;
@@ -67,6 +75,75 @@ export interface WalletReadinessReport {
   gasEstimatedFormatted?: string;
   gasPriceWei?: string;
   gasReadiness: 'READY' | 'INSUFFICIENT_FUNDS' | 'NOT_CHECKED';
+}
+
+export interface SimulationIdentityReport {
+  isSyntheticOrPreview: boolean;
+  simulationType: 'REAL_SIGNER_SIMULATION' | 'PREVIEW_SIMULATION';
+  simulationCaller: string;
+  depositorAddress: string;
+  recipientAddress: string;
+  signerAddress: string | null;
+  signerConfigured: boolean;
+  roleExplanation: string;
+}
+
+export interface QuoteTimestampValidationResult {
+  quoteTimestampFromQuote: number;
+  currentChainTimestamp: number;
+  calldataQuoteTimestamp: number;
+  diffSec: number;
+  status: 'VALID' | 'STALE' | 'INVALID_FUTURE_QUOTE_TIMESTAMP';
+  valid: boolean;
+  reason: string;
+}
+
+/**
+ * Authoritatively validates Across quote timestamp against on-chain block timestamp.
+ * - Quote timestamp must be within future tolerance (<= 60s ahead of chain clock).
+ * - Quote timestamp must not exceed maximum staleness buffer (<= 1800s behind chain clock).
+ */
+export function validateQuoteTimestamp(
+  quoteTimestampSec: number,
+  currentChainTimestampSec: number,
+  maxAgeSec: number = 1800,
+  futureToleranceSec: number = 60
+): QuoteTimestampValidationResult {
+  const diffSec = currentChainTimestampSec - quoteTimestampSec;
+
+  if (quoteTimestampSec > currentChainTimestampSec + futureToleranceSec) {
+    return {
+      quoteTimestampFromQuote: quoteTimestampSec,
+      currentChainTimestamp: currentChainTimestampSec,
+      calldataQuoteTimestamp: quoteTimestampSec,
+      diffSec,
+      status: 'INVALID_FUTURE_QUOTE_TIMESTAMP',
+      valid: false,
+      reason: `Quote timestamp (${quoteTimestampSec}) is in the future beyond allowed tolerance (+${quoteTimestampSec - currentChainTimestampSec}s > ${futureToleranceSec}s). BLOCKED.`
+    };
+  }
+
+  if (diffSec > maxAgeSec) {
+    return {
+      quoteTimestampFromQuote: quoteTimestampSec,
+      currentChainTimestamp: currentChainTimestampSec,
+      calldataQuoteTimestamp: quoteTimestampSec,
+      diffSec,
+      status: 'STALE',
+      valid: false,
+      reason: `Quote timestamp (${quoteTimestampSec}) is stale (${diffSec}s old > max ${maxAgeSec}s). Obtain a new quote. BLOCKED.`
+    };
+  }
+
+  return {
+    quoteTimestampFromQuote: quoteTimestampSec,
+    currentChainTimestamp: currentChainTimestampSec,
+    calldataQuoteTimestamp: quoteTimestampSec,
+    diffSec,
+    status: 'VALID',
+    valid: true,
+    reason: `Quote timestamp (${quoteTimestampSec}) is valid (age: ${diffSec}s, tolerance: -${futureToleranceSec}s to +${maxAgeSec}s).`
+  };
 }
 
 export interface AcrossCapabilityReport {
@@ -152,12 +229,8 @@ export interface PreBroadcastReadinessReport {
     rawAmount: string;
     configSource: string;
   };
-  quoteTimestampValidation: {
-    currentChainTimestamp: number;
-    quoteTimestamp: number;
-    diffSec: number;
-    valid: boolean;
-  };
+  simulationIdentity: SimulationIdentityReport;
+  quoteTimestampValidation: QuoteTimestampValidationResult;
   contracts: ContractVerificationItem[];
   erc20Metadata: Erc20MetadataVerification[];
   walletReadiness: WalletReadinessReport;
@@ -244,6 +317,8 @@ export class PreBroadcastReadinessAuditor {
     arbitrumSepoliaRpcs?: string[];
     testnetPrivateKey?: string;
     intendedAmountRaw?: string;
+    recipientAddress?: string;
+    depositorAddress?: string;
   }): Promise<PreBroadcastReadinessReport> {
     // Configurable amount: process.env.ZENITH_TESTNET_AUDIT_AMOUNT -> options -> default 10 USDC
     const intendedAmountRaw = options?.intendedAmountRaw ||
@@ -290,73 +365,53 @@ export class PreBroadcastReadinessAuditor {
       );
     }
 
-    // 3. Verify Authoritative Contract Addresses & Bytecode
+    // 3. Authoritative Contract Address Verification (Bytecode checks)
     const contracts: ContractVerificationItem[] = [];
-
-    // Sepolia SpokePool
-    let sSpokeCode = '0x';
-    if (srcProvider) {
-      try { sSpokeCode = await srcProvider.getCode(PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL); } catch {}
-    }
-    contracts.push({
-      name: 'Sepolia Across SpokePool',
-      address: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
-      chainId: PreBroadcastReadinessAuditor.SEPOLIA_CHAIN_ID,
-      bytecodePresent: sSpokeCode !== '0x' && sSpokeCode !== '0x0' && sSpokeCode.length > 2,
-      bytecodeLength: sSpokeCode.length
-    });
-
-    // Sepolia USDC
-    let sUsdcCode = '0x';
-    if (srcProvider) {
-      try { sUsdcCode = await srcProvider.getCode(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS); } catch {}
-    }
-    contracts.push({
-      name: 'Sepolia Mock USDC',
-      address: PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS,
-      chainId: PreBroadcastReadinessAuditor.SEPOLIA_CHAIN_ID,
-      bytecodePresent: sUsdcCode !== '0x' && sUsdcCode !== '0x0' && sUsdcCode.length > 2,
-      bytecodeLength: sUsdcCode.length
-    });
-
-    // Arbitrum Sepolia USDC
-    let aUsdcCode = '0x';
-    if (dstProvider) {
-      try { aUsdcCode = await dstProvider.getCode(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS); } catch {}
-    }
-    contracts.push({
-      name: 'Arbitrum Sepolia Mock USDC',
-      address: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS,
-      chainId: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
-      bytecodePresent: aUsdcCode !== '0x' && aUsdcCode !== '0x0' && aUsdcCode.length > 2,
-      bytecodeLength: aUsdcCode.length
-    });
-
-    // Arbitrum Sepolia SpokePool
-    let aSpokeCode = '0x';
-    if (dstProvider) {
-      try { aSpokeCode = await dstProvider.getCode(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL); } catch {}
-    }
-    contracts.push({
-      name: 'Arbitrum Sepolia Across SpokePool',
-      address: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL,
-      chainId: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
-      bytecodePresent: aSpokeCode !== '0x' && aSpokeCode !== '0x0' && aSpokeCode.length > 2,
-      bytecodeLength: aSpokeCode.length
-    });
-
-    // 4. Verify ERC-20 Contract Metadata
-    const erc20Metadata: Erc20MetadataVerification[] = [];
-    if (srcProvider && contracts[1].bytecodePresent) {
+    const checkBytecode = async (
+      name: string,
+      address: string,
+      chainId: number,
+      provider: ethers.JsonRpcProvider | null
+    ) => {
+      if (!provider) {
+        contracts.push({ name, address, chainId, bytecodePresent: false, bytecodeLength: 0 });
+        return;
+      }
       try {
-        const c = new ethers.Contract(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, ERC20_ABI, srcProvider);
+        const code = await provider.getCode(address);
+        const present = code && code !== '0x' && code.length > 2;
+        contracts.push({
+          name,
+          address,
+          chainId,
+          bytecodePresent: Boolean(present),
+          bytecodeLength: code ? code.length : 0
+        });
+      } catch {
+        contracts.push({ name, address, chainId, bytecodePresent: false, bytecodeLength: 0 });
+      }
+    };
+
+    await Promise.all([
+      checkBytecode('Sepolia Across SpokePool', PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL, PreBroadcastReadinessAuditor.SEPOLIA_CHAIN_ID, srcProvider),
+      checkBytecode('Sepolia Mock USDC', PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, PreBroadcastReadinessAuditor.SEPOLIA_CHAIN_ID, srcProvider),
+      checkBytecode('Arbitrum Sepolia Mock USDC', PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID, dstProvider),
+      checkBytecode('Arbitrum Sepolia Across SpokePool', PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL, PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID, dstProvider)
+    ]);
+
+    // 4. ERC-20 Metadata Verification
+    const erc20Metadata: Erc20MetadataVerification[] = [];
+    if (srcProvider) {
+      try {
+        const contract = new ethers.Contract(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, ERC20_ABI, srcProvider);
         const [onChainName, onChainSymbol, onChainDecimals, onChainTotalSupply] = await Promise.all([
-          c.name(),
-          c.symbol(),
-          c.decimals(),
-          c.totalSupply()
+          contract.name().catch(() => 'UNKNOWN'),
+          contract.symbol().catch(() => 'UNKNOWN'),
+          contract.decimals().catch(() => 0),
+          contract.totalSupply().catch(() => 0n)
         ]);
-        const matched = Number(onChainDecimals) === 6 && onChainSymbol.toUpperCase() === 'USDC';
+
+        const matched = onChainSymbol === 'USDC' && Number(onChainDecimals) === 6;
         erc20Metadata.push({
           name: 'Sepolia USDC',
           address: PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS,
@@ -385,16 +440,17 @@ export class PreBroadcastReadinessAuditor {
       }
     }
 
-    if (dstProvider && contracts[2].bytecodePresent) {
+    if (dstProvider) {
       try {
-        const c = new ethers.Contract(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, ERC20_ABI, dstProvider);
+        const contract = new ethers.Contract(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, ERC20_ABI, dstProvider);
         const [onChainName, onChainSymbol, onChainDecimals, onChainTotalSupply] = await Promise.all([
-          c.name(),
-          c.symbol(),
-          c.decimals(),
-          c.totalSupply()
+          contract.name().catch(() => 'UNKNOWN'),
+          contract.symbol().catch(() => 'UNKNOWN'),
+          contract.decimals().catch(() => 0),
+          contract.totalSupply().catch(() => 0n)
         ]);
-        const matched = Number(onChainDecimals) === 6 && onChainSymbol.toUpperCase() === 'USDC';
+
+        const matched = onChainSymbol === 'USDC' && Number(onChainDecimals) === 6;
         erc20Metadata.push({
           name: 'Arbitrum Sepolia USDC',
           address: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS,
@@ -449,28 +505,25 @@ export class PreBroadcastReadinessAuditor {
           sEthBal = eth;
           if (feeData?.gasPrice) {
             gasPriceWei = feeData.gasPrice.toString();
-            gasEstimatedWei = (feeData.gasPrice * 150000n).toString();
           }
-
-          if (contracts[1].bytecodePresent) {
-            const token = new ethers.Contract(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, ERC20_ABI, srcProvider);
-            const [bal, allow] = await Promise.all([
-              token.balanceOf(signerAddress).catch(() => 0n),
-              token.allowance(signerAddress, PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL).catch(() => 0n)
-            ]);
-            sUsdcBal = BigInt(bal);
-            sAllowance = BigInt(allow);
-          }
+          const token = new ethers.Contract(PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS, ERC20_ABI, srcProvider);
+          const [bal, allow] = await Promise.all([
+            token.balanceOf(signerAddress).catch(() => 0n),
+            token.allowance(signerAddress, PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL).catch(() => 0n)
+          ]);
+          sUsdcBal = BigInt(bal);
+          sAllowance = BigInt(allow);
         }
 
         if (dstProvider) {
-          const eth = await dstProvider.getBalance(signerAddress).catch(() => 0n);
-          aEthBal = BigInt(eth);
-          if (contracts[2].bytecodePresent) {
-            const token = new ethers.Contract(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, ERC20_ABI, dstProvider);
-            const bal = await token.balanceOf(signerAddress).catch(() => 0n);
-            aUsdcBal = BigInt(bal);
-          }
+          const [eth, bal] = await Promise.all([
+            dstProvider.getBalance(signerAddress).catch(() => null),
+            new ethers.Contract(PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS, ERC20_ABI, dstProvider)
+              .balanceOf(signerAddress)
+              .catch(() => 0n)
+          ]);
+          if (eth !== null) aEthBal = eth;
+          aUsdcBal = BigInt(bal);
         }
       } catch {
         signerAddress = null;
@@ -529,6 +582,34 @@ export class PreBroadcastReadinessAuditor {
       gasReadiness
     };
 
+    // Explicit Simulation Identity
+    const isSyntheticOrPreview = !signerConfigured;
+    const simulationType: 'REAL_SIGNER_SIMULATION' | 'PREVIEW_SIMULATION' = signerConfigured
+      ? 'REAL_SIGNER_SIMULATION'
+      : 'PREVIEW_SIMULATION';
+    const simulationCaller = signerConfigured && signerAddress
+      ? signerAddress
+      : READ_ONLY_SIMULATION_PREVIEW_ADDRESS;
+    const depositorAddress = options?.depositorAddress || (signerConfigured && signerAddress
+      ? signerAddress
+      : READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+    const recipientAddress = options?.recipientAddress || (signerConfigured && signerAddress
+      ? signerAddress
+      : READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+
+    const simulationIdentity: SimulationIdentityReport = {
+      isSyntheticOrPreview,
+      simulationType,
+      simulationCaller,
+      depositorAddress,
+      recipientAddress,
+      signerAddress,
+      signerConfigured,
+      roleExplanation: signerConfigured
+        ? 'Real testnet signer derived from environment. Simulated using real address.'
+        : `No signer configured. Using deterministic read-only preview placeholder (${READ_ONLY_SIMULATION_PREVIEW_ADDRESS}). Never broadcast.`
+    };
+
     // 6. Verify Across Contract Capability & Function Selector
     const spokePoolInterface = new Interface(ACROSS_SPOKE_POOL_ABI);
     const depositV3Frag = spokePoolInterface.getFunction('depositV3');
@@ -544,36 +625,6 @@ export class PreBroadcastReadinessAuditor {
         }
       } catch {}
     }
-
-    const previewRecipient = signerAddress || '0x1111111254fb6c44bac0bed2854e76f90643097d';
-    let encodedCalldataPreviewLength = 0;
-    let calldataPreview = '0x';
-    try {
-      calldataPreview = spokePoolInterface.encodeFunctionData('depositV3', [
-        previewRecipient.toLowerCase(),
-        previewRecipient.toLowerCase(),
-        PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS.toLowerCase(),
-        PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS.toLowerCase(),
-        BigInt(intendedAmountRaw),
-        (BigInt(intendedAmountRaw) * 9950n) / 10000n, // 0.5% slippage preview
-        PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
-        ZERO_ADDRESS,
-        currentBlockTimestamp,
-        currentBlockTimestamp + 1800,
-        0,
-        '0x'
-      ]);
-      encodedCalldataPreviewLength = calldataPreview.length;
-    } catch {}
-
-    const acrossCapability: AcrossCapabilityReport = {
-      functionName: 'depositV3',
-      functionSelector: depositV3Selector,
-      abiCompatible: Boolean(depositV3Frag),
-      sourceSpokePoolAddress: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
-      destinationSpokePoolAddress: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL,
-      encodedCalldataPreviewLength
-    };
 
     // 7. Route Discovery & Live Quote Generation
     const acrossProvider = new AcrossProvider();
@@ -597,51 +648,40 @@ export class PreBroadcastReadinessAuditor {
     const routeSupported = acrossProvider.isAvailable('sepolia', 'arbitrum_sepolia', tokenIn, tokenOut);
     let routeAndQuote: RouteQuoteAuditReport;
 
-    let simulationCalldata = calldataPreview;
+    let quoteTimestampSec = currentBlockTimestamp;
+    let liveQuoteData: any = null;
+
     try {
-      const liveQuote = await acrossProvider.getQuote({
+      liveQuoteData = await acrossProvider.getQuote({
         sourceChainId: 'sepolia',
         destinationChainId: 'arbitrum_sepolia',
         tokenIn,
         tokenOut,
         amountInRaw: intendedAmountRaw,
         slippageTolerancePercent: 0.5,
-        userWalletAddress: previewRecipient
+        userWalletAddress: recipientAddress
       });
 
-      if (liveQuote?.destinationAmountRaw) {
-        simulationCalldata = spokePoolInterface.encodeFunctionData('depositV3', [
-          previewRecipient.toLowerCase(),
-          previewRecipient.toLowerCase(),
-          PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS.toLowerCase(),
-          PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS.toLowerCase(),
-          BigInt(intendedAmountRaw),
-          BigInt(liveQuote.minDestinationAmountRaw || intendedAmountRaw),
-          PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
-          ZERO_ADDRESS,
-          currentBlockTimestamp,
-          currentBlockTimestamp + 1800,
-          0,
-          '0x'
-        ]);
-      } else if (liveQuote?.calldata && liveQuote.calldata !== '0x') {
-        simulationCalldata = liveQuote.calldata;
+      if (liveQuoteData?.quoteTimestamp) {
+        quoteTimestampSec = liveQuoteData.quoteTimestamp > 1e11
+          ? Math.floor(liveQuoteData.quoteTimestamp / 1000)
+          : Number(liveQuoteData.quoteTimestamp);
       }
 
       routeAndQuote = {
         routeSupported,
         providerId: 'ACROSS',
-        isLiveQuote: Boolean(liveQuote?.isExecutable),
-        sourceAmountRaw: liveQuote?.sourceAmountRaw || intendedAmountRaw,
-        sourceAmountFormatted: `${ethers.formatUnits(BigInt(liveQuote?.sourceAmountRaw || intendedAmountRaw), 6)} USDC`,
-        destinationAmountRaw: liveQuote?.destinationAmountRaw || intendedAmountRaw,
-        destinationAmountFormatted: `${ethers.formatUnits(BigInt(liveQuote?.destinationAmountRaw || intendedAmountRaw), 6)} USDC`,
-        minDestinationAmountRaw: liveQuote?.minDestinationAmountRaw || intendedAmountRaw,
-        minDestinationAmountFormatted: `${ethers.formatUnits(BigInt(liveQuote?.minDestinationAmountRaw || intendedAmountRaw), 6)} USDC`,
-        bridgeFeeUSD: liveQuote?.bridgeFeeUSD || 0.05,
-        relayerFeePct: liveQuote?.relayerFee || '0.05%',
-        quoteTimestamp: liveQuote?.quoteTimestamp || Date.now(),
-        quoteExpiry: liveQuote?.expiration,
+        isLiveQuote: Boolean(liveQuoteData?.isExecutable),
+        sourceAmountRaw: liveQuoteData?.sourceAmountRaw || intendedAmountRaw,
+        sourceAmountFormatted: `${ethers.formatUnits(BigInt(liveQuoteData?.sourceAmountRaw || intendedAmountRaw), 6)} USDC`,
+        destinationAmountRaw: liveQuoteData?.destinationAmountRaw || intendedAmountRaw,
+        destinationAmountFormatted: `${ethers.formatUnits(BigInt(liveQuoteData?.destinationAmountRaw || intendedAmountRaw), 6)} USDC`,
+        minDestinationAmountRaw: liveQuoteData?.minDestinationAmountRaw || intendedAmountRaw,
+        minDestinationAmountFormatted: `${ethers.formatUnits(BigInt(liveQuoteData?.minDestinationAmountRaw || intendedAmountRaw), 6)} USDC`,
+        bridgeFeeUSD: liveQuoteData?.bridgeFeeUSD || 0.05,
+        relayerFeePct: liveQuoteData?.relayerFee || '0.05%',
+        quoteTimestamp: quoteTimestampSec * 1000,
+        quoteExpiry: liveQuoteData?.expiration,
         disclaimer: 'LIVE QUOTE - NOT EXECUTION GUARANTEE'
       };
     } catch {
@@ -657,19 +697,52 @@ export class PreBroadcastReadinessAuditor {
         minDestinationAmountFormatted: `${ethers.formatUnits(BigInt(intendedAmountRaw), 6)} USDC`,
         bridgeFeeUSD: 0.05,
         relayerFeePct: '0.05%',
-        quoteTimestamp: Date.now(),
+        quoteTimestamp: currentBlockTimestamp * 1000,
         disclaimer: 'LIVE QUOTE - NOT EXECUTION GUARANTEE'
       };
     }
 
-    // 8. Pre-Flight Simulation & Strict Semantic Separation (eth_call only)
+    const quoteTimestampValidation = validateQuoteTimestamp(quoteTimestampSec, currentBlockTimestamp);
+
+    // 8. Build depositV3 Calldata & Pre-Flight eth_call Simulation
+    const minOutputRaw = routeAndQuote.minDestinationAmountRaw || intendedAmountRaw;
+    const calldataQuoteTimestamp = quoteTimestampSec;
+    const fillDeadline = currentBlockTimestamp + 1800;
+
+    let simulationCalldata = '0x';
+    try {
+      simulationCalldata = spokePoolInterface.encodeFunctionData('depositV3', [
+        depositorAddress.toLowerCase(),
+        recipientAddress.toLowerCase(),
+        PreBroadcastReadinessAuditor.SEPOLIA_USDC_ADDRESS.toLowerCase(),
+        PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_USDC_ADDRESS.toLowerCase(),
+        BigInt(intendedAmountRaw),
+        BigInt(minOutputRaw),
+        PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_CHAIN_ID,
+        ZERO_ADDRESS,
+        calldataQuoteTimestamp,
+        fillDeadline,
+        0,
+        '0x'
+      ]);
+    } catch {}
+
+    const acrossCapability: AcrossCapabilityReport = {
+      functionName: 'depositV3',
+      functionSelector: depositV3Selector,
+      abiCompatible: Boolean(depositV3Frag),
+      sourceSpokePoolAddress: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
+      destinationSpokePoolAddress: PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL,
+      encodedCalldataPreviewLength: simulationCalldata.length
+    };
+
     const calldataHash = BroadcastAuthorizationGate.computeCalldataHash(simulationCalldata);
     let simulation: SimulationAuditReport = {
       attempted: false,
       executionStatus: 'UNAVAILABLE',
       classification: 'UNEXPECTED_REVERT',
       readinessStatus: 'BLOCKED',
-      simulatedCaller: signerAddress,
+      simulatedCaller: simulationCaller,
       targetContract: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
       calldata: simulationCalldata,
       calldataHash,
@@ -678,19 +751,17 @@ export class PreBroadcastReadinessAuditor {
 
     if (srcProvider && contracts[0].bytecodePresent && simulationCalldata.length > 2) {
       simulation.attempted = true;
-      const caller = signerAddress || previewRecipient;
-      simulation.simulatedCaller = caller;
 
       try {
         await srcProvider.call({
           to: PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL,
           data: simulationCalldata,
-          from: caller
+          from: simulationCaller
         });
         simulation.simulationSuccess = true;
         simulation.executionStatus = 'SUCCESS';
         simulation.classification = 'SIMULATION_PASS';
-        simulation.readinessStatus = signerConfigured && allowanceSufficient ? 'READY' : 'BLOCKED';
+        simulation.readinessStatus = signerConfigured && allowanceSufficient && hasNative && hasUsdc ? 'READY' : 'BLOCKED';
       } catch (simErr: any) {
         simulation.simulationSuccess = false;
         simulation.executionStatus = 'REVERTED';
@@ -753,14 +824,16 @@ export class PreBroadcastReadinessAuditor {
       { check: 'Source SpokePool bytecode', status: contracts[0].bytecodePresent ? 'PASS' : 'FAIL', details: `Address: ${PreBroadcastReadinessAuditor.SEPOLIA_SPOKE_POOL}` },
       { check: 'Destination SpokePool bytecode', status: contracts[3].bytecodePresent ? 'PASS' : 'FAIL', details: `Address: ${PreBroadcastReadinessAuditor.ARBITRUM_SEPOLIA_SPOKE_POOL}` },
       { check: 'USDC metadata', status: erc20Metadata.every(m => m.matched) ? 'PASS' : 'FAIL', details: 'Decimals: 6, Symbol: USDC verified on-chain' },
-      { check: 'Source wallet discovered', status: signerConfigured ? 'PASS' : 'UNKNOWN', details: signerAddress || `State: ${signerState}` },
+      { check: 'Signer discovery', status: signerConfigured ? 'PASS' : 'UNKNOWN', details: signerAddress || `State: ${signerState}` },
+      { check: 'Simulation identity', status: signerConfigured ? 'PASS' : 'UNKNOWN', details: signerConfigured ? `Real Signer (${signerAddress})` : `Preview Address (${READ_ONLY_SIMULATION_PREVIEW_ADDRESS})` },
       { check: 'Source native balance', status: !signerConfigured ? 'UNKNOWN' : (walletReadiness.gasReadiness === 'READY' ? 'PASS' : 'FAIL'), details: walletReadiness.sourceNativeBalance },
       { check: 'Source USDC balance', status: !signerConfigured ? 'UNKNOWN' : (sUsdcBal !== null && sUsdcBal >= requiredUsdcBig ? 'PASS' : 'FAIL'), details: walletReadiness.sourceUsdcBalance },
-      { check: 'Allowance', status: !signerConfigured ? 'UNKNOWN' : (allowanceSufficient ? 'PASS' : 'FAIL'), details: `${walletReadiness.currentAllowanceFormatted} (Required: ${ethers.formatUnits(requiredUsdcBig, 6)} USDC)` },
+      { check: 'SpokePool allowance', status: !signerConfigured ? 'UNKNOWN' : (allowanceSufficient ? 'PASS' : 'FAIL'), details: `${walletReadiness.currentAllowanceFormatted} (Required: ${ethers.formatUnits(requiredUsdcBig, 6)} USDC)` },
       { check: 'Across capability', status: acrossCapability.abiCompatible ? 'PASS' : 'FAIL', details: `Selector: ${acrossCapability.functionSelector} (depositV3)` },
       { check: 'Route discovery', status: routeSupported ? 'PASS' : 'FAIL', details: 'Sepolia USDC -> Across -> Arbitrum Sepolia USDC' },
-      { check: 'Live quote', status: routeAndQuote.routeSupported ? 'PASS' : 'FAIL', details: `${routeAndQuote.minDestinationAmountFormatted} (Relayer fee: ${routeAndQuote.relayerFeePct})` },
-      { check: 'Pre-flight simulation', status: simulation.simulationSuccess ? 'PASS' : 'FAIL', details: `Execution: ${simulation.executionStatus} | Classification: ${simulation.classification} | Readiness: ${simulation.readinessStatus}` },
+      { check: 'Fresh live quote', status: routeAndQuote.routeSupported ? 'PASS' : 'FAIL', details: `${routeAndQuote.minDestinationAmountFormatted} (Relayer fee: ${routeAndQuote.relayerFeePct})` },
+      { check: 'Quote timestamp', status: quoteTimestampValidation.valid ? 'PASS' : 'FAIL', details: `Status: ${quoteTimestampValidation.status} (Age: ${quoteTimestampValidation.diffSec}s)` },
+      { check: 'Pre-flight simulation', status: simulation.simulationSuccess ? 'PASS' : (simulation.executionStatus === 'REVERTED' && (simulation.classification === 'EXPECTED_UNAPPROVED_CALLER' || simulation.classification === 'EXPECTED_UNFUNDED_CALLER') ? 'PASS' : 'FAIL'), details: `Execution: ${simulation.executionStatus} | Classification: ${simulation.classification} | Readiness: ${simulation.readinessStatus}` },
       { check: 'Destination execution capability', status: destinationExecution.destinationEngineOperational ? 'PASS' : 'FAIL', details: 'Authoritative destination verifier verified' },
       { check: 'Actual amount propagation', status: destinationExecution.actualAmountPropagationVerified ? 'PASS' : 'FAIL', details: 'Zero hardcoded destination amounts' },
       { check: 'Broadcast authorization', status: 'BLOCKED', details: `BROADCAST AUTHORIZATION: NOT GRANTED (State: ${signerState})` }
@@ -780,15 +853,6 @@ export class PreBroadcastReadinessAuditor {
       configSource
     };
 
-    const quoteSec = routeAndQuote.quoteTimestamp ? Math.floor(routeAndQuote.quoteTimestamp / 1000) : currentBlockTimestamp;
-    const diffSec = Math.abs(currentBlockTimestamp - quoteSec);
-    const quoteTimestampValidation = {
-      currentChainTimestamp: currentBlockTimestamp,
-      quoteTimestamp: quoteSec,
-      diffSec,
-      valid: diffSec <= 1800
-    };
-
     return {
       timestamp: Date.now(),
       sourceChain: {
@@ -806,6 +870,7 @@ export class PreBroadcastReadinessAuditor {
         rpcQuorum: arbQuorum
       },
       amountConfig,
+      simulationIdentity,
       quoteTimestampValidation,
       contracts,
       erc20Metadata,

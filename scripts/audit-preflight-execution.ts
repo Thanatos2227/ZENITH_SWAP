@@ -66,33 +66,46 @@ async function main() {
   console.log(`Allowance Sufficient:    ${report.walletReadiness.allowanceSufficient ? 'YES' : 'NO'}`);
   console.log(`Gas Readiness:           ${report.walletReadiness.gasReadiness}\n`);
 
-  // 6. Configured Test Amount
-  console.log('--- 6. Configured Test Amount Discovery ---');
+  // 6. Simulation Identity & Address Semantics
+  console.log('--- 6. Simulation Identity & Address Semantics ---');
+  console.log(`Simulation Type:         ${report.simulationIdentity.simulationType}`);
+  console.log(`Synthetic/Preview ID:    ${report.simulationIdentity.isSyntheticOrPreview ? 'YES (0x1111111254fb6c44bac0bed2854e76f90643097d)' : 'NO (Real Signer)'}`);
+  console.log(`Simulation Caller:       ${report.simulationIdentity.simulationCaller}`);
+  console.log(`Depositor Address:       ${report.simulationIdentity.depositorAddress}`);
+  console.log(`Recipient Address:       ${report.simulationIdentity.recipientAddress}`);
+  console.log(`Actual Signer:           ${report.simulationIdentity.signerConfigured ? report.simulationIdentity.signerAddress : 'NOT CONFIGURED'}`);
+  console.log(`Role Explanation:        ${report.simulationIdentity.roleExplanation}\n`);
+
+  // 7. Configured Test Amount
+  console.log('--- 7. Configured Test Amount Discovery ---');
   console.log(`Configured Test Amount:  ${report.amountConfig.configuredAmount} USDC`);
   console.log(`Raw Amount:              ${report.amountConfig.rawAmount}`);
   console.log(`Config Source:           ${report.amountConfig.configSource}\n`);
 
-  // 7. Across Contract Capability
-  console.log('--- 7. Across Protocol V3 Capability ---');
+  // 8. Across Contract Capability
+  console.log('--- 8. Across Protocol V3 Capability ---');
   console.log(`Target Function:         ${report.acrossCapability.functionName}`);
   console.log(`Function Selector:       ${report.acrossCapability.functionSelector}`);
   console.log(`ABI Compatibility:       ${report.acrossCapability.abiCompatible ? 'VERIFIED' : 'FAILED'}`);
   console.log(`Source SpokePool:        ${report.acrossCapability.sourceSpokePoolAddress}`);
   console.log(`Destination SpokePool:   ${report.acrossCapability.destinationSpokePoolAddress}\n`);
 
-  // 8. Route & Live Quote Audit
-  console.log('--- 8. Route & Live Quote Audit ---');
+  // 9. Route & Live Quote Audit
+  console.log('--- 9. Route & Live Quote Audit ---');
   console.log(`Route Supported:         ${report.routeAndQuote.routeSupported ? 'YES (Sepolia USDC -> Across -> Arb Sepolia USDC)' : 'NO'}`);
   console.log(`Quote Type:              ${report.routeAndQuote.isLiveQuote ? 'LIVE API QUOTE' : 'INFORMATIONAL FALLBACK'}`);
   console.log(`Source Amount:           ${report.routeAndQuote.sourceAmountFormatted} (${report.routeAndQuote.sourceAmountRaw} raw)`);
   console.log(`Est Destination Amount:  ${report.routeAndQuote.destinationAmountFormatted} (${report.routeAndQuote.destinationAmountRaw} raw)`);
   console.log(`Min Destination Amount:  ${report.routeAndQuote.minDestinationAmountFormatted} (${report.routeAndQuote.minDestinationAmountRaw} raw)`);
   console.log(`Bridge Fee:              $${report.routeAndQuote.bridgeFeeUSD} (Relayer fee: ${report.routeAndQuote.relayerFeePct})`);
-  console.log(`Quote Timestamp Check:   Quote=${report.quoteTimestampValidation.quoteTimestamp} vs Chain=${report.quoteTimestampValidation.currentChainTimestamp} (diff: ${report.quoteTimestampValidation.diffSec}s) -> ${report.quoteTimestampValidation.valid ? 'FRESH & VALID' : 'STALE/INVALID'}`);
+  console.log(`Quote Timestamp (Quote): ${report.quoteTimestampValidation.quoteTimestampFromQuote}`);
+  console.log(`Current Chain Timestamp: ${report.quoteTimestampValidation.currentChainTimestamp}`);
+  console.log(`Calldata Quote Timestamp:${report.quoteTimestampValidation.calldataQuoteTimestamp}`);
+  console.log(`Freshness Check:         Status: ${report.quoteTimestampValidation.status} (Age: ${report.quoteTimestampValidation.diffSec}s) -> ${report.quoteTimestampValidation.valid ? 'VALID & FRESH' : 'BLOCKED'}`);
   console.log(`Quote Disclaimer:        ${report.routeAndQuote.disclaimer}\n`);
 
-  // 9. Pre-Flight Simulation & Decoded Error Analysis
-  console.log('--- 9. Pre-Flight eth_call Simulation & Error Decoding ---');
+  // 10. Pre-Flight Simulation & Decoded Error Analysis
+  console.log('--- 10. Pre-Flight eth_call Simulation & Error Decoding ---');
   console.log(`Simulation Attempted:    ${report.simulation.attempted ? 'YES' : 'NO'}`);
   console.log(`Execution Status:        ${report.simulation.executionStatus}`);
   console.log(`Classification:          ${report.simulation.classification}`);
@@ -112,13 +125,13 @@ async function main() {
   }
   console.log('');
 
-  // 10. Destination Execution Capability & Amount Propagation
-  console.log('--- 10. Destination Execution Capability & Amount Propagation ---');
+  // 11. Destination Execution Capability & Amount Propagation
+  console.log('--- 11. Destination Execution Capability & Amount Propagation ---');
   console.log(`Destination Engine:      ${report.destinationExecution.destinationEngineOperational ? 'OPERATIONAL' : 'FAILED'}`);
   console.log(`Amount Propagation:      ${report.destinationExecution.actualAmountPropagationVerified ? 'VERIFIED (Actual delivered amount tracked)' : 'FAILED'}`);
   console.log(`Zero Hardcoded Amounts:  ${report.destinationExecution.noHardcodedDestinationAmounts ? 'VERIFIED' : 'FAILED'}\n`);
 
-  // 11. Readiness Matrix
+  // 12. Readiness Matrix
   console.log('================================================================================');
   console.log('   PRE-BROADCAST EXECUTION READINESS MATRIX                                     ');
   console.log('================================================================================');

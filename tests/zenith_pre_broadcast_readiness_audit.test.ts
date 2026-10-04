@@ -2,7 +2,9 @@ import { test, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ethers } from 'ethers';
 import {
-  PreBroadcastReadinessAuditor
+  PreBroadcastReadinessAuditor,
+  READ_ONLY_SIMULATION_PREVIEW_ADDRESS,
+  validateQuoteTimestamp
 } from '../packages/execution/src/crosschain/preBroadcastReadinessAuditor';
 import {
   BroadcastAuthorizationGate,
@@ -478,6 +480,105 @@ describe('ZENITH — Broadcast Authorization Gate & Safety Boundary Test Suite',
       depositV3: () => { mutationCount++; }
     };
     assert.equal(mutationCount, 0);
+  });
+
+});
+
+describe('ZENITH — Quote Timestamp Freshness Validation Test Matrix (Cases A - E)', () => {
+
+  const chainTimestamp = 1791114000;
+
+  // Case A: Fresh quote timestamp (identical to chain timestamp)
+  it('Case A: Fresh quote timestamp (quoteTimestamp == currentChainTimestamp) is VALID', () => {
+    const res = validateQuoteTimestamp(chainTimestamp, chainTimestamp);
+    assert.equal(res.status, 'VALID');
+    assert.equal(res.valid, true);
+    assert.equal(res.diffSec, 0);
+    assert.equal(res.quoteTimestampFromQuote, chainTimestamp);
+    assert.equal(res.currentChainTimestamp, chainTimestamp);
+    assert.equal(res.calldataQuoteTimestamp, chainTimestamp);
+  });
+
+  // Case B: Quote timestamp 8 seconds behind chain
+  it('Case B: Quote timestamp 8 seconds behind chain is VALID within protocol tolerance', () => {
+    const quoteTimestamp = chainTimestamp - 8;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'VALID');
+    assert.equal(res.valid, true);
+    assert.equal(res.diffSec, 8);
+    assert.equal(res.quoteTimestampFromQuote, quoteTimestamp);
+    assert.equal(res.calldataQuoteTimestamp, quoteTimestamp);
+  });
+
+  // Case C: Quote timestamp 31 minutes old (1860 seconds)
+  it('Case C: Quote timestamp 31 minutes old (1860s) is STALE and BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp - 1860;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'STALE');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, 1860);
+    assert.match(res.reason, /stale/i);
+  });
+
+  // Case D: Future quote timestamp within allowed tolerance (30s <= 60s)
+  it('Case D: Future quote timestamp within allowed tolerance (+30s) is VALID', () => {
+    const quoteTimestamp = chainTimestamp + 30;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'VALID');
+    assert.equal(res.valid, true);
+    assert.equal(res.diffSec, -30);
+  });
+
+  // Case E: Future quote timestamp beyond allowed tolerance (+120s > 60s)
+  it('Case E: Future quote timestamp beyond allowed tolerance (+120s) is INVALID_FUTURE_QUOTE_TIMESTAMP and BLOCKED', () => {
+    const quoteTimestamp = chainTimestamp + 120;
+    const res = validateQuoteTimestamp(quoteTimestamp, chainTimestamp);
+    assert.equal(res.status, 'INVALID_FUTURE_QUOTE_TIMESTAMP');
+    assert.equal(res.valid, false);
+    assert.equal(res.diffSec, -120);
+    assert.match(res.reason, /future beyond allowed tolerance/i);
+  });
+
+});
+
+describe('ZENITH — Simulation Identity & Address Semantics Test Suite', () => {
+
+  it('1. Constants: READ_ONLY_SIMULATION_PREVIEW_ADDRESS is the canonical 1inch v5 Router', () => {
+    assert.equal(READ_ONLY_SIMULATION_PREVIEW_ADDRESS.toLowerCase(), '0x1111111254fb6c44bac0bed2854e76f90643097d'.toLowerCase());
+  });
+
+  it('2. Unconfigured environment explicitly reports synthetic/preview simulation identity', async () => {
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({
+      sepoliaRpcs: ['https://ethereum-sepolia-rpc.publicnode.com'],
+      arbitrumSepoliaRpcs: ['https://sepolia-rollup.arbitrum.io/rpc']
+    });
+
+    assert.equal(report.walletReadiness.signerConfigured, false);
+    assert.equal(report.walletReadiness.signerAddress, null);
+    assert.equal(report.simulationIdentity.isSyntheticOrPreview, true);
+    assert.equal(report.simulationIdentity.simulationType, 'PREVIEW_SIMULATION');
+    assert.equal(report.simulationIdentity.simulationCaller, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+    assert.equal(report.simulationIdentity.depositorAddress, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+    assert.equal(report.simulationIdentity.recipientAddress, READ_ONLY_SIMULATION_PREVIEW_ADDRESS);
+  });
+
+  it('3. Configured environment derives real signer address for caller, depositor and recipient', async () => {
+    // Generate a test wallet
+    const testWallet = ethers.Wallet.createRandom();
+    const auditor = new PreBroadcastReadinessAuditor();
+    const report = await auditor.audit({
+      testnetPrivateKey: testWallet.privateKey,
+      recipientAddress: '0x9999999999999999999999999999999999999999'
+    });
+
+    assert.equal(report.walletReadiness.signerConfigured, true);
+    assert.equal(report.walletReadiness.signerAddress, testWallet.address);
+    assert.equal(report.simulationIdentity.isSyntheticOrPreview, false);
+    assert.equal(report.simulationIdentity.simulationType, 'REAL_SIGNER_SIMULATION');
+    assert.equal(report.simulationIdentity.simulationCaller, testWallet.address);
+    assert.equal(report.simulationIdentity.depositorAddress, testWallet.address);
+    assert.equal(report.simulationIdentity.recipientAddress, '0x9999999999999999999999999999999999999999');
   });
 
 });
