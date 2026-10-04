@@ -22,39 +22,58 @@ const VALID_STEP_TYPES: ExecutionStepType[] = [
     'DESTINATION_VERIFY',
     'SETTLEMENT_COMPLETE'
 ];
+export function canonicalStringify(obj: any): string {
+    if (obj === null || typeof obj !== 'object') {
+        return JSON.stringify(obj);
+    }
+    if (Array.isArray(obj)) {
+        return '[' + obj.map(canonicalStringify).join(',') + ']';
+    }
+    const keys = Object.keys(obj).sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalStringify(obj[k])).join(',') + '}';
+}
 export function computeExecutionPlanHash(plan: ExecutionPlan): string {
-    const normalized = JSON.stringify({
-        planId: plan.planId,
-        routeId: plan.routeId,
-        routeType: plan.routeType,
-        sourceChainId: plan.sourceChainId,
-        destinationChainId: plan.destinationChainId,
-        sourceToken: (plan.tokenIn?.address || '').toLowerCase(),
-        destinationToken: (plan.tokenOut?.address || '').toLowerCase(),
-        expectedAmountInRaw: plan.expectedAmountInRaw,
-        minimumAmountOutRaw: plan.minimumAmountOutRaw,
-        expectedAmountOutRaw: plan.expectedAmountOutRaw,
-        selectedProvider: plan.selectedProvider || '',
-        selectedDex: plan.selectedDex || '',
-        executionTarget: (plan.executionTarget || '').toLowerCase(),
+    const canonicalPayload = {
         approvalTarget: (plan.approvalTarget || '').toLowerCase(),
-        recipient: ((plan as any).recipient || (plan as any).userWalletAddress || '').toLowerCase(),
-        calldata: plan.calldata || '',
-        expiration: plan.expiration || 0,
+        authorizationScope: (plan as any).authorizationScope || '',
+        calldata: (plan.calldata || '').toLowerCase(),
         capabilityEvidence: plan.capabilityEvidence || '',
+        destinationChainId: String(plan.destinationChainId || ''),
+        destinationToken: (plan.tokenOut?.address || '').toLowerCase(),
+        executionTarget: (plan.executionTarget || '').toLowerCase(),
+        expectedAmountInRaw: String(plan.expectedAmountInRaw || ''),
+        expectedAmountOutRaw: String(plan.expectedAmountOutRaw || ''),
+        expiration: plan.expiration || (plan as any).deadline || 0,
+        intentId: (plan as any).intentId || '',
+        minimumAmountOutRaw: String(plan.minimumAmountOutRaw || ''),
+        noncePolicy: (plan as any).noncePolicy || '',
+        planId: plan.planId || '',
+        recipient: ((plan as any).recipient || (plan as any).userWalletAddress || (plan as any).sender || '').toLowerCase(),
+        routeId: plan.routeId || '',
+        routeType: plan.routeType || '',
+        selectedDex: plan.selectedDex || (plan as any).dex || '',
+        selectedProvider: plan.selectedProvider || (plan as any).bridge || '',
+        solver: (plan as any).solver || '',
+        sourceChainId: String(plan.sourceChainId || ''),
+        sourceToken: (plan.tokenIn?.address || '').toLowerCase(),
         totalFeeRaw: plan.totalFeeRaw || '0',
+        transactionValue: String((plan as any).transactionValue || (plan as any).value || '0'),
         steps: (plan.steps || []).map((s) => ({
-            id: s.id,
-            type: s.type,
-            chainId: s.chainId,
-            targetAddress: (s.targetAddress || '').toLowerCase(),
             approvalTarget: (s.approvalTarget || '').toLowerCase(),
-            requiredAmountRaw: s.requiredAmountRaw || '',
-            calldata: s.calldata || '',
-            dependencies: s.dependencies || []
+            calldata: (s.calldata || '').toLowerCase(),
+            chainId: String(s.chainId || ''),
+            dependencies: s.dependencies || [],
+            id: s.id || '',
+            numericChainId: s.numericChainId,
+            outputTokenAddress: (s.outputTokenAddress || '').toLowerCase(),
+            requiredAmountRaw: String(s.requiredAmountRaw || ''),
+            requiredTokenAddress: (s.requiredTokenAddress || '').toLowerCase(),
+            targetAddress: (s.targetAddress || '').toLowerCase(),
+            type: s.type || '',
+            valueWei: String(s.valueWei || '0')
         }))
-    });
-    return sha256(toUtf8Bytes(normalized)).toLowerCase().replace(/^0x/, '');
+    };
+    return sha256(toUtf8Bytes(canonicalStringify(canonicalPayload))).toLowerCase().replace(/^0x/, '');
 }
 export function sealPlan(plan: ExecutionPlan): ExecutionPlan {
     const hash = computeExecutionPlanHash(plan);

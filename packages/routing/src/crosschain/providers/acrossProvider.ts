@@ -21,7 +21,6 @@ import {
   ProviderUnavailableError
 } from '@zenith/contracts';
 import { isNativeToken } from '../../dex/dexMath';
-import { formatTokenUnits } from '../../tokenDecimals';
 import { validateCrossChainQuoteExecutability } from '../quoteValidator';
 import { defaultQuoteDiagnosticLogger } from '../quoteDiagnostics';
 
@@ -115,10 +114,10 @@ export class AcrossProvider implements CrossChainProvider {
           destinationAmountBig = amountInBig > totalFeeRaw ? amountInBig - totalFeeRaw : 0n;
 
           if (destinationAmountBig > 0n) {
-            const inDecimals = request.tokenIn.decimals !== undefined ? request.tokenIn.decimals : 18;
-            const feeFormatted = formatTokenUnits(totalFeeRaw, inDecimals);
-            bridgeFeeUSD = request.tokenIn.priceUSD ? Number((Number(feeFormatted) * request.tokenIn.priceUSD).toFixed(4)) : 0;
-            relayerFeePctStr = data.totalRelayFee.pct ? `${(Number(data.totalRelayFee.pct) * 100).toFixed(2)}%` : '0.05%';
+            const rawPct = Number(data.totalRelayFee.pct);
+            relayerFeePctStr = data.totalRelayFee.pct
+              ? (rawPct > 100 ? `${(rawPct / 1e16).toFixed(4)}%` : `${(rawPct * 100).toFixed(2)}%`)
+              : '0.05%';
             exclusiveRelayer = data.exclusiveRelayer || ZERO_ADDRESS;
             protocolTimestampSec = Number(data.timestamp || protocolTimestampSec);
             fillDeadlineSec = Number(data.fillDeadline || protocolTimestampSec + 1800);

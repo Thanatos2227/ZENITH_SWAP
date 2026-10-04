@@ -1017,9 +1017,9 @@ export const ZENITH_AUTHORITATIVE_NETWORKS: Record<string, AuthoritativeNetworkI
         rpcEndpoints: [
             {
                 networkId: 'sepolia',
-                providerId: 'sepolia-rpc',
+                providerId: 'sepolia-publicnode',
                 endpointClass: 'PUBLIC',
-                url: 'https://rpc.sepolia.org',
+                url: 'https://ethereum-sepolia-rpc.publicnode.com',
                 readCapability: true,
                 preflightCapability: true,
                 broadcastCapability: true,
@@ -1029,6 +1029,21 @@ export const ZENITH_AUTHORITATIVE_NETWORKS: Record<string, AuthoritativeNetworkI
                 expectedChainId: 11155111,
                 environment: 'TESTNET',
                 priority: 1
+            },
+            {
+                networkId: 'sepolia',
+                providerId: 'sepolia-tenderly',
+                endpointClass: 'PUBLIC',
+                url: 'https://gateway.tenderly.co/public/sepolia',
+                readCapability: true,
+                preflightCapability: true,
+                broadcastCapability: true,
+                websocketCapability: false,
+                healthState: 'HEALTHY',
+                expectedFamily: 'EVM',
+                expectedChainId: 11155111,
+                environment: 'TESTNET',
+                priority: 2
             }
         ],
         explorer: {

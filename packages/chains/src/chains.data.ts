@@ -3377,7 +3377,7 @@ export const ZENITH_TESTNET_CHAINS: Record<string, ChainConfig> = {
         nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18, logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
         rpcEndpoints: [
             { url: 'https://ethereum-sepolia-rpc.publicnode.com', priority: 1, status: 'HEALTHY' },
-            { url: 'https://rpc2.sepolia.org', priority: 2, status: 'HEALTHY' }
+            { url: 'https://gateway.tenderly.co/public/sepolia', priority: 2, status: 'HEALTHY' }
         ],
         explorer: { name: 'Etherscan Sepolia', baseUrl: 'https://sepolia.etherscan.io', txPath: '/tx/', addressPath: '/address/', tokenPath: '/token/' },
         finality: { reorgSafetyBlocks: 12, instantFinality: false, typicalBlockTimeSec: 12, safeFinalityTimeSec: 144 },

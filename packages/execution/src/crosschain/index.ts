@@ -13,3 +13,4 @@ export * from './multiProviderMetrics';
 export * from './settlementTelemetry';
 export * from './executionIntegrationPipeline';
 export * from './compositeSettlementMonitoringEngine';
+export * from './preBroadcastReadinessAuditor';

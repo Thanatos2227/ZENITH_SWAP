@@ -56,3 +56,14 @@ Thumbs.db
 *.sqlite
 *.sqlite-journal
 scratch/
+
+# Excluded documentation (per repository rules)
+*.md
+!/README.md
+docs/
+*.doc
+*.docx
+*.pdf
+*.txt
+*.rtf
+*.odt

@@ -192,11 +192,12 @@ export class ExecutionIntegrationPipeline {
             });
             sStart = Date.now();
             validateMinimumOutput(plan.expectedAmountOutRaw, plan.minimumAmountOutRaw, 'ExecutionPlan economic safety');
-            if (plan.steps.length > 1) {
+            const sourceSwapStep = plan.steps.find(s => s.type === 'SOURCE_SWAP');
+            if (sourceSwapStep) {
                 validateSourceSwapEconomics({
-                    amountInRaw: plan.steps[0].requiredAmountRaw || plan.expectedAmountInRaw,
-                    expectedAmountOutRaw: plan.steps[0].expectedAmountOutRaw || '1',
-                    minimumAmountOutRaw: plan.steps[0].minimumAmountOutRaw || '1'
+                    amountInRaw: sourceSwapStep.requiredAmountRaw || plan.expectedAmountInRaw,
+                    expectedAmountOutRaw: sourceSwapStep.expectedAmountOutRaw || '1',
+                    minimumAmountOutRaw: sourceSwapStep.minimumAmountOutRaw || '1'
                 });
             }
             if (plan.sourceChainId !== plan.destinationChainId) {
@@ -216,7 +217,7 @@ export class ExecutionIntegrationPipeline {
                 minimumAmountOut: plan.minimumAmountOutRaw
             });
             sStart = Date.now();
-            const isComposite = plan.steps.length > 1;
+            const isComposite = plan.steps.some(s => s.type === 'SOURCE_SWAP');
             const executionMode = params.intent.executionMode || 'PREFLIGHT_ONLY';
             if (executionMode === 'READ_ONLY' || executionMode === 'PREFLIGHT_ONLY') {
                 recordStage('STAGE_09_SOURCE_EXECUTION', 'PASS', sStart, {
@@ -232,12 +233,12 @@ export class ExecutionIntegrationPipeline {
             }
             sStart = Date.now();
             if (isComposite && params.sourceReceipt) {
-                const sourceSwapStep = plan.steps[0];
+                const swapStep = sourceSwapStep || plan.steps[0];
                 const extracted = extractActualSourceSwapOutput({
                     receipt: params.sourceReceipt,
-                    expectedTokenOutAddress: sourceSwapStep.outputTokenAddress || plan.tokenIn.address,
+                    expectedTokenOutAddress: swapStep.outputTokenAddress || plan.tokenIn.address,
                     recipientAddress: params.intent.userAddress,
-                    minimumAmountOutRaw: sourceSwapStep.minimumAmountOutRaw || '1',
+                    minimumAmountOutRaw: swapStep.minimumAmountOutRaw || '1',
                     sourceChainId: plan.sourceChainId
                 });
                 actualSourceOutputRaw = extracted.actualAmountRaw;
