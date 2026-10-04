@@ -2,128 +2,223 @@
 /**
  * ZENITH Protocol — Testnet Execution & Funding Diagnostic
  *
- * Checks prerequisites for public testnet execution without exposing secrets:
- * - RPC connectivity & Chain ID
- * - Signer address & Native gas balance
- * - Token balance & Router status
- * - Bridge endpoints
+ * Authoritative diagnostic verifying real on-chain testnet prerequisites:
+ * - Sepolia RPC & Chain ID (11155111)
+ * - Arbitrum Sepolia RPC & Chain ID (421614)
+ * - Signer presence & address derivation (zero key logging)
+ * - Real on-chain native gas balances
+ * - Real on-chain ERC20 test token balances
+ * - On-chain bytecode verification for tokens and SpokePool contracts
  *
  * Never outputs private keys, seeds, or credentials.
  */
 
 import { ethers } from 'ethers';
 import { defaultAuthoritativeNetworkRegistry, defaultChainRegistry } from '../packages/chains/src';
+import { getAcrossSpokePool } from '../packages/contracts/src';
 
-interface TestnetDiagnostic {
+export interface TestnetDiagnosticReport {
   network: string;
   chainId: number;
+  rpcEndpointsChecked: string[];
   rpcHealthy: boolean;
-  signerConfigured: boolean;
+  signerPresent: boolean;
   signerAddress: string | null;
   nativeBalance: string;
   requiredNativeBalance: string;
   nativeBalanceSufficient: boolean;
+  tokenAddress: string;
   tokenBalance: string;
   requiredTokenBalance: string;
   tokenBalanceSufficient: boolean;
-  routerStatus: string;
-  bridgeAvailable: boolean;
-  preflightStatus: 'READY' | 'BLOCKED';
+  tokenBytecodePresent: boolean;
+  bridgeContractAddress: string;
+  bridgeBytecodePresent: boolean;
+  destinationNetwork: string;
+  destinationChainId: number;
+  destinationRpcHealthy: boolean;
+  destinationTokenAddress: string;
+  destinationTokenBytecodePresent: boolean;
+  destinationBridgeAddress: string;
+  destinationBridgeBytecodePresent: boolean;
+  routerDeploymentStatus: string;
+  preflightStatus: 'READY_FOR_REAL_TESTNET_EXECUTION' | 'BLOCKED';
   blockerReason?: string;
 }
 
-export async function runTestnetDiagnostic(targetNetwork = 'sepolia'): Promise<TestnetDiagnostic> {
-  const networkConfig = defaultAuthoritativeNetworkRegistry.getNetwork(targetNetwork);
-  const chainConfig = defaultChainRegistry.getChain(targetNetwork);
+const ERC20_ABI = [
+  'function balanceOf(address account) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)'
+];
 
-  if (!networkConfig) {
-    return {
-      network: targetNetwork,
-      chainId: 0,
-      rpcHealthy: false,
-      signerConfigured: false,
-      signerAddress: null,
-      nativeBalance: '0',
-      requiredNativeBalance: '0.05',
-      nativeBalanceSufficient: false,
-      tokenBalance: '0',
-      requiredTokenBalance: '10.0',
-      tokenBalanceSufficient: false,
-      routerStatus: 'UNKNOWN_NETWORK',
-      bridgeAvailable: false,
-      preflightStatus: 'BLOCKED',
-      blockerReason: `Network ${targetNetwork} not found in authoritative registry`,
-    };
-  }
+const SEPOLIA_RPCS = [
+  'https://ethereum-sepolia-rpc.publicnode.com',
+  'https://rpc.sepolia.org',
+  'https://rpc2.sepolia.org',
+  'https://eth-sepolia.public.blastapi.io'
+];
 
-  // Check RPC
-  let rpcHealthy = false;
-  let provider: ethers.JsonRpcProvider | null = null;
-  const primaryRpc = networkConfig.rpcEndpoints?.[0]?.url || chainConfig?.rpcUrl || 'https://rpc.sepolia.org';
-  const expectedChainId = Number(networkConfig.numericChainId || networkConfig.chainId);
+const ARBITRUM_SEPOLIA_RPCS = [
+  'https://sepolia-rollup.arbitrum.io/rpc',
+  'https://arbitrum-sepolia-rpc.publicnode.com'
+];
 
-  try {
-    provider = new ethers.JsonRpcProvider(primaryRpc, undefined, { staticNetwork: true });
-    const network = await provider.getNetwork();
-    if (Number(network.chainId) === expectedChainId) {
-      rpcHealthy = true;
+async function createHealthyProvider(rpcs: string[], expectedChainId: number): Promise<{ provider: ethers.JsonRpcProvider | null; healthyRpc: string | null }> {
+  for (const rpc of rpcs) {
+    try {
+      const p = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
+      const network = await Promise.race([
+        p.getNetwork(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+      ]);
+      if (Number(network.chainId) === expectedChainId) {
+        return { provider: p, healthyRpc: rpc };
+      }
+    } catch {
+      // Try next RPC
     }
-  } catch {
-    rpcHealthy = false;
   }
+  return { provider: null, healthyRpc: null };
+}
 
-  // Check Signer (Read-only address derivation from TESTNET_PRIVATE_KEY or ZENITH_TESTNET_PRIVATE_KEY)
+export async function runTestnetDiagnostic(): Promise<TestnetDiagnosticReport> {
+  const sepoliaConfig = defaultAuthoritativeNetworkRegistry.getNetwork('sepolia');
+  const arbSepoliaConfig = defaultAuthoritativeNetworkRegistry.getNetwork('arbitrum_sepolia');
+
+  const sepoliaChainId = Number(sepoliaConfig?.numericChainId || 11155111);
+  const arbSepoliaChainId = Number(arbSepoliaConfig?.numericChainId || 421614);
+
+  const sepoliaTokenAddress = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+  const arbSepoliaTokenAddress = '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d';
+
+  const sepoliaBridgeAddress = getAcrossSpokePool(sepoliaChainId);
+  const arbSepoliaBridgeAddress = getAcrossSpokePool(arbSepoliaChainId);
+
+  // 1. Source RPC
+  const { provider: srcProvider, healthyRpc: srcRpc } = await createHealthyProvider(SEPOLIA_RPCS, sepoliaChainId);
+  const rpcHealthy = srcProvider !== null;
+
+  // 2. Destination RPC
+  const { provider: dstProvider, healthyRpc: dstRpc } = await createHealthyProvider(ARBITRUM_SEPOLIA_RPCS, arbSepoliaChainId);
+  const destinationRpcHealthy = dstProvider !== null;
+
+  // 3. Signer Verification (Safe derivation, no key exposure)
   const testnetKey = process.env.TESTNET_PRIVATE_KEY || process.env.ZENITH_TESTNET_PRIVATE_KEY;
   let signerAddress: string | null = null;
   let nativeBalance = '0';
   let nativeBalanceSufficient = false;
+  let tokenBalance = '0';
+  let tokenBalanceSufficient = false;
 
   if (testnetKey && testnetKey.startsWith('0x') && testnetKey.length === 66) {
     try {
       const wallet = new ethers.Wallet(testnetKey);
       signerAddress = wallet.address;
-      if (rpcHealthy && provider) {
-        const bal = await provider.getBalance(signerAddress);
+
+      if (srcProvider) {
+        // Query Native Balance
+        const bal = await srcProvider.getBalance(signerAddress);
         nativeBalance = ethers.formatEther(bal);
         nativeBalanceSufficient = bal >= ethers.parseEther('0.05');
+
+        // Query Token Balance
+        try {
+          const tokenContract = new ethers.Contract(sepoliaTokenAddress, ERC20_ABI, srcProvider);
+          const rawBal = await tokenContract.balanceOf(signerAddress);
+          const decimals = await tokenContract.decimals();
+          tokenBalance = ethers.formatUnits(rawBal, decimals);
+          tokenBalanceSufficient = rawBal >= ethers.parseUnits('10.0', decimals);
+        } catch {
+          tokenBalance = '0.0';
+          tokenBalanceSufficient = false;
+        }
       }
     } catch {
       signerAddress = null;
     }
   }
 
-  const signerConfigured = signerAddress !== null;
-  const routerStatus = 'DEPLOYMENT_CONFIGURED';
-  const bridgeAvailable = true; // Bridge testnet contract exists on Sepolia (Across SpokePool 0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5)
+  // 4. Source On-Chain Bytecode Verification
+  let tokenBytecodePresent = false;
+  let bridgeBytecodePresent = false;
+  if (srcProvider) {
+    try {
+      const [tokenCode, bridgeCode] = await Promise.all([
+        srcProvider.getCode(sepoliaTokenAddress),
+        srcProvider.getCode(sepoliaBridgeAddress)
+      ]);
+      tokenBytecodePresent = tokenCode !== '0x' && tokenCode !== '0x0';
+      bridgeBytecodePresent = bridgeCode !== '0x' && bridgeCode !== '0x0';
+    } catch {
+      // RPC error
+    }
+  }
 
-  let preflightStatus: 'READY' | 'BLOCKED' = 'BLOCKED';
+  // 5. Destination On-Chain Bytecode Verification
+  let destinationTokenBytecodePresent = false;
+  let destinationBridgeBytecodePresent = false;
+  if (dstProvider) {
+    try {
+      const [dstTokenCode, dstBridgeCode] = await Promise.all([
+        dstProvider.getCode(arbSepoliaTokenAddress),
+        dstProvider.getCode(arbSepoliaBridgeAddress)
+      ]);
+      destinationTokenBytecodePresent = dstTokenCode !== '0x' && dstTokenCode !== '0x0';
+      destinationBridgeBytecodePresent = dstBridgeCode !== '0x' && dstBridgeCode !== '0x0';
+    } catch {
+      // RPC error
+    }
+  }
+
+  const signerPresent = signerAddress !== null;
+  const routerDeploymentStatus = 'DEPLOYMENT_CONFIGURED';
+
+  let preflightStatus: 'READY_FOR_REAL_TESTNET_EXECUTION' | 'BLOCKED' = 'BLOCKED';
   let blockerReason: string | undefined = 'BLOCKED_NO_FUNDED_KEY';
 
-  if (!signerConfigured) {
+  if (!signerPresent) {
     blockerReason = 'BLOCKED_NO_FUNDED_KEY: TESTNET_PRIVATE_KEY environment variable is not configured';
   } else if (!rpcHealthy) {
-    blockerReason = 'BLOCKED_RPC_UNHEALTHY: Could not establish verified connection to primary RPC';
+    blockerReason = 'BLOCKED_RPC_UNHEALTHY: Sepolia RPC endpoints unreachable';
+  } else if (!destinationRpcHealthy) {
+    blockerReason = 'BLOCKED_DESTINATION_RPC_UNHEALTHY: Arbitrum Sepolia RPC unreachable';
   } else if (!nativeBalanceSufficient) {
-    blockerReason = `BLOCKED_INSUFFICIENT_NATIVE_BALANCE: Balance ${nativeBalance} < required 0.05 ${networkConfig.nativeAsset.symbol}`;
+    blockerReason = `BLOCKED_INSUFFICIENT_NATIVE_BALANCE: Balance ${nativeBalance} ETH < required 0.05 ETH`;
+  } else if (!tokenBalanceSufficient) {
+    blockerReason = `BLOCKED_INSUFFICIENT_TOKEN_BALANCE: Balance ${tokenBalance} USDC < required 10.0 USDC`;
+  } else if (routerDeploymentStatus !== 'DEPLOYED_VERIFIED') {
+    blockerReason = 'BLOCKED_ROUTER_NOT_DEPLOYED: ZenithCrossChainRouter pending testnet deployment ceremony';
   } else {
-    preflightStatus = 'READY';
+    preflightStatus = 'READY_FOR_REAL_TESTNET_EXECUTION';
     blockerReason = undefined;
   }
 
   return {
-    network: networkConfig.displayName || networkConfig.canonicalName,
-    chainId: expectedChainId,
+    network: 'Ethereum Sepolia',
+    chainId: sepoliaChainId,
+    rpcEndpointsChecked: SEPOLIA_RPCS,
     rpcHealthy,
-    signerConfigured,
+    signerPresent,
     signerAddress,
-    nativeBalance: `${nativeBalance} ${networkConfig.nativeAsset.symbol}`,
-    requiredNativeBalance: `0.05 ${networkConfig.nativeAsset.symbol}`,
+    nativeBalance: `${nativeBalance} ETH`,
+    requiredNativeBalance: '0.05 ETH',
     nativeBalanceSufficient,
-    tokenBalance: '0.0 USDC',
+    tokenAddress: sepoliaTokenAddress,
+    tokenBalance: `${tokenBalance} USDC`,
     requiredTokenBalance: '10.0 USDC',
-    tokenBalanceSufficient: false,
-    routerStatus,
-    bridgeAvailable,
+    tokenBalanceSufficient,
+    tokenBytecodePresent,
+    bridgeContractAddress: sepoliaBridgeAddress,
+    bridgeBytecodePresent,
+    destinationNetwork: 'Arbitrum Sepolia',
+    destinationChainId: arbSepoliaChainId,
+    destinationRpcHealthy,
+    destinationTokenAddress: arbSepoliaTokenAddress,
+    destinationTokenBytecodePresent,
+    destinationBridgeAddress: arbSepoliaBridgeAddress,
+    destinationBridgeBytecodePresent,
+    routerDeploymentStatus,
     preflightStatus,
     blockerReason,
   };
@@ -132,19 +227,26 @@ export async function runTestnetDiagnostic(targetNetwork = 'sepolia'): Promise<T
 if (process.argv[1]?.includes('diagnose-testnet')) {
   (async () => {
     console.log('============================================================');
-    console.log('   ZENITH PROTOCOL — TESTNET EXECUTION & FUNDING DIAGNOSTIC ');
+    console.log('   ZENITH PROTOCOL — REAL TESTNET READINESS & PREFLIGHT     ');
     console.log('============================================================');
 
-    const diag = await runTestnetDiagnostic('sepolia');
+    const diag = await runTestnetDiagnostic();
 
-    console.log(`Network:                  ${diag.network} (Chain ID: ${diag.chainId})`);
-    console.log(`RPC Health:               ${diag.rpcHealthy ? 'HEALTHY' : 'UNREACHABLE / OFFLINE'}`);
-    console.log(`Signer Configured:        ${diag.signerConfigured ? 'YES' : 'NO'}`);
+    console.log(`Source Network:           ${diag.network} (Chain ID: ${diag.chainId})`);
+    console.log(`Source RPC Health:        ${diag.rpcHealthy ? 'HEALTHY' : 'OFFLINE / UNREACHABLE'}`);
+    console.log(`Destination Network:      ${diag.destinationNetwork} (Chain ID: ${diag.destinationChainId})`);
+    console.log(`Destination RPC Health:   ${diag.destinationRpcHealthy ? 'HEALTHY' : 'OFFLINE / UNREACHABLE'}`);
+    console.log('------------------------------------------------------------');
+    console.log(`Signer Present:           ${diag.signerPresent ? 'YES' : 'NO'}`);
     console.log(`Signer Address:           ${diag.signerAddress || 'NONE'}`);
-    console.log(`Native Balance:           ${diag.nativeBalance}`);
-    console.log(`Required Native Balance:  ${diag.requiredNativeBalance}`);
-    console.log(`Router Deployment Status: ${diag.routerStatus}`);
-    console.log(`Bridge Availability:      ${diag.bridgeAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}`);
+    console.log(`Native Gas Balance:       ${diag.nativeBalance} (Required: >= ${diag.requiredNativeBalance})`);
+    console.log(`Token Balance:            ${diag.tokenBalance} (Required: >= ${diag.requiredTokenBalance})`);
+    console.log('------------------------------------------------------------');
+    console.log(`Source Token (USDC):      ${diag.tokenAddress}`);
+    console.log(`Source Bridge (Across):   ${diag.bridgeContractAddress}`);
+    console.log(`Destination Token (USDC): ${diag.destinationTokenAddress}`);
+    console.log(`Destination Bridge:       ${diag.destinationBridgeAddress}`);
+    console.log(`Router Deployment:        ${diag.routerDeploymentStatus}`);
     console.log('------------------------------------------------------------');
     console.log(`PREFLIGHT STATUS:         ${diag.preflightStatus}`);
     if (diag.blockerReason) {
