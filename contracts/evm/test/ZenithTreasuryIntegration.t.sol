@@ -17,16 +17,19 @@ contract MockWETH is IWETH9 {
     string public name = "Wrapped Ether";
     string public symbol = "WETH";
     uint8 public decimals = 18;
+    uint256 public override totalSupply;
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public override allowance;
 
     function deposit() public payable override {
+        totalSupply += msg.value;
         balanceOf[msg.sender] += msg.value;
     }
 
     function withdraw(uint256 amount) public override {
         require(balanceOf[msg.sender] >= amount, "INSUFFICIENT_WETH");
         balanceOf[msg.sender] -= amount;
+        totalSupply -= amount;
         (bool ok, ) = msg.sender.call{value: amount}("");
         require(ok, "ETH_TRANSFER_FAILED");
     }
@@ -139,7 +142,7 @@ contract ZenithTreasuryIntegrationTest is Test {
         v2Factory = new ZenithV2Factory(governance, address(feeController), address(treasury));
         v2Router = new ZenithV2Router(address(v2Factory), address(weth));
 
-        v3Factory = new ZenithV3Factory(governance, address(feeController));
+        v3Factory = new ZenithV3Factory(governance);
         v3Router = new ZenithV3Router(address(v3Factory), address(weth));
 
         unifiedRouter = new ZenithRouter(

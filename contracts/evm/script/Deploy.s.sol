@@ -15,6 +15,29 @@ import {ZenithCrossChainRouter} from "../src/ZenithCrossChainRouter.sol";
 import {ZenithCircuitBreaker} from "../src/ZenithCircuitBreaker.sol";
 
 contract DeployZenith is Script {
+    struct DeploymentConfig {
+        uint256 deployerPrivateKey;
+        address governance;
+        address emergencyGuardian;
+        address wethAddress;
+        address permit2Address;
+    }
+
+    struct DeployedContracts {
+        address treasuryAddr;
+        address feeControllerAddr;
+        address circuitBreakerAddr;
+        address v1FactoryAddr;
+        address v1RouterAddr;
+        address v2FactoryAddr;
+        address v2RouterAddr;
+        address v3FactoryAddr;
+        address v3RouterAddr;
+        address v3PositionManagerAddr;
+        address unifiedRouterAddr;
+        address crossChainRouterAddr;
+    }
+
     function run() external returns (
         address treasuryAddr,
         address feeControllerAddr,
@@ -29,100 +52,134 @@ contract DeployZenith is Script {
         address unifiedRouterAddr,
         address crossChainRouterAddr
     ) {
-        require(block.chainid != 0, "DeployZenith: Invalid chainId");
-
-        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        require(deployerPrivateKey != 0, "DeployZenith: DEPLOYER_PRIVATE_KEY required");
-
-        address governance = vm.envAddress("GOVERNANCE_MULTISIG");
-        require(governance != address(0), "DeployZenith: GOVERNANCE_MULTISIG cannot be zero address");
-
-        address emergencyGuardian = vm.envAddress("EMERGENCY_GUARDIAN");
-        require(emergencyGuardian != address(0), "DeployZenith: EMERGENCY_GUARDIAN cannot be zero address");
-
-        address wethAddress = vm.envAddress("WETH_ADDRESS");
-        require(wethAddress != address(0), "DeployZenith: WETH_ADDRESS cannot be zero address");
-
-        address permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
-        require(permit2Address != address(0), "DeployZenith: PERMIT2_ADDRESS cannot be zero address");
-
-        console.log("=== Deploying ZENITH SWAP Canonical Protocol Suite ===");
-        console.log("Chain ID:           ", block.chainid);
-        console.log("Governance:         ", governance);
-        console.log("Emergency Guardian: ", emergencyGuardian);
-        console.log("WETH Address:       ", wethAddress);
-        console.log("Permit2 Address:    ", permit2Address);
-
-        vm.startBroadcast(deployerPrivateKey);
-
-        ZenithTreasury treasury = new ZenithTreasury(governance);
-        treasuryAddr = address(treasury);
-        console.log("1. ZenithTreasury:          ", treasuryAddr);
-
-        ZenithCircuitBreaker circuitBreaker = new ZenithCircuitBreaker(governance, emergencyGuardian);
-        circuitBreakerAddr = address(circuitBreaker);
-        console.log("2. ZenithCircuitBreaker:     ", circuitBreakerAddr);
-
-        ZenithFeeController feeController = new ZenithFeeController(governance, treasuryAddr);
-        feeControllerAddr = address(feeController);
-        console.log("3. ZenithFeeController:      ", feeControllerAddr);
-
-        ZenithV1Factory v1Factory = new ZenithV1Factory(governance, treasuryAddr);
-        v1FactoryAddr = address(v1Factory);
-        ZenithV1Router v1Router = new ZenithV1Router(v1FactoryAddr, wethAddress);
-        v1RouterAddr = address(v1Router);
-        console.log("4. ZenithV1Factory:          ", v1FactoryAddr);
-        console.log("5. ZenithV1Router:           ", v1RouterAddr);
-
-        ZenithV2Factory v2Factory = new ZenithV2Factory(governance, feeControllerAddr, treasuryAddr);
-        v2FactoryAddr = address(v2Factory);
-        ZenithV2Router v2Router = new ZenithV2Router(v2FactoryAddr, wethAddress);
-        v2RouterAddr = address(v2Router);
-        console.log("6. ZenithV2Factory:          ", v2FactoryAddr);
-        console.log("7. ZenithV2Router:           ", v2RouterAddr);
-
-        ZenithV3Factory v3Factory = new ZenithV3Factory(governance);
-        v3FactoryAddr = address(v3Factory);
-        ZenithV3Router v3Router = new ZenithV3Router(v3FactoryAddr, wethAddress);
-        v3RouterAddr = address(v3Router);
-        ZenithV3PositionManager v3PositionManager = new ZenithV3PositionManager(v3FactoryAddr, wethAddress);
-        v3PositionManagerAddr = address(v3PositionManager);
-        console.log("8. ZenithV3Factory:          ", v3FactoryAddr);
-        console.log("9. ZenithV3Router:           ", v3RouterAddr);
-        console.log("10. ZenithV3PositionManager: ", v3PositionManagerAddr);
-
-        ZenithRouter unifiedRouter = new ZenithRouter(
-            governance,
-            wethAddress,
-            treasuryAddr,
-            feeControllerAddr,
-            v1RouterAddr,
-            v2RouterAddr,
-            v3RouterAddr
+        DeployedContracts memory d = _executeDeployment();
+        return (
+            d.treasuryAddr,
+            d.feeControllerAddr,
+            d.circuitBreakerAddr,
+            d.v1FactoryAddr,
+            d.v1RouterAddr,
+            d.v2FactoryAddr,
+            d.v2RouterAddr,
+            d.v3FactoryAddr,
+            d.v3RouterAddr,
+            d.v3PositionManagerAddr,
+            d.unifiedRouterAddr,
+            d.crossChainRouterAddr
         );
-        unifiedRouterAddr = address(unifiedRouter);
-        console.log("11. ZenithUnifiedRouter:    ", unifiedRouterAddr);
+    }
 
-        ZenithCrossChainRouter crossChainRouter = new ZenithCrossChainRouter(
-            governance,
-            treasuryAddr,
-            feeControllerAddr,
-            circuitBreakerAddr,
-            permit2Address
-        );
-        crossChainRouterAddr = address(crossChainRouter);
-        console.log("12. ZenithCrossChainRouter: ", crossChainRouterAddr);
+    function _executeDeployment() internal returns (DeployedContracts memory d) {
+        DeploymentConfig memory cfg = _loadConfig();
+        _logDeploymentStart(cfg);
 
-        // Post-Deployment Authorizations
-        treasury.setFeeCollector(unifiedRouterAddr, true);
-        treasury.setFeeCollector(crossChainRouterAddr, true);
-        feeController.setFeeCollector(unifiedRouterAddr, true);
-        feeController.setFeeCollector(crossChainRouterAddr, true);
-        console.log("13. Post-Deployment Authorizations Wired Successfully");
+        vm.startBroadcast(cfg.deployerPrivateKey);
+
+        _deployCore(cfg, d);
+        _deployV1(cfg, d);
+        _deployV2(cfg, d);
+        _deployV3(cfg, d);
+        _deployRouters(cfg, d);
+        _wireAuthorizations(d);
 
         vm.stopBroadcast();
 
         console.log("=== Canonical Deployment Complete ===");
     }
-}
 
+    function _loadConfig() internal view returns (DeploymentConfig memory cfg) {
+        require(block.chainid != 0, "DeployZenith: Invalid chainId");
+
+        cfg.deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        require(cfg.deployerPrivateKey != 0, "DeployZenith: DEPLOYER_PRIVATE_KEY required");
+
+        cfg.governance = vm.envAddress("GOVERNANCE_MULTISIG");
+        require(cfg.governance != address(0), "DeployZenith: GOVERNANCE_MULTISIG cannot be zero address");
+
+        cfg.emergencyGuardian = vm.envAddress("EMERGENCY_GUARDIAN");
+        require(cfg.emergencyGuardian != address(0), "DeployZenith: EMERGENCY_GUARDIAN cannot be zero address");
+
+        cfg.wethAddress = vm.envAddress("WETH_ADDRESS");
+        require(cfg.wethAddress != address(0), "DeployZenith: WETH_ADDRESS cannot be zero address");
+
+        cfg.permit2Address = vm.envOr("PERMIT2_ADDRESS", address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
+        require(cfg.permit2Address != address(0), "DeployZenith: PERMIT2_ADDRESS cannot be zero address");
+    }
+
+    function _logDeploymentStart(DeploymentConfig memory cfg) internal view {
+        console.log("=== Deploying ZENITH SWAP Canonical Protocol Suite ===");
+        console.log("Chain ID:           ", block.chainid);
+        console.log("Governance:         ", cfg.governance);
+        console.log("Emergency Guardian: ", cfg.emergencyGuardian);
+        console.log("WETH Address:       ", cfg.wethAddress);
+        console.log("Permit2 Address:    ", cfg.permit2Address);
+    }
+
+    function _deployCore(DeploymentConfig memory cfg, DeployedContracts memory d) internal {
+        d.treasuryAddr = address(new ZenithTreasury(cfg.governance));
+        console.log("1. ZenithTreasury:          ", d.treasuryAddr);
+
+        d.circuitBreakerAddr = address(new ZenithCircuitBreaker(cfg.governance, cfg.emergencyGuardian));
+        console.log("2. ZenithCircuitBreaker:     ", d.circuitBreakerAddr);
+
+        d.feeControllerAddr = address(new ZenithFeeController(cfg.governance, d.treasuryAddr));
+        console.log("3. ZenithFeeController:      ", d.feeControllerAddr);
+    }
+
+    function _deployV1(DeploymentConfig memory cfg, DeployedContracts memory d) internal {
+        d.v1FactoryAddr = address(new ZenithV1Factory(cfg.governance, d.treasuryAddr));
+        d.v1RouterAddr = address(new ZenithV1Router(d.v1FactoryAddr, cfg.wethAddress));
+        console.log("4. ZenithV1Factory:          ", d.v1FactoryAddr);
+        console.log("5. ZenithV1Router:           ", d.v1RouterAddr);
+    }
+
+    function _deployV2(DeploymentConfig memory cfg, DeployedContracts memory d) internal {
+        d.v2FactoryAddr = address(new ZenithV2Factory(cfg.governance, d.feeControllerAddr, d.treasuryAddr));
+        d.v2RouterAddr = address(new ZenithV2Router(d.v2FactoryAddr, cfg.wethAddress));
+        console.log("6. ZenithV2Factory:          ", d.v2FactoryAddr);
+        console.log("7. ZenithV2Router:           ", d.v2RouterAddr);
+    }
+
+    function _deployV3(DeploymentConfig memory cfg, DeployedContracts memory d) internal {
+        d.v3FactoryAddr = address(new ZenithV3Factory(cfg.governance));
+        d.v3RouterAddr = address(new ZenithV3Router(d.v3FactoryAddr, cfg.wethAddress));
+        d.v3PositionManagerAddr = address(new ZenithV3PositionManager(d.v3FactoryAddr, cfg.wethAddress));
+        console.log("8. ZenithV3Factory:          ", d.v3FactoryAddr);
+        console.log("9. ZenithV3Router:           ", d.v3RouterAddr);
+        console.log("10. ZenithV3PositionManager: ", d.v3PositionManagerAddr);
+    }
+
+    function _deployRouters(DeploymentConfig memory cfg, DeployedContracts memory d) internal {
+        d.unifiedRouterAddr = address(
+            new ZenithRouter(
+                cfg.governance,
+                cfg.wethAddress,
+                d.treasuryAddr,
+                d.feeControllerAddr,
+                d.v1RouterAddr,
+                d.v2RouterAddr,
+                d.v3RouterAddr
+            )
+        );
+        console.log("11. ZenithUnifiedRouter:    ", d.unifiedRouterAddr);
+
+        d.crossChainRouterAddr = address(
+            new ZenithCrossChainRouter(
+                cfg.governance,
+                d.treasuryAddr,
+                d.feeControllerAddr,
+                d.circuitBreakerAddr,
+                cfg.permit2Address
+            )
+        );
+        console.log("12. ZenithCrossChainRouter: ", d.crossChainRouterAddr);
+    }
+
+    function _wireAuthorizations(DeployedContracts memory d) internal {
+        ZenithTreasury(payable(d.treasuryAddr)).setFeeCollector(d.unifiedRouterAddr, true);
+        ZenithTreasury(payable(d.treasuryAddr)).setFeeCollector(d.crossChainRouterAddr, true);
+        ZenithFeeController(d.feeControllerAddr).setFeeCollector(d.unifiedRouterAddr, true);
+        ZenithFeeController(d.feeControllerAddr).setFeeCollector(d.crossChainRouterAddr, true);
+        console.log("13. Post-Deployment Authorizations Wired Successfully");
+    }
+}

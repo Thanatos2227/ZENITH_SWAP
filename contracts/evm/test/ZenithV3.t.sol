@@ -94,7 +94,7 @@ contract ZenithV3Test is Test {
     function setUp() public {
         treasury = new ZenithTreasury(governance);
         feeController = new ZenithFeeController(governance, address(treasury));
-        factory = new ZenithV3Factory(governance, address(feeController));
+        factory = new ZenithV3Factory(governance);
         weth = new MockWETHV3();
         positionManager = new ZenithV3PositionManager(address(factory), address(weth));
         router = new ZenithV3Router(address(factory), address(weth));

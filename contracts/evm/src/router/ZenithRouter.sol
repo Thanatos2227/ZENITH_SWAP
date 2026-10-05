@@ -118,48 +118,11 @@ contract ZenithRouter {
         }
 
         if (params.protocol == ProtocolTier.ZENITH_V1 || (params.protocol == ProtocolTier.AUTO && address(v1Router) != address(0))) {
-            _safeApprove(actualTokenIn, address(v1Router), swapAmountIn);
-            address[] memory path = new address[](2);
-            path[0] = actualTokenIn;
-            path[1] = params.tokenOut;
-            uint256[] memory amounts = v1Router.swapExactTokensForTokens(
-                swapAmountIn,
-                params.amountOutMinimum,
-                path,
-                params.recipient,
-                params.deadline
-            );
-            amountOut = amounts[1];
+            amountOut = _swapV1(actualTokenIn, params.tokenOut, swapAmountIn, params.amountOutMinimum, params.recipient, params.deadline);
         } else if (params.protocol == ProtocolTier.ZENITH_V2) {
-            _safeApprove(actualTokenIn, address(v2Router), swapAmountIn);
-            address[] memory path = new address[](2);
-            path[0] = actualTokenIn;
-            path[1] = params.tokenOut;
-            uint24[] memory feePath = new uint24[](1);
-            feePath[0] = params.feeTier > 0 ? params.feeTier : 30;
-            uint256[] memory amounts = v2Router.swapExactTokensForTokens(
-                swapAmountIn,
-                params.amountOutMinimum,
-                path,
-                feePath,
-                params.recipient,
-                params.deadline
-            );
-            amountOut = amounts[1];
+            amountOut = _swapV2(actualTokenIn, params.tokenOut, params.feeTier, swapAmountIn, params.amountOutMinimum, params.recipient, params.deadline);
         } else if (params.protocol == ProtocolTier.ZENITH_V3) {
-            _safeApprove(actualTokenIn, address(v3Router), swapAmountIn);
-            amountOut = v3Router.exactInputSingle(
-                ZenithV3Router.ExactInputSingleParams({
-                    tokenIn: actualTokenIn,
-                    tokenOut: params.tokenOut,
-                    fee: params.feeTier > 0 ? params.feeTier : 3000,
-                    recipient: params.recipient,
-                    deadline: params.deadline,
-                    amountIn: swapAmountIn,
-                    amountOutMinimum: params.amountOutMinimum,
-                    sqrtPriceLimitX96: 0
-                })
-            );
+            amountOut = _swapV3(actualTokenIn, params.tokenOut, params.feeTier, swapAmountIn, params.amountOutMinimum, params.recipient, params.deadline);
         } else {
             revert("ZenithRouter: UNSUPPORTED_PROTOCOL");
         }
@@ -175,6 +138,78 @@ contract ZenithRouter {
             params.amountIn,
             amountOut,
             protocolFee
+        );
+    }
+
+    function _swapV1(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) private returns (uint256) {
+        _safeApprove(tokenIn, address(v1Router), amountIn);
+        address[] memory path = new address[](2);
+        path[0] = tokenIn;
+        path[1] = tokenOut;
+        uint256[] memory amounts = v1Router.swapExactTokensForTokens(
+            amountIn,
+            amountOutMinimum,
+            path,
+            recipient,
+            deadline
+        );
+        return amounts[1];
+    }
+
+    function _swapV2(
+        address tokenIn,
+        address tokenOut,
+        uint24 feeTier,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) private returns (uint256) {
+        _safeApprove(tokenIn, address(v2Router), amountIn);
+        address[] memory path = new address[](2);
+        path[0] = tokenIn;
+        path[1] = tokenOut;
+        uint24[] memory feePath = new uint24[](1);
+        feePath[0] = feeTier > 0 ? feeTier : 30;
+        uint256[] memory amounts = v2Router.swapExactTokensForTokens(
+            amountIn,
+            amountOutMinimum,
+            path,
+            feePath,
+            recipient,
+            deadline
+        );
+        return amounts[1];
+    }
+
+    function _swapV3(
+        address tokenIn,
+        address tokenOut,
+        uint24 feeTier,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) private returns (uint256) {
+        _safeApprove(tokenIn, address(v3Router), amountIn);
+        return v3Router.exactInputSingle(
+            ZenithV3Router.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: feeTier > 0 ? feeTier : 3000,
+                recipient: recipient,
+                deadline: deadline,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: 0
+            })
         );
     }
 
