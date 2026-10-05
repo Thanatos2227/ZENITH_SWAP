@@ -153,16 +153,22 @@ contract ZenithV3TickMathFuzzTest is Test {
         uint256 amountIn,
         bool zeroForOne
     ) public pure {
-        sqrtP = uint160(bound(uint256(sqrtP), uint256(MIN_SQRT_RATIO) + 1000, uint256(MAX_SQRT_RATIO) - 1000));
+        sqrtP = uint160(bound(uint256(sqrtP), uint256(MIN_SQRT_RATIO), uint256(MAX_SQRT_RATIO) - 1));
         liquidity = uint128(bound(uint256(liquidity), 1e8, 1e26));
-        amountIn = bound(amountIn, 1, 1e24);
-
-        uint160 nextSqrtP = SqrtPriceMath.getNextSqrtPriceFromInput(sqrtP, liquidity, amountIn, zeroForOne);
 
         if (zeroForOne) {
+            amountIn = bound(amountIn, 0, 1e28);
+            uint160 nextSqrtP = SqrtPriceMath.getNextSqrtPriceFromInput(sqrtP, liquidity, amountIn, true);
             assertTrue(nextSqrtP <= sqrtP, "zeroForOne swap must not increase sqrtPrice");
         } else {
-            assertTrue(nextSqrtP >= sqrtP, "oneForZero swap must not decrease sqrtPrice");
+            // When zeroForOne == false, price increases by (amountIn << 96) / liquidity.
+            // For nextSqrtP to not exceed MAX_SQRT_RATIO (uint160.max), amountIn must be bounded by available price headroom.
+            uint256 maxAmountIn = FullMath.mulDiv(uint256(MAX_SQRT_RATIO) - sqrtP, liquidity, 1 << 96);
+            if (maxAmountIn > 0) {
+                amountIn = bound(amountIn, 0, maxAmountIn);
+                uint160 nextSqrtP = SqrtPriceMath.getNextSqrtPriceFromInput(sqrtP, liquidity, amountIn, false);
+                assertTrue(nextSqrtP >= sqrtP, "oneForZero swap must not decrease sqrtPrice");
+            }
         }
     }
 
