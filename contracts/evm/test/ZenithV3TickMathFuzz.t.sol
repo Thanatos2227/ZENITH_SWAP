@@ -61,7 +61,9 @@ contract ZenithV3TickMathFuzzTest is Test {
     }
 
     function testFuzz_roundTrip_tickToSqrtRatioToTick(int24 tick) public pure {
-        tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK)));
+        // Valid interior ticks for tick -> sqrtRatio -> getTickAtSqrtRatio round-trip are [MIN_TICK, MAX_TICK - 1].
+        // MAX_TICK corresponds to MAX_SQRT_RATIO, which is the exclusive upper bound for getTickAtSqrtRatio.
+        tick = int24(bound(int256(tick), int256(MIN_TICK), int256(MAX_TICK - 1)));
 
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(tick);
         int24 recoveredTick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
