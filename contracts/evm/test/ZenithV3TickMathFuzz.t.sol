@@ -19,6 +19,14 @@ contract ZenithV3TickMathFuzzTest is Test {
         return TickMath.getSqrtRatioAtTick(tick);
     }
 
+    function callGetTickAtSqrtRatio(uint160 sqrtPriceX96)
+        external
+        pure
+        returns (int24)
+    {
+        return TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+    }
+
     function test_boundary_minMaxTicksExact() public pure {
         uint160 sqrtAtMin = TickMath.getSqrtRatioAtTick(MIN_TICK);
         uint160 sqrtAtZero = TickMath.getSqrtRatioAtTick(0);
@@ -87,7 +95,7 @@ contract ZenithV3TickMathFuzzTest is Test {
         if (rawTick >= type(int24).min && rawTick <= type(int24).max) {
             int24 tick = int24(rawTick);
             vm.expectRevert("TickMath: T_BOUND");
-            TickMath.getSqrtRatioAtTick(tick);
+            this.callGetSqrtRatioAtTick(tick);
         }
     }
 
@@ -97,7 +105,7 @@ contract ZenithV3TickMathFuzzTest is Test {
         if (rawSqrtPrice <= type(uint160).max) {
             uint160 sqrtPrice = uint160(rawSqrtPrice);
             vm.expectRevert("TickMath: R_BOUND");
-            TickMath.getTickAtSqrtRatio(sqrtPrice);
+            this.callGetTickAtSqrtRatio(sqrtPrice);
         }
     }
 
@@ -139,6 +147,10 @@ contract ZenithV3TickMathFuzzTest is Test {
             assertEq(amount1Down, 0, "Zero delta on equal prices or zero liquidity");
             assertEq(amount1Up, 0, "Zero delta on equal prices or zero liquidity");
         }
+    }
+
+    function test_reproduce_failure() public pure {
+        testFuzz_getNextSqrtPriceFromInput_direction(10050, 1, 340146287995602323631171512101879684304, false);
     }
 
     function testFuzz_getNextSqrtPriceFromInput_direction(
