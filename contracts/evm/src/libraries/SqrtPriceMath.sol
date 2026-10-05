@@ -72,10 +72,7 @@ library SqrtPriceMath {
         uint256 numerator1 = uint256(liquidity) << 96;
 
         if (add) {
-            uint256 product;
-            unchecked {
-                product = amount * sqrtPX96;
-            }
+            uint256 product = amount * sqrtPX96;
             if (product / amount == sqrtPX96) {
                 uint256 denominator = numerator1 + product;
                 if (denominator >= numerator1) {
@@ -84,10 +81,7 @@ library SqrtPriceMath {
             }
             return uint160(FullMath.mulDivRoundingUp(numerator1, 1, (numerator1 / sqrtPX96) + amount));
         } else {
-            uint256 product;
-            unchecked {
-                product = amount * sqrtPX96;
-            }
+            uint256 product = amount * sqrtPX96;
             require(product / amount == sqrtPX96 && numerator1 > product, "SqrtPriceMath: UNDERFLOW0");
             uint256 denominator = numerator1 - product;
             return uint160(FullMath.mulDivRoundingUp(numerator1, sqrtPX96, denominator));
