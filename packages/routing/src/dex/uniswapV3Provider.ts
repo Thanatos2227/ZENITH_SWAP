@@ -54,7 +54,8 @@ export class UniswapV3Provider implements DEXProvider {
                 gasCostUSD: 0.05,
                 quoteTimestamp,
                 expiration: quoteTimestamp + 15000,
-                routePath: [params.tokenIn.address, params.tokenOut.address]
+                routePath: [params.tokenIn.address, params.tokenOut.address],
+                liquiditySource: calculated.liquiditySource
             };
         }
         catch {

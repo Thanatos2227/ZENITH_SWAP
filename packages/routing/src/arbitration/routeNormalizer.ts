@@ -37,7 +37,9 @@ export class RouteNormalizer {
         }
         const quotedAt = quote.quoteTimestamp || Date.now();
         const expiresAt = quote.expiration || (quotedAt + 15000);
-        const cap = CrossChainProviderCapabilityMatrix.getCapability(quote.provider, sourceChainId, destinationChainId, sourceToken.symbol, destinationToken.symbol);
+        const bridgeSrcSym = quoteAny.sourceConnectorToken?.symbol || sourceToken.symbol;
+        const bridgeDstSym = quoteAny.destConnectorToken?.symbol || destinationToken.symbol;
+        const cap = CrossChainProviderCapabilityMatrix.getCapability(quote.provider, sourceChainId, destinationChainId, bridgeSrcSym, bridgeDstSym);
         const capabilityLevel = cap.capabilityLevel || 'UNSUPPORTED';
         const routeId = (quote as any).routeIdentifier || `route-${quote.provider.toLowerCase()}-${sourceChainId}-${destinationChainId}`;
         return {
@@ -127,7 +129,10 @@ export class RouteNormalizer {
             }
             quotedAt = ccQuote.quoteTimestamp || Date.now();
             expiresAt = ccQuote.expiration || (quotedAt + 15000);
-            const cap = CrossChainProviderCapabilityMatrix.getCapability(ccQuote.provider, sourceChainId, destinationChainId, sourceToken.symbol, destinationToken.symbol);
+            const quoteAny = ccQuote as any;
+            const bridgeSrcSym = quoteAny.sourceConnectorToken?.symbol || sourceToken.symbol;
+            const bridgeDstSym = quoteAny.destConnectorToken?.symbol || destinationToken.symbol;
+            const cap = CrossChainProviderCapabilityMatrix.getCapability(ccQuote.provider, sourceChainId, destinationChainId, bridgeSrcSym, bridgeDstSym);
             capabilityLevel = cap.capabilityLevel || 'UNSUPPORTED';
             if (ccQuote.isExecutable !== undefined) {
                 isExecutable = Boolean(ccQuote.isExecutable);

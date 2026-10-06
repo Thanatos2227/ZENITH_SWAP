@@ -48,9 +48,11 @@ export class AcrossProvider implements CrossChainProvider {
     if (!isAcrossSupported(src.chainId) || !isAcrossSupported(dst.chainId)) return false;
 
     if (tokenIn && tokenOut) {
-      if (tokenIn.symbol.toUpperCase() !== tokenOut.symbol.toUpperCase()) {
+      const symIn = (tokenIn.symbol || '').toUpperCase().replace(/^W/, '');
+      const symOut = (tokenOut.symbol || '').toUpperCase().replace(/^W/, '');
+      if (symIn !== symOut) {
         const isUsd = (s: string) => s.startsWith('USD');
-        if (!isUsd(tokenIn.symbol) || !isUsd(tokenOut.symbol)) {
+        if (!isUsd(symIn) || !isUsd(symOut)) {
           return false;
         }
       }
@@ -78,6 +80,17 @@ export class AcrossProvider implements CrossChainProvider {
     const validatedInputToken = validateTokenAddress(request.tokenIn.address, srcChain.id, request.tokenIn.isNative);
     const validatedOutputToken = validateTokenAddress(request.tokenOut.address, dstChain.id, request.tokenOut.isNative);
 
+    const isSrcNative = isNativeToken(request.tokenIn.address) || Boolean(request.tokenIn.isNative);
+    const isDstNative = isNativeToken(request.tokenOut.address) || Boolean(request.tokenOut.isNative);
+
+    const acrossInputToken = isSrcNative
+      ? (request.tokenIn.wrappedAddress || (srcChain.nativeCurrency as any)?.wrappedAddress || validatedInputToken)
+      : validatedInputToken;
+
+    const acrossOutputToken = isDstNative
+      ? (request.tokenOut.wrappedAddress || (dstChain.nativeCurrency as any)?.wrappedAddress || validatedOutputToken)
+      : validatedOutputToken;
+
     let destinationAmountBig = amountInBig;
     let bridgeFeeUSD = 0;
     let relayerFeePctStr = '0.05%';
@@ -102,7 +115,7 @@ export class AcrossProvider implements CrossChainProvider {
       dstChain.chainId === 11155420
     );
     const apiBase = isTestnet ? 'https://testnet.across.to/api' : 'https://app.across.to/api';
-    const url = `${apiBase}/suggested-fees?inputToken=${validatedInputToken}&outputToken=${validatedOutputToken}&originChainId=${srcChain.chainId}&destinationChainId=${dstChain.chainId}&amount=${amountInBig.toString()}${recipient ? `&recipient=${recipient}` : ''}`;
+    const url = `${apiBase}/suggested-fees?inputToken=${acrossInputToken}&outputToken=${acrossOutputToken}&originChainId=${srcChain.chainId}&destinationChainId=${dstChain.chainId}&amount=${amountInBig.toString()}${recipient ? `&recipient=${recipient}` : ''}`;
 
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
@@ -132,12 +145,39 @@ export class AcrossProvider implements CrossChainProvider {
               timestamp: Date.now()
             };
           }
+        } else {
+          quoteDiagnostic = {
+            code: 'MALFORMED_RESPONSE',
+            message: 'Across API returned 200 OK but totalRelayFee is missing from response payload.',
+            severity: 'WARNING',
+            providerId: 'ACROSS',
+            timestamp: Date.now()
+          };
         }
       } else {
-        const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(res.statusText, res.status);
+        let providerErrorMsg = '';
+        let providerErrorPayload: any = null;
+        try {
+          const bodyText = await res.text();
+          try {
+            providerErrorPayload = JSON.parse(bodyText);
+            providerErrorMsg = providerErrorPayload.message || providerErrorPayload.error || providerErrorPayload.errorMessage || bodyText;
+          } catch {
+            providerErrorMsg = bodyText;
+          }
+        } catch {
+          providerErrorMsg = res.statusText;
+        }
+
+        const normalizedCode = defaultQuoteDiagnosticLogger.normalizeErrorCode(
+          providerErrorMsg || res.statusText,
+          res.status,
+          providerErrorPayload
+        );
+        const detailSuffix = providerErrorMsg ? ` (${providerErrorMsg})` : (res.statusText ? `: ${res.statusText}` : '');
         quoteDiagnostic = {
           code: normalizedCode,
-          message: `Across API returned HTTP ${res.status}: ${res.statusText}`,
+          message: `Across API returned HTTP ${res.status}${detailSuffix}`,
           severity: 'WARNING',
           providerId: 'ACROSS',
           timestamp: Date.now()
@@ -179,18 +219,17 @@ export class AcrossProvider implements CrossChainProvider {
     const minDestinationAmountBig = (destinationAmountBig * slippageMultiplier) / 10000n;
 
     const gasEstimateUSD = defaultChainRegistry.getEstimatedGasCostUSD(srcChain.id, 'BRIDGE', request.gasPreset);
-    const isNative = isNativeToken(request.tokenIn.address) || Boolean(request.tokenIn.isNative);
-    const value = isNative ? amountInBig.toString() : '0';
+    const value = isSrcNative ? amountInBig.toString() : '0';
 
     let calldata = '0x';
-    if (recipient) {
+    if (recipient && isLiveQuote) {
       try {
         const safeRecipient = validateRecipientAddress(recipient, srcChain.id);
         calldata = spokePoolInterface.encodeFunctionData('depositV3', [
           safeRecipient.toLowerCase(),
           safeRecipient.toLowerCase(),
-          validatedInputToken.toLowerCase(),
-          validatedOutputToken.toLowerCase(),
+          acrossInputToken.toLowerCase(),
+          acrossOutputToken.toLowerCase(),
           amountInBig,
           minDestinationAmountBig,
           dstChain.chainId!,
@@ -231,7 +270,7 @@ export class AcrossProvider implements CrossChainProvider {
       protocolTimestampSec,
       estimatedTransferTimeSec: estTransferTimeSec,
       securityRating: 'A+',
-      isExecutable: isLiveQuote,
+      isExecutable: isLiveQuote && calldata !== '0x',
       unexecutableReason: !isLiveQuote ? (quoteDiagnostic?.code || 'PROVIDER_UNAVAILABLE') : undefined,
       diagnostics
     };
@@ -289,6 +328,17 @@ export class AcrossProvider implements CrossChainProvider {
     const safeInputToken = validateTokenAddress(quote.sourceToken.address, srcChain.id, quote.sourceToken.isNative);
     const safeOutputToken = validateTokenAddress(quote.destinationToken.address, dstChain.id, quote.destinationToken.isNative);
 
+    const isSrcNative = isNativeToken(quote.sourceToken.address) || Boolean(quote.sourceToken.isNative);
+    const isDstNative = isNativeToken(quote.destinationToken.address) || Boolean(quote.destinationToken.isNative);
+
+    const acrossInputToken = isSrcNative
+      ? (quote.sourceToken.wrappedAddress || (srcChain.nativeCurrency as any)?.wrappedAddress || safeInputToken)
+      : safeInputToken;
+
+    const acrossOutputToken = isDstNative
+      ? (quote.destinationToken.wrappedAddress || (dstChain.nativeCurrency as any)?.wrappedAddress || safeOutputToken)
+      : safeOutputToken;
+
     let exclusiveRelayer = ZERO_ADDRESS;
     let protocolTimestampSec = quote.protocolTimestampSec;
     let fillDeadlineSec: number | undefined;
@@ -318,8 +368,8 @@ export class AcrossProvider implements CrossChainProvider {
     const data = spokePoolInterface.encodeFunctionData('depositV3', [
       safeUser.toLowerCase(),
       safeRecipient.toLowerCase(),
-      safeInputToken.toLowerCase(),
-      safeOutputToken.toLowerCase(),
+      acrossInputToken.toLowerCase(),
+      acrossOutputToken.toLowerCase(),
       BigInt(quote.sourceAmountRaw),
       BigInt(quote.minDestinationAmountRaw),
       dstChain.chainId,
@@ -330,13 +380,11 @@ export class AcrossProvider implements CrossChainProvider {
       '0x'
     ]);
 
-    const isNative = isNativeToken(quote.sourceToken.address) || Boolean(quote.sourceToken.isNative);
-
     return {
       to: spokePool,
       data,
       calldata: data,
-      value: isNative ? quote.sourceAmountRaw : '0',
+      value: isSrcNative ? quote.sourceAmountRaw : '0',
       chainId: srcChain.chainId,
       approvalTarget: spokePool,
       requiredAllowanceRaw: quote.sourceAmountRaw,

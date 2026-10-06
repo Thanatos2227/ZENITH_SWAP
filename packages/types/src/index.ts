@@ -225,6 +225,7 @@ export interface DEXQuote {
     expiration: number;
     routePath?: string[];
     execution?: DEXExecution;
+    liquiditySource?: 'LIVE_ON_CHAIN' | 'LIVE_RPC' | 'SIMULATION' | 'TEST_FIXTURE';
 }
 export interface DEXQuoteParams {
     chainId: number;

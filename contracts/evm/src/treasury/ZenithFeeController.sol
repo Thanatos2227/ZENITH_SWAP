@@ -49,53 +49,78 @@ contract ZenithFeeController is IZenithFeeController {
         emit V3FeeTierConfigured(feeTier, tickSpacing, true);
     }
 
-    function calculateProtocolFee(uint256 amount) public view override returns (uint256 feeAmount) {
+    function calculateProtocolFee(
+        uint256 amount
+    ) public view override returns (uint256 feeAmount) {
         return (amount * protocolFeeBps) / 10000;
     }
 
-    function calculateCrossChainFee(uint256 amount) public view override returns (uint256 feeAmount) {
+    function calculateCrossChainFee(
+        uint256 amount
+    ) public view override returns (uint256 feeAmount) {
         return (amount * crossChainFeeBps) / 10000;
     }
 
-    function setProtocolFeeBps(uint256 _newFeeBps) external override onlyGovernance {
-        if (_newFeeBps > MAX_PROTOCOL_FEE_BPS) revert FeeExceedsMaxCeiling(_newFeeBps, MAX_PROTOCOL_FEE_BPS);
+    function setProtocolFeeBps(
+        uint256 _newFeeBps
+    ) external override onlyGovernance {
+        if (_newFeeBps > MAX_PROTOCOL_FEE_BPS)
+            revert FeeExceedsMaxCeiling(_newFeeBps, MAX_PROTOCOL_FEE_BPS);
         emit ProtocolFeeUpdated(protocolFeeBps, _newFeeBps);
         protocolFeeBps = _newFeeBps;
     }
 
-    function setCrossChainFeeBps(uint256 _newFeeBps) external override onlyGovernance {
-        if (_newFeeBps > MAX_CROSS_CHAIN_FEE_BPS) revert FeeExceedsMaxCeiling(_newFeeBps, MAX_CROSS_CHAIN_FEE_BPS);
+    function setCrossChainFeeBps(
+        uint256 _newFeeBps
+    ) external override onlyGovernance {
+        if (_newFeeBps > MAX_CROSS_CHAIN_FEE_BPS)
+            revert FeeExceedsMaxCeiling(_newFeeBps, MAX_CROSS_CHAIN_FEE_BPS);
         emit CrossChainFeeUpdated(crossChainFeeBps, _newFeeBps);
         crossChainFeeBps = _newFeeBps;
     }
 
-    function setV1TotalFeeBps(uint256 _newFeeBps) external override onlyGovernance {
+    function setV1TotalFeeBps(
+        uint256 _newFeeBps
+    ) external override onlyGovernance {
         if (_newFeeBps > 1000) revert FeeExceedsMaxCeiling(_newFeeBps, 1000);
         emit V1TotalFeeUpdated(v1TotalFeeBps, _newFeeBps);
         v1TotalFeeBps = _newFeeBps;
     }
 
-    function setTreasury(address _newTreasury) external override onlyGovernance {
+    function setTreasury(
+        address _newTreasury
+    ) external override onlyGovernance {
         if (_newTreasury == address(0)) revert ZeroAddress();
         emit TreasuryUpdated(treasury, _newTreasury);
         treasury = _newTreasury;
     }
 
-    function setFeeCollector(address collector, bool authorized) external override onlyGovernance {
+    function setFeeCollector(
+        address collector,
+        bool authorized
+    ) external override onlyGovernance {
         if (collector == address(0)) revert ZeroAddress();
         isFeeCollector[collector] = authorized;
         emit FeeCollectorUpdated(collector, authorized);
     }
 
-    function configureV2FeeTier(uint24 feeTierBps, bool allowed) external override onlyGovernance {
+    function configureV2FeeTier(
+        uint24 feeTierBps,
+        bool allowed
+    ) external override onlyGovernance {
         if (feeTierBps > 500) revert FeeExceedsMaxCeiling(feeTierBps, 500);
         isV2FeeTierAllowed[feeTierBps] = allowed;
         emit V2FeeTierConfigured(feeTierBps, allowed);
     }
 
-    function configureV3FeeTier(uint24 feeTier, int24 tickSpacing, bool allowed) external override onlyGovernance {
+    function configureV3FeeTier(
+        uint24 feeTier,
+        int24 tickSpacing,
+        bool allowed
+    ) external override onlyGovernance {
         if (feeTier > 20000) revert FeeExceedsMaxCeiling(feeTier, 20000);
-        if (allowed && (tickSpacing <= 0 || tickSpacing > 16384)) revert InvalidTickSpacing(tickSpacing);
+        if (allowed && (tickSpacing <= 0 || tickSpacing > 16384))
+            revert InvalidTickSpacing(tickSpacing);
         isV3FeeTierAllowed[feeTier] = allowed;
         if (allowed) {
             v3TickSpacings[feeTier] = tickSpacing;
@@ -103,7 +128,9 @@ contract ZenithFeeController is IZenithFeeController {
         emit V3FeeTierConfigured(feeTier, tickSpacing, allowed);
     }
 
-    function transferGovernance(address _newGovernance) external override onlyGovernance {
+    function transferGovernance(
+        address _newGovernance
+    ) external override onlyGovernance {
         if (_newGovernance == address(0)) revert ZeroAddress();
         pendingGovernance = _newGovernance;
         emit GovernanceTransferInitiated(governance, _newGovernance);

@@ -89,7 +89,15 @@ export function calculateConstantProductOutput(params: {
         priceImpactPercent
     };
 }
-export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
+/**
+ * DETERMINISTIC_TEST_POOLS: Static pool reserve fixtures for local testing,
+ * mathematical invariant fuzzing, and deterministic simulation test suites.
+ *
+ * CRITICAL INVARIANT: These static reserves MUST NOT be treated as live production liquidity.
+ * Quotes derived from static simulation reserves carry liquiditySource = 'SIMULATION' / 'TEST_FIXTURE'
+ * and must remain non-executable in LIVE_EXECUTION and LIVE_ONCHAIN modes.
+ */
+export const DETERMINISTIC_TEST_POOLS: Record<number, PoolReserves[]> = {
     31337: [
         {
             token0: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -252,6 +260,20 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
             reserve0: 5000n * 10n ** 18n,
             reserve1: 10000000n * 10n ** 18n,
             feeBps: 30
+        },
+        {
+            token0: '0x4200000000000000000000000000000000000006',
+            token1: '0x532f27101965dd16442E59d40670FaF5eBB142E4',
+            reserve0: 2000n * 10n ** 18n,
+            reserve1: 1000000000n * 10n ** 18n,
+            feeBps: 30
+        },
+        {
+            token0: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+            token1: '0x532f27101965dd16442E59d40670FaF5eBB142E4',
+            reserve0: 5000000n * 10n ** 6n,
+            reserve1: 1000000000n * 10n ** 18n,
+            feeBps: 30
         }
     ],
     10: [
@@ -342,6 +364,10 @@ export const VERIFIED_DEX_POOLS: Record<number, PoolReserves[]> = {
         }
     ]
 };
+
+/** @deprecated Use DETERMINISTIC_TEST_POOLS. Retained for test fixture compatibility. */
+export const VERIFIED_DEX_POOLS = DETERMINISTIC_TEST_POOLS;
+
 function normalizeAddress(tokenAddress: string, chainId: number, wrappedAddress?: string): string {
     const lower = (tokenAddress || '').trim().toLowerCase();
     if (isNativeToken(lower)) {
@@ -370,12 +396,13 @@ function normalizeAddress(tokenAddress: string, chainId: number, wrappedAddress?
     }
     return lower;
 }
-export function findVerifiedPool(chainId: number, tokenInAddress: string, tokenOutAddress: string, tokenInWrapped?: string, tokenOutWrapped?: string): {
+
+export function findDeterministicTestPool(chainId: number, tokenInAddress: string, tokenOutAddress: string, tokenInWrapped?: string, tokenOutWrapped?: string): {
     reserveIn: bigint;
     reserveOut: bigint;
     feeBps: number;
 } | null {
-    const pools = VERIFIED_DEX_POOLS[chainId];
+    const pools = DETERMINISTIC_TEST_POOLS[chainId];
     if (!pools || pools.length === 0)
         return null;
     const inNorm = normalizeAddress(tokenInAddress, chainId, tokenInWrapped);
@@ -414,6 +441,10 @@ export function findVerifiedPool(chainId: number, tokenInAddress: string, tokenO
     }
     return null;
 }
+
+/** @deprecated Use findDeterministicTestPool. Retained for test fixture compatibility. */
+export const findVerifiedPool = findDeterministicTestPool;
+
 export function calculateDEXLiquidityOutput(params: {
     chainId: number;
     tokenIn: Token;
@@ -429,6 +460,7 @@ export function calculateDEXLiquidityOutput(params: {
     feeAmount: bigint;
     feeTierBps: number;
     priceImpactPercent: number;
+    liquiditySource: 'SIMULATION' | 'TEST_FIXTURE';
 } | null {
     const { chainId, tokenIn, tokenOut, amountIn, feeTierBps, slippageToleranceBps, customReserveIn, customReserveOut } = params;
     if (amountIn <= 0n)
@@ -444,7 +476,7 @@ export function calculateDEXLiquidityOutput(params: {
         effectiveFeeBps = feeTierBps !== undefined ? feeTierBps : 30;
     }
     else {
-        const pool = findVerifiedPool(chainId, tokenIn.address, tokenOut.address, tokenIn.wrappedAddress, tokenOut.wrappedAddress);
+        const pool = findDeterministicTestPool(chainId, tokenIn.address, tokenOut.address, tokenIn.wrappedAddress, tokenOut.wrappedAddress);
         if (!pool || pool.reserveIn <= 0n || pool.reserveOut <= 0n) {
             return null;
         }
@@ -464,7 +496,8 @@ export function calculateDEXLiquidityOutput(params: {
         minimumAmountOut: result.minimumOutRaw,
         feeAmount: result.feeAmountRaw,
         feeTierBps: effectiveFeeBps,
-        priceImpactPercent: result.priceImpactPercent
+        priceImpactPercent: result.priceImpactPercent,
+        liquiditySource: customReserveIn !== undefined ? 'TEST_FIXTURE' : 'SIMULATION'
     };
 }
 export function calculateConstantProductInput(amountOutRaw: bigint, reserveInRaw: bigint, reserveOutRaw: bigint, feeBps: number = 30): bigint {

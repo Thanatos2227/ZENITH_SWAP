@@ -175,7 +175,7 @@ describe('ZENITH SWAP — Phase 0 / Task 7: Controlled Testnet Direct Cross-Chai
                 userAddress: quoteReq.userWalletAddress!
             }
         });
-        assert.ok(plan.isExecutable);
+        assert.equal(plan.isExecutable, Boolean(quote.isExecutable));
         assert.equal(plan.routeType, 'CROSS_CHAIN_DIRECT');
         assert.ok(plan.steps.length >= 5);
         assert.ok(plan.steps.some((s) => s.id.startsWith('approval:')));

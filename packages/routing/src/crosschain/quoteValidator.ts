@@ -74,7 +74,10 @@ export function validateUniversalBridgeQuoteExecutability(quote: CrossChainQuote
     const isDistinctChains = Boolean(srcChain &&
         dstChain &&
         quote.sourceChainId.toLowerCase() !== quote.destinationChainId.toLowerCase());
-    const capRecord = CrossChainProviderCapabilityMatrix.getCapability(quote.provider, quote.sourceChainId, quote.destinationChainId, quote.sourceToken?.symbol || '', quote.destinationToken?.symbol || '');
+    const quoteAny = quote as any;
+    const bridgeSrcSym = quoteAny.sourceConnectorToken?.symbol || quote.sourceToken?.symbol || '';
+    const bridgeDstSym = quoteAny.destConnectorToken?.symbol || quote.destinationToken?.symbol || '';
+    const capRecord = CrossChainProviderCapabilityMatrix.getCapability(quote.provider, quote.sourceChainId, quote.destinationChainId, bridgeSrcSym, bridgeDstSym);
     if (!isDistinctChains || capRecord.capabilityLevel === 'UNSUPPORTED') {
         failedGates.push('ROUTE_SUPPORTED');
     }
@@ -216,7 +219,7 @@ export function validateUniversalBridgeQuoteExecutability(quote: CrossChainQuote
     try {
         const valBig = BigInt(quote.value || '0');
         if (isSrcNative) {
-            isValueValid = valBig === BigInt(quote.sourceAmountRaw || '0');
+            isValueValid = valBig === BigInt((quote as any).sourceDexQuote ? (request?.amountInRaw || quote.sourceAmountRaw || '0') : (quote.sourceAmountRaw || '0'));
         }
         else {
             isValueValid = valBig === 0n;

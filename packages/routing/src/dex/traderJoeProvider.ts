@@ -52,7 +52,8 @@ export class TraderJoeProvider implements DEXProvider {
                 gasCostUSD: 0.04,
                 quoteTimestamp,
                 expiration: quoteTimestamp + 15000,
-                routePath: [params.tokenIn.address, params.tokenOut.address]
+                routePath: [params.tokenIn.address, params.tokenOut.address],
+                liquiditySource: calculated.liquiditySource
             };
         }
         catch {

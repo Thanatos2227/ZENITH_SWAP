@@ -352,6 +352,23 @@ export class CrossChainAggregator {
           });
           if (!destDexQuotes || destDexQuotes.length === 0) continue;
           destDexQuote = destDexQuotes[0];
+
+          if (request.userWalletAddress) {
+            try {
+              const dstExec = await defaultDEXAggregator.buildExecution(
+                destDexQuote,
+                request.userWalletAddress,
+                request.recipientAddress || request.userWalletAddress
+              );
+              destDexQuote.calldata = dstExec.data;
+              destDexQuote.executionTarget = dstExec.to;
+              destDexQuote.approvalTarget = dstExec.approvalTarget || dstExec.to;
+              destDexQuote.execution = dstExec;
+            } catch {
+              // calldata will remain undefined
+            }
+          }
+
           finalAmountOutBig = destDexQuote.amountOut;
           minFinalAmountOutBig = destDexQuote.minimumAmountOut;
         } catch {
@@ -366,15 +383,31 @@ export class CrossChainAggregator {
       let unexecutableReason: string | undefined = undefined;
       let compositeExecutionMode: 'ATOMIC' | 'SOLVER' | 'SEPARATE_DESTINATION_TX' | 'UNSUPPORTED' = 'UNSUPPORTED';
 
-      if (destDexQuote) {
-        compositeExecutionMode = 'UNSUPPORTED';
+      const isSimulatedSource = sourceDexQuote?.liquiditySource === 'SIMULATION' || sourceDexQuote?.liquiditySource === 'TEST_FIXTURE';
+      const isSimulatedDest = destDexQuote?.liquiditySource === 'SIMULATION' || destDexQuote?.liquiditySource === 'TEST_FIXTURE';
+      if (
+        (request.executionMode === 'LIVE_EXECUTION' || request.executionMode === 'LIVE_ONCHAIN' || request.executionMode === 'PREFLIGHT_ONLY') &&
+        (isSimulatedSource || isSimulatedDest)
+      ) {
+        compositeExecutionMode = 'SEPARATE_DESTINATION_TX';
+        isExecutable = false;
+        unexecutableReason = 'LIVE_DEX_LIQUIDITY_UNAVAILABLE: Route contains simulated DEX quote fixtures not verified on-chain for live production execution.';
+        compositeDiagnostics.push({
+          code: 'LIVE_DEX_LIQUIDITY_UNAVAILABLE',
+          message: `Composite cross-chain route contains simulated DEX quotes without verified live on-chain liquidity evidence.`,
+          severity: 'ERROR',
+          providerId: sourceDexQuote?.provider || destDexQuote?.provider || bestBridgeQuote.provider,
+          timestamp: Date.now()
+        });
+      } else if (destDexQuote && (!destDexQuote.calldata || destDexQuote.calldata === '0x')) {
+        compositeExecutionMode = 'SEPARATE_DESTINATION_TX';
         isExecutable = false;
         unexecutableReason = 'DESTINATION_EXECUTION_UNAVAILABLE';
         compositeDiagnostics.push({
           code: 'DESTINATION_EXECUTION_UNAVAILABLE',
-          message: `Composite cross-chain route requires destination DEX swap (${dstConnector.symbol} -> ${request.tokenOut.symbol}), but automated destination execution/solver is not yet enabled.`,
+          message: `Composite cross-chain route requires destination DEX swap (${dstConnector.symbol} -> ${request.tokenOut.symbol}), but automated destination execution/solver is not yet enabled or destination calldata is missing.`,
           severity: 'WARNING',
-          providerId: bestBridgeQuote.provider,
+          providerId: destDexQuote.provider || bestBridgeQuote.provider,
           timestamp: Date.now()
         });
       } else if (sourceDexQuote && (!sourceDexQuote.calldata || sourceDexQuote.calldata === '0x')) {
@@ -388,10 +421,14 @@ export class CrossChainAggregator {
           providerId: sourceDexQuote.provider,
           timestamp: Date.now()
         });
+      } else if (!bestBridgeQuote.isExecutable) {
+        compositeExecutionMode = 'SEPARATE_DESTINATION_TX';
+        isExecutable = false;
+        unexecutableReason = bestBridgeQuote.unexecutableReason || 'BRIDGE_QUOTE_UNAVAILABLE';
       } else {
         compositeExecutionMode = 'SEPARATE_DESTINATION_TX';
-        isExecutable = Boolean(bestBridgeQuote.isExecutable);
-        unexecutableReason = bestBridgeQuote.unexecutableReason;
+        isExecutable = true;
+        unexecutableReason = undefined;
       }
 
       const compositeQuote: CrossChainQuote = {
@@ -453,7 +490,7 @@ export class CrossChainAggregator {
     recipientAddress?: string
   ): Promise<CrossChainExecution> {
     const quoteAny = quote as any;
-    if (quoteAny.destDexQuote) {
+    if (quoteAny.destDexQuote && (!quoteAny.destDexQuote.calldata || quoteAny.destDexQuote.calldata === '0x')) {
       throw new DestinationExecutionUnavailableError(quote.destinationToken.symbol, quote.destinationChainId);
     }
     if (quoteAny.sourceDexQuote && (!quoteAny.sourceDexQuote.calldata || quoteAny.sourceDexQuote.calldata === '0x')) {
@@ -565,7 +602,7 @@ export class CrossChainAggregator {
         quote.isExecutable !== false &&
         quote.calldata &&
         quote.calldata !== '0x' &&
-        !quoteAny.destDexQuote
+        (!quoteAny.destDexQuote || (quoteAny.destDexQuote.calldata && quoteAny.destDexQuote.calldata !== '0x'))
       );
 
       routes.push({

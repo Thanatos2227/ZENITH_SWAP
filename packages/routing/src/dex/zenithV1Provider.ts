@@ -51,7 +51,8 @@ export class ZenithV1Provider implements DEXProvider {
             gasCostUSD: 0.025,
             quoteTimestamp,
             expiration: quoteTimestamp + 15000,
-            routePath: [params.tokenIn.address, params.tokenOut.address]
+            routePath: [params.tokenIn.address, params.tokenOut.address],
+            liquiditySource: calculated.liquiditySource
         };
     }
     public async buildExecution(quote: DEXQuote, userAddress: string, recipientAddress?: string, deadline?: number): Promise<DEXExecution> {
