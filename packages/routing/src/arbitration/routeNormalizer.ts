@@ -68,7 +68,9 @@ export class RouteNormalizer {
             calldata: quote.calldata,
             executionTarget: quote.executionTarget,
             approvalTarget: quote.approvalTarget,
-            valueWei: quote.value || '0'
+            valueWei: quote.value || '0',
+            approvalTxns: quote.approvalTxns,
+            crossChainQuote: quote
         };
     }
     public static normalize(route: SwapRoute, request: QuoteRequest): NormalizedRoute {
@@ -199,7 +201,9 @@ export class RouteNormalizer {
             calldata,
             executionTarget,
             approvalTarget,
-            valueWei
+            valueWei,
+            approvalTxns: ccQuote?.approvalTxns,
+            crossChainQuote: ccQuote
         };
     }
 }

@@ -3197,7 +3197,7 @@ export const ZENITH_SUPPORTED_CHAINS: Record<string, ChainConfig> = {
     },
     robinhood: {
         id: 'robinhood',
-        chainId: 42161,
+        chainId: 421610,
         canonicalName: 'Robinhood Chain',
         shortName: 'Robinhood',
         executionEnvironment: 'EVM',

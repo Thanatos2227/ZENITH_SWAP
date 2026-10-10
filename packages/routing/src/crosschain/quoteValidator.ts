@@ -84,7 +84,7 @@ export function validateUniversalBridgeQuoteExecutability(quote: CrossChainQuote
     else {
         passedGates.push('ROUTE_SUPPORTED');
     }
-    if (quote.isExecutable === false && quote.unexecutableReason && quote.unexecutableReason.includes('unverified')) {
+    if (quote.isExecutable === false) {
         failedGates.push('LIVE_QUOTE_VERIFIED');
     }
     else if (!quote.sourceAmountRaw || !quote.destinationAmountRaw) {

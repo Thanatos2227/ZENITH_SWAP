@@ -109,13 +109,32 @@ test('Test 2: On-Chain Contract Bytecode Verification (SpokePools & USDC Tokens)
     }
 });
 test('Test 3: Across Live Testnet Quote Generation (Sepolia -> Arbitrum Sepolia)', async () => {
-    const across = new AcrossProvider();
+    const mockFetch = async () => {
+        return new Response(JSON.stringify({
+            swapTx: {
+                to: getAcrossSpokePool(11155111),
+                data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                value: '0',
+                chainId: 11155111
+            },
+            outputAmount: '999500',
+            quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+            fees: { total: { amount: '500', pct: '0.0005' } }
+        }), { status: 200, statusText: 'OK' });
+    };
+
+    const across = new AcrossProvider({
+        apiKey: 'test_key',
+        integratorId: '0x0001',
+        fetchFn: mockFetch as any
+    });
     const quoteReq: QuoteRequest = {
         sourceChainId: 'sepolia',
         destinationChainId: 'arbitrum_sepolia',
         tokenIn: usdcSepolia,
         tokenOut: usdcArbSepolia,
         amountInRaw: '1000000',
+        userWalletAddress: USER_TESTNET_ADDR,
         recipientAddress: USER_TESTNET_ADDR,
         slippageTolerancePercent: 0.5
     };
@@ -130,13 +149,32 @@ test('Test 3: Across Live Testnet Quote Generation (Sepolia -> Arbitrum Sepolia)
     assert.equal(quote.executionTarget.toLowerCase(), getAcrossSpokePool(11155111).toLowerCase());
 });
 test('Test 4: ExecutionPlan Construction for Testnet Route', async () => {
-    const across = new AcrossProvider();
+    const mockFetch = async () => {
+        return new Response(JSON.stringify({
+            swapTx: {
+                to: getAcrossSpokePool(11155111),
+                data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                value: '0',
+                chainId: 11155111
+            },
+            outputAmount: '999500',
+            quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+            fees: { total: { amount: '500', pct: '0.0005' } }
+        }), { status: 200, statusText: 'OK' });
+    };
+
+    const across = new AcrossProvider({
+        apiKey: 'test_key',
+        integratorId: '0x0001',
+        fetchFn: mockFetch as any
+    });
     const quoteReq: QuoteRequest = {
         sourceChainId: 'sepolia',
         destinationChainId: 'arbitrum_sepolia',
         tokenIn: usdcSepolia,
         tokenOut: usdcArbSepolia,
         amountInRaw: '1000000',
+        userWalletAddress: USER_TESTNET_ADDR,
         recipientAddress: USER_TESTNET_ADDR
     };
     const ccQuote = await across.getQuote(quoteReq);
@@ -171,13 +209,32 @@ test('Test 4: ExecutionPlan Construction for Testnet Route', async () => {
     assert.equal(plan.isExecutable, true);
 });
 test('Test 5: Exact Calldata & Target Address Validation for Testnet SpokePool', async () => {
-    const across = new AcrossProvider();
+    const mockFetch = async () => {
+        return new Response(JSON.stringify({
+            swapTx: {
+                to: getAcrossSpokePool(11155111),
+                data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                value: '0',
+                chainId: 11155111
+            },
+            outputAmount: '999500',
+            quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+            fees: { total: { amount: '500', pct: '0.0005' } }
+        }), { status: 200, statusText: 'OK' });
+    };
+
+    const across = new AcrossProvider({
+        apiKey: 'test_key',
+        integratorId: '0x0001',
+        fetchFn: mockFetch as any
+    });
     const quoteReq: QuoteRequest = {
         sourceChainId: 'sepolia',
         destinationChainId: 'arbitrum_sepolia',
         tokenIn: usdcSepolia,
         tokenOut: usdcArbSepolia,
         amountInRaw: '1000000',
+        userWalletAddress: USER_TESTNET_ADDR,
         recipientAddress: USER_TESTNET_ADDR
     };
     const quote = await across.getQuote(quoteReq);
@@ -185,7 +242,7 @@ test('Test 5: Exact Calldata & Target Address Validation for Testnet SpokePool',
     const execution = await across.buildExecution(quote, USER_TESTNET_ADDR, USER_TESTNET_ADDR);
     assert.equal(execution.to.toLowerCase(), getAcrossSpokePool(11155111).toLowerCase());
     assert.ok(execution.data.startsWith('0x'));
-    assert.ok(execution.data.length > 50, 'Calldata must contain valid depositV3 encoded function data');
+    assert.ok(execution.data.length > 50, 'Calldata must contain valid swapTx function data');
     assert.equal(execution.approvalTarget.toLowerCase(), getAcrossSpokePool(11155111).toLowerCase());
 });
 test('Test 6: Pre-Flight eth_call Simulation Catches Reverts Before Broadcast', async () => {

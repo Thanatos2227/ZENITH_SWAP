@@ -6,35 +6,49 @@ import { EVMExecutionAdapter, ExecutionCoordinator, CrossChainTracker, Execution
 import { ACROSS_V3_SPOKE_POOLS, STARGATE_V2_ROUTERS, DEBRIDGE_DLN_SOURCE_CONTRACTS, ACROSS_SPOKE_POOL_ABI, DEBRIDGE_DLN_SOURCE_ABI, STARGATE_ROUTER_ABI, RecipientMismatchError, SignerRequiredError, InvalidCalldataError, InvalidRecipientAddressError } from '../packages/contracts/src';
 import { DEFAULT_TOKENS } from '../packages/tokens/src';
 import { QuoteRequest, CrossChainQuote, Token } from '../packages/types/src';
-test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', async () => {
-    const provider = new AcrossProvider();
+test('Across Provider: Live Quote Parsing & Exact swapTx Execution', async () => {
     const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
     const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
     const user = '0x8ba1f109551bD432803012645Ac136ddd64DBA72';
     assert.ok(tokenIn && tokenOut);
+
+    const mockFetch = async () => {
+        return new Response(JSON.stringify({
+            swapTx: {
+                to: ACROSS_V3_SPOKE_POOLS[1],
+                data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                value: '0',
+                chainId: 1
+            },
+            outputAmount: '999500000',
+            quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+            fees: { total: { amount: '500000', pct: '0.0005' } }
+        }), { status: 200, statusText: 'OK' });
+    };
+
+    const provider = new AcrossProvider({
+        apiKey: 'test_key',
+        integratorId: '0x0001',
+        fetchFn: mockFetch as any
+    });
+
     const quote = await provider.getQuote({
         sourceChainId: 'ethereum',
         destinationChainId: 'arbitrum',
         tokenIn,
         tokenOut,
         amountInRaw: '1000000000',
-        recipient: user,
+        userWalletAddress: user,
+        recipientAddress: user,
         slippageTolerancePercent: 0.5
     });
-    if (quote) {
-        assert.equal(quote.provider, 'ACROSS');
-        assert.equal(quote.executionTarget.toLowerCase(), ACROSS_V3_SPOKE_POOLS[1].toLowerCase());
-        assert.ok(BigInt(quote.destinationAmountRaw) > 0n);
-        assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 2);
-        const iface = new ethers.Interface(ACROSS_SPOKE_POOL_ABI);
-        const decoded = iface.decodeFunctionData('depositV3', quote.calldata);
-        assert.equal(decoded[0].toLowerCase(), user.toLowerCase());
-        assert.equal(decoded[1].toLowerCase(), user.toLowerCase());
-        assert.equal(decoded[2].toLowerCase(), tokenIn.address.toLowerCase());
-        assert.equal(decoded[3].toLowerCase(), tokenOut.address.toLowerCase());
-        assert.equal(decoded[4].toString(), '1000000000');
-        assert.equal(decoded[6].toString(), '42161');
-    }
+    assert.ok(quote);
+    assert.equal(quote.provider, 'ACROSS');
+    assert.equal(quote.executionTarget.toLowerCase(), ACROSS_V3_SPOKE_POOLS[1].toLowerCase());
+    assert.ok(BigInt(quote.destinationAmountRaw) > 0n);
+    assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 2);
+    assert.equal(quote.calldata, '0x7b9392320000000000000000000000001234567890123456789012345678901234567890');
+
     const sampleQuote: CrossChainQuote = {
         provider: 'ACROSS',
         providerName: 'Across Protocol V3',
@@ -52,23 +66,19 @@ test('Across Provider: Live Quote Parsing & Exact depositV3 Calldata Encoding', 
         expiration: Date.now() + 300000,
         routeIdentifier: 'across-eth-arb',
         executionTarget: ACROSS_V3_SPOKE_POOLS[1],
-        calldata: '0x',
+        calldata: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
         value: '0',
         approvalTarget: ACROSS_V3_SPOKE_POOLS[1],
         quoteTimestamp: Date.now(),
         estimatedTransferTimeSec: 30,
-        securityRating: 'A+'
+        securityRating: 'A+',
+        isExecutable: true
     };
     const execution = await provider.buildExecution(sampleQuote, user, user);
     assert.equal(execution.to.toLowerCase(), ACROSS_V3_SPOKE_POOLS[1].toLowerCase());
     assert.equal(execution.approvalTarget?.toLowerCase(), ACROSS_V3_SPOKE_POOLS[1].toLowerCase());
     assert.equal(execution.value, '0');
-    assert.ok(execution.data.startsWith('0x'));
-    const iface = new ethers.Interface(ACROSS_SPOKE_POOL_ABI);
-    const decodedExec = iface.decodeFunctionData('depositV3', execution.data);
-    assert.equal(decodedExec[0].toLowerCase(), user.toLowerCase());
-    assert.equal(decodedExec[1].toLowerCase(), user.toLowerCase());
-    assert.equal(decodedExec[4].toString(), '1000000000');
+    assert.equal(execution.data, '0x7b9392320000000000000000000000001234567890123456789012345678901234567890');
 });
 test('deBridge DLN Provider: Live Quote Parsing & Order Parameter Verification', async () => {
     const provider = new DeBridgeProvider();
@@ -205,12 +215,13 @@ test('EVM Execution Adapter: Transaction Consistency & Signer Enforcement', asyn
                 expiration: Date.now() + 300000,
                 routeIdentifier: 'across-poly-arb',
                 executionTarget: ACROSS_V3_SPOKE_POOLS[137],
-                calldata: '0x',
+                calldata: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
                 value: '0',
                 approvalTarget: ACROSS_V3_SPOKE_POOLS[137],
                 quoteTimestamp: Date.now(),
                 estimatedTransferTimeSec: 30,
-                securityRating: 'A+'
+                securityRating: 'A+',
+                isExecutable: true
             }
         }
     };

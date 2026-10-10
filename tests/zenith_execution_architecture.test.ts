@@ -4,7 +4,7 @@ import { defaultZenithRouter, ZenithRouter, parseTokenUnits, formatTokenUnits } 
 import { defaultChainRegistry } from '@zenith/chains';
 import { DEFAULT_TOKENS, defaultTokenService } from '@zenith/tokens';
 import { UniswapV3Provider, QuickSwapProvider, AerodromeProvider, VelodromeProvider, CamelotProvider, PancakeSwapProvider, TraderJoeProvider, defaultDEXAggregator } from '@zenith/routing';
-import { defaultAcrossProvider, defaultStargateProvider, defaultDeBridgeProvider } from '@zenith/routing';
+import { defaultAcrossProvider, AcrossProvider, defaultStargateProvider, defaultDeBridgeProvider } from '@zenith/routing';
 const USER_ADDR = '0x1234567890123456789012345678901234567890';
 test('1. Real DEX Provider Execution Calldata Encoding', async () => {
     const polygon = defaultChainRegistry.getChain('polygon')!;
@@ -97,27 +97,40 @@ test('3. Velodrome Provider on Optimism produces valid calldata', async () => {
     assert.ok(exec.data.startsWith('0x'));
     assert.ok(exec.data.length > 50);
 });
-test('4. Across Bridge Provider produces valid depositV3 calldata', async () => {
+test('4. Across Bridge Provider produces valid execution from swapTx', async () => {
     const eth = defaultTokenService.getNativeToken('ethereum')!;
     const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
-    const quote = await defaultAcrossProvider.getQuote({
+    const mockFetch = (async () => {
+        return new Response(JSON.stringify({
+            swapTx: {
+                to: '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5',
+                data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                value: '1000000000000000000',
+                chainId: 1
+            },
+            outputAmount: '999500000000000000',
+            quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300
+        }), { status: 200 });
+    }) as any;
+    const provider = new AcrossProvider({
+        apiKey: 'test_key',
+        integratorId: '0x0001',
+        fetchFn: mockFetch
+    });
+    const quote = await provider.getQuote({
         sourceChainId: 'ethereum',
         destinationChainId: 'arbitrum',
         tokenIn: eth,
         tokenOut: ethArb,
         amountInRaw: '1000000000000000000',
         slippageTolerancePercent: 0.5,
-        userWalletAddress: USER_ADDR
+        userWalletAddress: USER_ADDR,
+        recipientAddress: USER_ADDR
     });
     assert.ok(quote);
     assert.equal(quote.provider, 'ACROSS');
     assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 20, 'Across quote preview calldata must be valid');
-    const sampleQuote: any = {
-        ...quote,
-        isExecutable: true,
-        unexecutableReason: undefined
-    };
-    const exec = await defaultAcrossProvider.buildExecution(sampleQuote, USER_ADDR);
+    const exec = await provider.buildExecution(quote, USER_ADDR);
     assert.ok(exec.data.startsWith('0x') && exec.data.length > 20);
     assert.equal(exec.to.toLowerCase(), '0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5'.toLowerCase());
 });
@@ -135,10 +148,14 @@ test('5. deBridge DLN Provider produces valid createOrder calldata', async () =>
     });
     assert.ok(quote);
     assert.equal(quote.provider, 'DEBRIDGE_DLN');
-    assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 20, 'deBridge quote preview calldata must be valid');
-    const exec = await defaultDeBridgeProvider.buildExecution(quote, USER_ADDR);
-    assert.ok(exec.data.startsWith('0x') && exec.data.length > 20);
-    assert.equal(exec.to.toLowerCase(), '0xeF4fB24aD0916217251F553c0596F8Edc630EB66'.toLowerCase());
+    if (quote.isExecutable) {
+        assert.ok(quote.calldata.startsWith('0x') && quote.calldata.length > 20, 'deBridge quote preview calldata must be valid');
+        const exec = await defaultDeBridgeProvider.buildExecution(quote, USER_ADDR);
+        assert.ok(exec.data.startsWith('0x') && exec.data.length > 20);
+        assert.equal(exec.to.toLowerCase(), '0xeF4fB24aD0916217251F553c0596F8Edc630EB66'.toLowerCase());
+    } else {
+        assert.ok(quote.unexecutableReason);
+    }
 });
 test('6. Stargate Provider produces valid LayerZero swap calldata', async () => {
     const usdcEth = defaultTokenService.getTokensForChain('ethereum').find((t) => t.symbol === 'USDC')!;

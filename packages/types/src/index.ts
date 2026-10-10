@@ -183,6 +183,25 @@ export interface CrossChainQuote {
   sourceConnectorToken?: Token;
   destConnectorToken?: Token;
   compositeExecutionMode?: CompositeExecutionMode;
+  approvalTxns?: CrossChainApprovalTx[];
+  swapTx?: CrossChainSwapTx;
+}
+
+export interface CrossChainApprovalTx {
+  to: string;
+  data: string;
+  value?: string;
+  chainId?: number;
+  tokenAddress?: string;
+  spender?: string;
+  amount?: string;
+}
+
+export interface CrossChainSwapTx {
+  to: string;
+  data: string;
+  value?: string;
+  chainId?: number;
 }
 
 export interface DEXExecution {
@@ -1227,6 +1246,8 @@ export interface NormalizedRoute {
     providerHealth?: ProviderHealthStatus;
     freshnessState?: RouteFreshnessState;
     normalizedCostUSD?: string;
+    approvalTxns?: CrossChainApprovalTx[];
+    crossChainQuote?: CrossChainQuote;
 }
 export interface CostNormalizationResult {
     sourceSwapFeeRaw: string;

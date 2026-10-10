@@ -22,6 +22,8 @@ const VALID_STEP_TYPES: ExecutionStepType[] = [
     'DESTINATION_VERIFY',
     'SETTLEMENT_COMPLETE'
 ];
+const EVM_HEX_REGEX = /^0x[0-9a-fA-F]{40}$/;
+const HEX_CALLDATA_REGEX = /^0x[0-9a-fA-F]+$/;
 export function canonicalStringify(obj: any): string {
     if (obj === null || typeof obj !== 'object') {
         return JSON.stringify(obj);
@@ -429,7 +431,77 @@ export class ExecutionPlanBuilder {
         let prevStepId = validationStepId;
         const isSourceNative = isNativeToken(request.tokenIn.address) || Boolean(request.tokenIn.isNative);
         const sourceEnv = sourceChain?.executionEnvironment || 'EVM';
-        if (!isSourceNative && sourceEnv === 'EVM') {
+        const ccApprovalTxns = ccQuote?.approvalTxns;
+
+        if (Array.isArray(ccApprovalTxns) && ccApprovalTxns.length > 0) {
+            for (let i = 0; i < ccApprovalTxns.length; i++) {
+                const tx = ccApprovalTxns[i];
+                const targetAddress = tx.to || tx.tokenAddress || request.tokenIn.address;
+                const calldata = tx.data;
+                const spender = tx.spender || route.execution?.approvalTarget || ccQuote?.approvalTarget || targetAddress;
+                const amountRaw = tx.amount ? String(tx.amount) : request.amountInRaw;
+                const txChainIdNum = tx.chainId !== undefined ? Number(tx.chainId) : sourceChain?.chainId;
+
+                let txValid = true;
+                let stepErrorReason = '';
+
+                if (!targetAddress || !EVM_HEX_REGEX.test(targetAddress) || targetAddress === ZERO_ADDRESS) {
+                    txValid = false;
+                    stepErrorReason = `MALFORMED_APPROVAL_TRANSACTION: Approval transaction #${i + 1} has invalid target address "${targetAddress}".`;
+                } else if (!calldata || !calldata.startsWith('0x') || calldata.length < 10 || !HEX_CALLDATA_REGEX.test(calldata)) {
+                    txValid = false;
+                    stepErrorReason = `MALFORMED_APPROVAL_TRANSACTION: Approval transaction #${i + 1} has missing or malformed calldata.`;
+                } else if (txChainIdNum !== undefined && sourceChain?.chainId !== undefined && txChainIdNum !== sourceChain.chainId) {
+                    txValid = false;
+                    stepErrorReason = `CHAIN_MISMATCH: Approval transaction #${i + 1} chainId (${txChainIdNum}) does not match source chainId (${sourceChain.chainId}).`;
+                } else if (!spender || !EVM_HEX_REGEX.test(spender) || spender === ZERO_ADDRESS) {
+                    txValid = false;
+                    stepErrorReason = `MALFORMED_APPROVAL_TRANSACTION: Approval transaction #${i + 1} has invalid spender address "${spender}".`;
+                }
+
+                if (!txValid) {
+                    isPlanExecutable = false;
+                    if (!unexecutableReason) {
+                        unexecutableReason = stepErrorReason;
+                    }
+                    diagnostics.push({
+                        code: 'MALFORMED_APPROVAL_TRANSACTION',
+                        message: stepErrorReason,
+                        severity: 'ERROR',
+                        providerId: ccQuote?.provider || 'ACROSS',
+                        timestamp: Date.now()
+                    });
+                }
+
+                const approvalStepId = ccApprovalTxns.length === 1
+                    ? `approval:source:${request.tokenIn.symbol.toUpperCase()}`
+                    : `approval:source:${request.tokenIn.symbol.toUpperCase()}:${i + 1}`;
+                stepIds.push(approvalStepId);
+                steps.push({
+                    id: approvalStepId,
+                    type: 'APPROVAL',
+                    title: ccApprovalTxns.length === 1
+                        ? `Authorize ${request.tokenIn.symbol}`
+                        : `Authorize ${request.tokenIn.symbol} (Step ${i + 1}/${ccApprovalTxns.length})`,
+                    description: `Approve router/bridge (${spender || 'contract'}) to spend ${request.tokenIn.symbol}`,
+                    chainId: request.sourceChainId,
+                    numericChainId: sourceChain?.chainId,
+                    executionEnvironment: 'EVM',
+                    targetAddress: targetAddress || request.tokenIn.address,
+                    calldata: calldata,
+                    valueWei: tx.value ? String(tx.value) : '0',
+                    approvalTarget: spender || targetAddress,
+                    requiredTokenAddress: tx.tokenAddress || targetAddress || request.tokenIn.address,
+                    requiredTokenSymbol: request.tokenIn.symbol,
+                    requiredAmountRaw: amountRaw,
+                    status: 'NOT_STARTED',
+                    dependencies: [prevStepId],
+                    retryPolicy: { maxRetries: 2, backoffMs: 2000, timeoutMs: 60000 },
+                    verificationCondition: { type: 'ON_CHAIN_RECEIPT' }
+                });
+                prevStepId = approvalStepId;
+            }
+        } else if (!isSourceNative && sourceEnv === 'EVM') {
             const approvalStepId = `approval:source:${request.tokenIn.symbol.toUpperCase()}`;
             stepIds.push(approvalStepId);
             const approvalTarget = route.execution?.approvalTarget ||
@@ -834,6 +906,7 @@ export class ExecutionPlanBuilder {
                 calldata: normalizedRoute.calldata || '0x',
                 value: normalizedRoute.valueWei || '0',
                 approvalTarget: normalizedRoute.approvalTarget,
+                approvalTxns: normalizedRoute.approvalTxns || (normalizedRoute as any).crossChainQuote?.approvalTxns,
                 quoteTimestamp: normalizedRoute.quotedAt,
                 estimatedTransferTimeSec: 60,
                 securityRating: 'A',

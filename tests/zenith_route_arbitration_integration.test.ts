@@ -87,48 +87,127 @@ function makeNormalizedRoute(overrides?: Partial<NormalizedRoute>): NormalizedRo
         ...overrides
     };
 }
+process.env.ACROSS_API_KEY = process.env.ACROSS_API_KEY || 'test_api_key';
+process.env.ACROSS_INTEGRATOR_ID = process.env.ACROSS_INTEGRATOR_ID || '0x0001';
+
 describe('ZENITH — Phase 1 Task 28: Route Arbitration Production Integration', () => {
     describe('1. Production Entry-Point Coverage', () => {
         it('1.1 ZenithRouter.getQuote arbitrates cross-chain routes and selects authoritative bestRoute', async () => {
-            const router = new ZenithRouter();
-            const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
-            const quote = await router.getQuote(req);
-            assert.ok(quote);
-            assert.ok(quote.bestRoute);
-            assert.equal(quote.bestRoute.routeType, 'CROSS_CHAIN');
-            assert.ok(quote.bestRoute.crossChainQuote);
-            assert.ok(BigInt(quote.minimumReceivedRaw) > 0n);
+            const origFetch = globalThis.fetch;
+            try {
+                globalThis.fetch = (async () => {
+                    return new Response(JSON.stringify({
+                        swapTx: {
+                            to: DEFAULT_SPOKE_POOL,
+                            data: DEFAULT_CALLDATA,
+                            value: '0',
+                            chainId: 137
+                        },
+                        outputAmount: '99850000',
+                        quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                        fees: { total: { amount: '150000', pct: '0.0015' } }
+                    }), { status: 200, statusText: 'OK' });
+                }) as any;
+
+                const router = new ZenithRouter();
+                const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
+                const quote = await router.getQuote(req);
+                assert.ok(quote);
+                assert.ok(quote.bestRoute);
+                assert.equal(quote.bestRoute.routeType, 'CROSS_CHAIN');
+                assert.ok(quote.bestRoute.crossChainQuote);
+                assert.ok(BigInt(quote.minimumReceivedRaw) > 0n);
+            } finally {
+                globalThis.fetch = origFetch;
+            }
         });
         it('1.2 CrossChainAggregator.getBestQuote arbitrates through RouteArbitrator', async () => {
-            const agg = new CrossChainAggregator();
-            const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
-            const best = await agg.getBestQuote(req);
-            assert.ok(best);
-            assert.ok(best.provider);
-            assert.ok(BigInt(best.destinationAmountRaw) > 0n);
+            const origFetch = globalThis.fetch;
+            try {
+                globalThis.fetch = (async () => {
+                    return new Response(JSON.stringify({
+                        swapTx: {
+                            to: DEFAULT_SPOKE_POOL,
+                            data: DEFAULT_CALLDATA,
+                            value: '0',
+                            chainId: 137
+                        },
+                        outputAmount: '99850000',
+                        quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                        fees: { total: { amount: '150000', pct: '0.0015' } }
+                    }), { status: 200, statusText: 'OK' });
+                }) as any;
+
+                const agg = new CrossChainAggregator();
+                const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
+                const best = await agg.getBestQuote(req);
+                assert.ok(best);
+                assert.ok(best.provider);
+                assert.ok(BigInt(best.destinationAmountRaw) > 0n);
+            } finally {
+                globalThis.fetch = origFetch;
+            }
         });
         it('1.3 CrossChainAggregator.findCrossChainRoutes applies RouteArbitrator deterministic ordering', async () => {
-            const agg = new CrossChainAggregator();
-            const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
-            const routes = await agg.findCrossChainRoutes({ request: req, userAddress: DEFAULT_USER });
-            assert.ok(routes.length >= 1);
-            assert.ok(routes[0].isExecutable !== false);
+            const origFetch = globalThis.fetch;
+            try {
+                globalThis.fetch = (async () => {
+                    return new Response(JSON.stringify({
+                        swapTx: {
+                            to: DEFAULT_SPOKE_POOL,
+                            data: DEFAULT_CALLDATA,
+                            value: '0',
+                            chainId: 137
+                        },
+                        outputAmount: '99850000',
+                        quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                        fees: { total: { amount: '150000', pct: '0.0015' } }
+                    }), { status: 200, statusText: 'OK' });
+                }) as any;
+
+                const agg = new CrossChainAggregator();
+                const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
+                const routes = await agg.findCrossChainRoutes({ request: req, userAddress: DEFAULT_USER });
+                assert.ok(routes.length >= 1);
+                assert.ok(routes[0].isExecutable !== false);
+            } finally {
+                globalThis.fetch = origFetch;
+            }
         });
         it('1.4 ZenithRouter.setPlanBuilder attaches authoritative ExecutionPlan directly', async () => {
-            const router = new ZenithRouter();
-            router.setPlanBuilder((params) => {
-                return ExecutionPlanBuilder.buildPlanFromNormalizedRoute({
-                    normalizedRoute: params.normalizedRoute,
-                    request: params.request,
-                    options: params.options
+            const origFetch = globalThis.fetch;
+            try {
+                globalThis.fetch = (async () => {
+                    return new Response(JSON.stringify({
+                        swapTx: {
+                            to: DEFAULT_SPOKE_POOL,
+                            data: DEFAULT_CALLDATA,
+                            value: '0',
+                            chainId: 137
+                        },
+                        outputAmount: '99850000',
+                        quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                        fees: { total: { amount: '150000', pct: '0.0015' } }
+                    }), { status: 200, statusText: 'OK' });
+                }) as any;
+
+                const router = new ZenithRouter();
+                router.setPlanBuilder((params) => {
+                    return ExecutionPlanBuilder.buildPlanFromNormalizedRoute({
+                        normalizedRoute: params.normalizedRoute,
+                        request: params.request,
+                        options: params.options
+                    });
                 });
-            });
-            const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
-            const quote = await router.getQuote(req);
-            assert.ok(quote.executionPlan);
-            assert.equal(quote.executionPlan.sourceChainId, 'polygon');
-            assert.equal(quote.executionPlan.destinationChainId, 'arbitrum');
-            assert.equal(quote.executionPlan.minimumAmountOutRaw, quote.minimumReceivedRaw);
+                const req = makeBaseRequest({ executionMode: 'PREFLIGHT_ONLY' });
+                const quote = await router.getQuote(req);
+                assert.ok(quote.executionPlan);
+                assert.equal(quote.executionPlan.sourceChainId, 'polygon');
+                assert.equal(quote.executionPlan.destinationChainId, 'arbitrum');
+                assert.equal(quote.executionPlan.minimumAmountOutRaw, quote.minimumReceivedRaw);
+            } finally {
+                globalThis.fetch = origFetch;
+            }
         });
     });
     describe('2. Execution Mode Enforcement', () => {

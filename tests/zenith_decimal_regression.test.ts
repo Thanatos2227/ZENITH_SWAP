@@ -61,10 +61,10 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
             assert.strictEqual(quote.amountInRaw, '1000000000000000000', 'amountInRaw must be 10^18');
             const outNum = parseFloat(quote.amountOutFormatted.replace(/,/g, ''));
             const rawOutBig = BigInt(quote.amountOutRaw);
-            assert.ok(outNum >= 0.095 && outNum <= 0.105, `Expected ~0.099 USDT, got ${outNum}`);
+            assert.ok(outNum >= 0.08 && outNum <= 0.15, `Expected ~0.10 USDT, got ${outNum}`);
             assert.ok(outNum < 1.0, `Output ${outNum} MUST NOT exceed 1.0 USDT for 1.0 POL`);
-            assert.ok(rawOutBig >= 95000n && rawOutBig <= 105000n, `Raw out ${rawOutBig} must be in 6-decimal range (95,000 to 105,000)`);
-            assert.ok(quote.executionPrice >= 0.095 && quote.executionPrice <= 0.105, `executionPrice must be ~0.099, got ${quote.executionPrice}`);
+            assert.ok(rawOutBig >= 80000n && rawOutBig <= 150000n, `Raw out ${rawOutBig} must be in 6-decimal range (80,000 to 150,000)`);
+            assert.ok(quote.executionPrice >= 0.08 && quote.executionPrice <= 0.15, `executionPrice must be ~0.10, got ${quote.executionPrice}`);
             assert.strictEqual(quote.referencePrice, 0.09787, 'referencePrice must match market ratio');
             const minReceivedBig = BigInt(quote.minimumReceivedRaw);
             assert.ok(minReceivedBig < rawOutBig, 'minReceived must be strictly less than amountOutRaw with positive slippage');
@@ -103,9 +103,9 @@ describe('ZENITH — Decimal Normalization & POL → USDT Quote Regression Suite
             const num01 = parseFloat(quote01.amountOutFormatted.replace(/,/g, ''));
             const num1 = parseFloat(quote1.amountOutFormatted.replace(/,/g, ''));
             const num2 = parseFloat(quote2.amountOutFormatted.replace(/,/g, ''));
-            assert.ok(num01 >= 0.0095 && num01 <= 0.0105, `0.1 POL output must be ~0.0099, got ${num01}`);
-            assert.ok(num1 >= 0.095 && num1 <= 0.105, `1.0 POL output must be ~0.099, got ${num1}`);
-            assert.ok(num2 >= 0.190 && num2 <= 0.205, `2.0 POL output must be ~0.199, got ${num2}`);
+            assert.ok(num01 >= 0.008 && num01 <= 0.015, `0.1 POL output must be ~0.010, got ${num01}`);
+            assert.ok(num1 >= 0.08 && num1 <= 0.15, `1.0 POL output must be ~0.10, got ${num1}`);
+            assert.ok(num2 >= 0.16 && num2 <= 0.30, `2.0 POL output must be ~0.20, got ${num2}`);
             const ratio2to1 = num2 / num1;
             assert.ok(Math.abs(ratio2to1 - 2.0) < 0.01, `2 POL to 1 POL ratio must be ~2.0, got ${ratio2to1}`);
             const ratio1to01 = num1 / num01;

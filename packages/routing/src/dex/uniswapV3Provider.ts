@@ -1,8 +1,19 @@
 import { DEXProtocol, Token } from '@zenith/types';
-import { Interface, AbiCoder, solidityPacked } from 'ethers';
-import { UNISWAP_V3_SWAP_ROUTERS, UNISWAP_V3_SWAP_ROUTER_ABI, CANONICAL_NATIVE_ADDRESS, getUniswapV3Router, getUniswapUniversalRouter, UNISWAP_UNIVERSAL_ROUTER_ABI } from '@zenith/contracts';
+import { Interface, AbiCoder, solidityPacked, Contract, JsonRpcProvider } from 'ethers';
+import { defaultChainRegistry } from '@zenith/chains';
+import {
+  UNISWAP_V3_SWAP_ROUTERS,
+  UNISWAP_V3_SWAP_ROUTER_ABI,
+  CANONICAL_NATIVE_ADDRESS,
+  getUniswapV3Router,
+  getUniswapUniversalRouter,
+  UNISWAP_UNIVERSAL_ROUTER_ABI,
+  getUniswapV3Quoter,
+  UNISWAP_V3_QUOTER_V2_ABI
+} from '@zenith/contracts';
 import { DEXProvider, DEXQuote, DEXExecution, DEXQuoteParams } from './types';
 import { calculateDEXLiquidityOutput, isNativeToken, resolvePoolTokenAddress } from './dexMath';
+
 export class UniswapV3Provider implements DEXProvider {
     public readonly id: DEXProtocol = 'UNISWAP_V3';
     public readonly protocol: DEXProtocol = 'UNISWAP_V3';
@@ -20,6 +31,102 @@ export class UniswapV3Provider implements DEXProvider {
             const isNative = isNativeToken(params.tokenIn.address) || Boolean(params.tokenIn.isNative) || isNativeToken(params.tokenOut.address) || Boolean(params.tokenOut.isNative);
             const universalRouter = getUniswapUniversalRouter(params.chainId);
             const routerAddress = (isNative && universalRouter) ? universalRouter : getUniswapV3Router(params.chainId);
+            const quoterAddress = getUniswapV3Quoter(params.chainId);
+
+            // 1. Attempt Live On-Chain QuoterV2 Quoting via RPC
+            const rpcUrl = params.rpcUrl || defaultChainRegistry.getChain(params.chainId)?.rpcEndpoints?.[0]?.url;
+            const provider = params.provider || (rpcUrl ? new JsonRpcProvider(rpcUrl, params.chainId, { staticNetwork: true }) : null);
+
+            if (quoterAddress && provider && params.amountIn > 0n) {
+                try {
+                    const tokenInAddr = resolvePoolTokenAddress(params.tokenIn, params.chainId);
+                    const tokenOutAddr = resolvePoolTokenAddress(params.tokenOut, params.chainId);
+                    const quoter = new Contract(quoterAddress, UNISWAP_V3_QUOTER_V2_ABI, provider);
+
+                    const feeTiers = params.feeTierBps !== undefined
+                        ? [params.feeTierBps * 100]
+                        : [500, 3000, 10000, 100];
+
+                    let bestResult: {
+                        amountOut: bigint;
+                        fee: number;
+                        gasEstimate: bigint;
+                    } | null = null;
+
+                    for (const fee of feeTiers) {
+                        try {
+                            const res = await quoter.quoteExactInputSingle.staticCall({
+                                tokenIn: tokenInAddr,
+                                tokenOut: tokenOutAddr,
+                                amountIn: params.amountIn,
+                                fee,
+                                sqrtPriceLimitX96: 0n
+                            });
+                            if (res && res[0] > 0n) {
+                                if (!bestResult || res[0] > bestResult.amountOut) {
+                                    bestResult = {
+                                        amountOut: BigInt(res[0].toString()),
+                                        fee,
+                                        gasEstimate: res[3] ? BigInt(res[3].toString()) : 185000n
+                                    };
+                                }
+                            }
+                        } catch {
+                            // fee tier not available
+                        }
+                    }
+
+                    if (bestResult && bestResult.amountOut > 0n) {
+                        const quoteTimestamp = Date.now();
+                        let blockNumber: number | undefined = undefined;
+                        try {
+                            blockNumber = await provider.getBlockNumber();
+                        } catch {
+                            // ignore block number error
+                        }
+
+                        const safeSlippage = params.slippageToleranceBps !== undefined && !isNaN(params.slippageToleranceBps)
+                            ? params.slippageToleranceBps
+                            : 50;
+                        const slippageMultiplier = 10000n - BigInt(Math.max(0, safeSlippage));
+                        const minimumAmountOut = (bestResult.amountOut * slippageMultiplier) / 10000n;
+                        const feeTierBps = bestResult.fee / 100;
+                        const feeAmount = (params.amountIn * BigInt(feeTierBps)) / 10000n;
+
+                        return {
+                            provider: this.protocol,
+                            providerName: this.name,
+                            chainId: params.chainId,
+                            tokenIn: params.tokenIn,
+                            tokenOut: params.tokenOut,
+                            amountIn: params.amountIn,
+                            amountOut: bestResult.amountOut,
+                            minimumAmountOut: minimumAmountOut === 0n ? 1n : minimumAmountOut,
+                            amountInRaw: params.amountIn.toString(),
+                            amountOutRaw: bestResult.amountOut.toString(),
+                            minimumOutRaw: (minimumAmountOut === 0n ? 1n : minimumAmountOut).toString(),
+                            feeAmount,
+                            feeAmountRaw: feeAmount.toString(),
+                            feeTierBps,
+                            priceImpactPercent: 0.05,
+                            executionTarget: routerAddress,
+                            approvalTarget: isNative && isNativeToken(params.tokenIn.address) ? CANONICAL_NATIVE_ADDRESS : (universalRouter && isNative ? universalRouter : routerAddress),
+                            gasEstimate: bestResult.gasEstimate,
+                            gasEstimateUnits: bestResult.gasEstimate,
+                            gasCostUSD: 0.05,
+                            quoteTimestamp,
+                            quoteBlockNumber: blockNumber,
+                            expiration: quoteTimestamp + 15000,
+                            routePath: [params.tokenIn.address, params.tokenOut.address],
+                            liquiditySource: 'LIVE_RPC'
+                        };
+                    }
+                } catch {
+                    // Live RPC quoting failed or network offline
+                }
+            }
+
+            // 2. Fallback to Deterministic Simulation Fixtures for offline / unit tests
             const calculated = calculateDEXLiquidityOutput({
                 chainId: params.chainId,
                 tokenIn: params.tokenIn,

@@ -87,6 +87,10 @@ export class DEXAggregator {
             }
         }
         validQuotes.sort((a, b) => {
+            const aIsLive = a.liquiditySource === 'LIVE_RPC' || a.liquiditySource === 'LIVE_ON_CHAIN';
+            const bIsLive = b.liquiditySource === 'LIVE_RPC' || b.liquiditySource === 'LIVE_ON_CHAIN';
+            if (aIsLive && !bIsLive) return -1;
+            if (!aIsLive && bIsLive) return 1;
             if (b.amountOut > a.amountOut)
                 return 1;
             if (b.amountOut < a.amountOut)

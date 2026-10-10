@@ -13,8 +13,25 @@ test('ZENITH SWAP — Phase 0 / Task 6 Cross-Chain Quote Diagnostics & Normaliza
     const polPoly = defaultTokenService.getTokensForChain('polygon').find((t) => t.symbol === 'POL')!;
     const wpolPoly = defaultTokenService.getTokensForChain('polygon').find((t) => t.symbol === 'WPOL')!;
     const ethEth = defaultTokenService.getNativeToken('ethereum')!;
-    await t.test('1. Across successful live quote normalization and depositV3 calldata preview', async () => {
-        const provider = new AcrossProvider();
+    await t.test('1. Across successful live quote normalization and swapTx calldata preview', async () => {
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({
+                swapTx: {
+                    to: ACROSS_SPOKE_POOLS[1],
+                    data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                    value: '0',
+                    chainId: 1
+                },
+                outputAmount: '999500000',
+                quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                fees: { total: { amount: '500000', pct: '0.0005' } }
+            }), { status: 200, statusText: 'OK' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
         const req: QuoteRequest = {
             sourceChainId: 'ethereum',
             destinationChainId: 'arbitrum',
@@ -33,57 +50,54 @@ test('ZENITH SWAP — Phase 0 / Task 6 Cross-Chain Quote Diagnostics & Normaliza
         assert.equal(quote.sourceAmountRaw, '1000000000');
         assert.ok(BigInt(quote.destinationAmountRaw) > 0n);
         assert.ok(BigInt(quote.minDestinationAmountRaw) <= BigInt(quote.destinationAmountRaw));
-        assert.equal(quote.executionTarget, ACROSS_SPOKE_POOLS[1]);
-        assert.equal(quote.approvalTarget, ACROSS_SPOKE_POOLS[1]);
+        assert.equal(quote.executionTarget.toLowerCase(), ACROSS_SPOKE_POOLS[1].toLowerCase());
+        assert.equal(quote.approvalTarget.toLowerCase(), ACROSS_SPOKE_POOLS[1].toLowerCase());
     });
     await t.test('2. Across provider unavailable: offline/500/timeout handling leaves quote non-executable', async () => {
-        const provider = new AcrossProvider();
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async () => {
-                throw new Error('Network timeout (ETIMEDOUT)');
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'ethereum',
-                destinationChainId: 'arbitrum',
-                tokenIn: usdcEth,
-                tokenOut: usdcArb,
-                amountInRaw: '500000000',
-                userWalletAddress: USER_ADDRESS,
-                recipientAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.isExecutable, false);
-            assert.equal(quote.unexecutableReason, 'PROVIDER_UNAVAILABLE');
-        }
-        finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async () => {
+            throw new Error('Network timeout (ETIMEDOUT)');
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'ethereum',
+            destinationChainId: 'arbitrum',
+            tokenIn: usdcEth,
+            tokenOut: usdcArb,
+            amountInRaw: '500000000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.isExecutable, false);
+        assert.equal(quote.unexecutableReason, 'PROVIDER_UNAVAILABLE');
     });
     await t.test('3. Across malformed response: incomplete payload caught and marked unexecutable', async () => {
-        const provider = new AcrossProvider();
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async () => {
-                return new Response(JSON.stringify({ invalidField: true }), { status: 200, statusText: 'OK' });
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'ethereum',
-                destinationChainId: 'arbitrum',
-                tokenIn: usdcEth,
-                tokenOut: usdcArb,
-                amountInRaw: '500000000',
-                userWalletAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.isExecutable, false);
-            assert.equal(quote.unexecutableReason, 'MALFORMED_RESPONSE');
-        }
-        finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({ invalidField: true }), { status: 200, statusText: 'OK' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'ethereum',
+            destinationChainId: 'arbitrum',
+            tokenIn: usdcEth,
+            tokenOut: usdcArb,
+            amountInRaw: '500000000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.isExecutable, false);
+        assert.ok(quote.unexecutableReason === 'MALFORMED_RESPONSE' || quote.unexecutableReason === 'EXECUTION_DATA_UNAVAILABLE');
     });
     await t.test('4. Across unsupported token: direct POL -> USDC returns isAvailable = false', async () => {
         const provider = new AcrossProvider();
@@ -407,47 +421,46 @@ test('ZENITH SWAP — Phase 0 / Task 6 Cross-Chain Quote Diagnostics & Normaliza
         assert.equal(quote.calldata, '0x', 'Unexecutable quote must strictly retain 0x calldata');
     });
     await t.test('21. Across same-asset ETH request normalizes native token to WETH and passes valid spoke pool', async () => {
-        const provider = new AcrossProvider();
         const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
         const ethBase = defaultTokenService.getNativeToken('base')!;
         let capturedUrl = '';
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async (url: any) => {
-                capturedUrl = String(url);
-                return new Response(JSON.stringify({
-                    totalRelayFee: { pct: '0.0005', total: '500000000000000' },
-                    relayerCapitalFee: { pct: '0.0001', total: '100000000000000' },
-                    relayerGasFee: { pct: '0.0004', total: '400000000000000' },
-                    lpFee: { pct: '0.0001', total: '100000000000000' },
-                    timestamp: Math.floor(Date.now() / 1000).toString(),
-                    isAmountTooLow: false,
-                    spokePoolAddress: ACROSS_SPOKE_POOLS[42161],
-                    exclusiveRelayer: USER_ADDRESS,
-                    exclusivityDeadline: Math.floor(Date.now() / 1000) + 300
-                }), { status: 200, statusText: 'OK' });
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'arbitrum',
-                destinationChainId: 'base',
-                tokenIn: ethArb,
-                tokenOut: ethBase,
-                amountInRaw: '1000000000000000000',
-                userWalletAddress: USER_ADDRESS,
-                recipientAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.provider, 'ACROSS');
-            assert.equal(quote.isExecutable, true);
-            assert.ok(capturedUrl.toLowerCase().includes('0x82af49447d8a07e3bd95bd0d56f35241523fbab1'));
-            assert.ok(capturedUrl.toLowerCase().includes('0x4200000000000000000000000000000000000006'));
-        } finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async (url: any, opts?: any) => {
+            capturedUrl = String(url);
+            return new Response(JSON.stringify({
+                swapTx: {
+                    to: ACROSS_SPOKE_POOLS[42161],
+                    data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                    value: '1000000000000000000',
+                    chainId: 42161
+                },
+                outputAmount: '999500000000000000',
+                quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                fees: { total: { amount: '500000000000000', pct: '0.0005' } }
+            }), { status: 200, statusText: 'OK' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'arbitrum',
+            destinationChainId: 'base',
+            tokenIn: ethArb,
+            tokenOut: ethBase,
+            amountInRaw: '1000000000000000000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.provider, 'ACROSS');
+        assert.equal(quote.isExecutable, true);
+        assert.ok(capturedUrl.toLowerCase().includes('0x82af49447d8a07e3bd95bd0d56f35241523fbab1'));
+        assert.ok(capturedUrl.toLowerCase().includes('0x4200000000000000000000000000000000000006'));
     });
     await t.test('22. Across cross-asset rejection: ETH Arbitrum -> BRETT Base is rejected cleanly', async () => {
-        const provider = new AcrossProvider();
+        const provider = new AcrossProvider({ apiKey: 'test_key', integratorId: '0x0001' });
         const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
         const brettBase = defaultTokenService.getTokensForChain('base').find((tk) => tk.symbol === 'BRETT')!;
         assert.ok(brettBase, 'BRETT must be present in Base token registry');
@@ -455,79 +468,79 @@ test('ZENITH SWAP — Phase 0 / Task 6 Cross-Chain Quote Diagnostics & Normaliza
         assert.equal(isAvail, false, 'Across must reject direct cross-asset ETH -> BRETT');
     });
     await t.test('23. Across HTTP 400 with token error payload maps to UNSUPPORTED_TOKEN', async () => {
-        const provider = new AcrossProvider();
         const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
         const ethBase = defaultTokenService.getNativeToken('base')!;
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async () => {
-                return new Response(JSON.stringify({ message: 'Token not supported on destination chain' }), { status: 400, statusText: 'Bad Request' });
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'arbitrum',
-                destinationChainId: 'base',
-                tokenIn: ethArb,
-                tokenOut: ethBase,
-                amountInRaw: '1000000000000000000',
-                userWalletAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.isExecutable, false);
-            assert.equal(quote.unexecutableReason, 'UNSUPPORTED_TOKEN');
-        } finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({ message: 'Token not supported on destination chain' }), { status: 400, statusText: 'Bad Request' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'arbitrum',
+            destinationChainId: 'base',
+            tokenIn: ethArb,
+            tokenOut: ethBase,
+            amountInRaw: '1000000000000000000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.isExecutable, false);
+        assert.equal(quote.unexecutableReason, 'UNSUPPORTED_TOKEN');
     });
     await t.test('24. Across HTTP 400 with amount/limit payload maps to INVALID_AMOUNT', async () => {
-        const provider = new AcrossProvider();
         const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
         const ethBase = defaultTokenService.getNativeToken('base')!;
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async () => {
-                return new Response(JSON.stringify({ error: 'Amount is below minimum deposit limit' }), { status: 400, statusText: 'Bad Request' });
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'arbitrum',
-                destinationChainId: 'base',
-                tokenIn: ethArb,
-                tokenOut: ethBase,
-                amountInRaw: '1000',
-                userWalletAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.isExecutable, false);
-            assert.equal(quote.unexecutableReason, 'INVALID_AMOUNT');
-        } finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({ error: 'Amount is below minimum deposit limit' }), { status: 400, statusText: 'Bad Request' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'arbitrum',
+            destinationChainId: 'base',
+            tokenIn: ethArb,
+            tokenOut: ethBase,
+            amountInRaw: '1000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.isExecutable, false);
+        assert.equal(quote.unexecutableReason, 'INVALID_AMOUNT');
     });
     await t.test('25. Across HTTP 400 with opaque body maps to UNKNOWN_PROVIDER_ERROR (not MALFORMED_RESPONSE)', async () => {
-        const provider = new AcrossProvider();
         const ethArb = defaultTokenService.getNativeToken('arbitrum')!;
         const ethBase = defaultTokenService.getNativeToken('base')!;
-        const origFetch = globalThis.fetch;
-        try {
-            globalThis.fetch = async () => {
-                return new Response('custom unclassified error text', { status: 400, statusText: 'Bad Request' });
-            };
-            const req: QuoteRequest = {
-                sourceChainId: 'arbitrum',
-                destinationChainId: 'base',
-                tokenIn: ethArb,
-                tokenOut: ethBase,
-                amountInRaw: '1000000000000000000',
-                userWalletAddress: USER_ADDRESS
-            };
-            const quote = await provider.getQuote(req);
-            assert.ok(quote);
-            assert.equal(quote.isExecutable, false);
-            assert.equal(quote.unexecutableReason, 'UNKNOWN_PROVIDER_ERROR');
-        } finally {
-            globalThis.fetch = origFetch;
-        }
+        const mockFetch = async () => {
+            return new Response('custom unclassified error text', { status: 400, statusText: 'Bad Request' });
+        };
+        const provider = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const req: QuoteRequest = {
+            sourceChainId: 'arbitrum',
+            destinationChainId: 'base',
+            tokenIn: ethArb,
+            tokenOut: ethBase,
+            amountInRaw: '1000000000000000000',
+            userWalletAddress: USER_ADDRESS,
+            recipientAddress: USER_ADDRESS
+        };
+        const quote = await provider.getQuote(req);
+        assert.ok(quote);
+        assert.equal(quote.isExecutable, false);
+        assert.equal(quote.unexecutableReason, 'UNKNOWN_PROVIDER_ERROR');
     });
     await t.test('26. deBridge DLN normalizes native ETH to zero address for same-asset bridge', async () => {
         const provider = new DeBridgeProvider();

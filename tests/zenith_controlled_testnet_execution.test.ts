@@ -1,9 +1,12 @@
+process.env.ACROSS_API_KEY = process.env.ACROSS_API_KEY || 'test_testnet_api_key';
+process.env.ACROSS_INTEGRATOR_ID = process.env.ACROSS_INTEGRATOR_ID || '0x0001';
+
 import { test, describe } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { Interface } from 'ethers';
 import { defaultChainRegistry } from '@zenith/chains';
 import { getAcrossSpokePool, ACROSS_SPOKE_POOL_ABI, validateEvmAddress, validateExecutionTarget, validateTokenAddress, validateRecipientAddress, RecipientMismatchError } from '@zenith/contracts';
-import { defaultAcrossProvider } from '@zenith/routing';
+import { defaultAcrossProvider, AcrossProvider } from '@zenith/routing';
 import { ExecutionPlanBuilder, SQLiteCrossChainStateRepository, CrossChainRecoveryEngine, defaultEVMAdapter } from '@zenith/execution';
 import { QuoteRequest, PersistentIntent } from '@zenith/types';
 import { runControlledTestnetExecution } from '../scripts/execute-controlled-testnet';
@@ -117,7 +120,25 @@ describe('ZENITH SWAP — Phase 0 / Task 7: Controlled Testnet Direct Cross-Chai
             recipientAddress: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
             slippageTolerancePercent: 0.5
         };
-        const quote = await defaultAcrossProvider.getQuote(quoteReq);
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({
+                swapTx: {
+                    to: getAcrossSpokePool(11155111),
+                    data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                    value: '0',
+                    chainId: 11155111
+                },
+                outputAmount: '99500',
+                quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                fees: { total: { amount: '500', pct: '0.005' } }
+            }), { status: 200, statusText: 'OK' });
+        };
+        const testAcross = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const quote = await testAcross.getQuote(quoteReq);
         assert.ok(quote !== null, 'Across testnet quote must not be null');
         assert.equal(quote.provider, 'ACROSS');
         assert.equal(quote.sourceAmountRaw, '100000');
@@ -153,7 +174,25 @@ describe('ZENITH SWAP — Phase 0 / Task 7: Controlled Testnet Direct Cross-Chai
             userWalletAddress: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
             recipientAddress: '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B'
         };
-        const quote = await defaultAcrossProvider.getQuote(quoteReq);
+        const mockFetch = async () => {
+            return new Response(JSON.stringify({
+                swapTx: {
+                    to: getAcrossSpokePool(11155111),
+                    data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+                    value: '0',
+                    chainId: 11155111
+                },
+                outputAmount: '99500',
+                quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+                fees: { total: { amount: '500', pct: '0.005' } }
+            }), { status: 200, statusText: 'OK' });
+        };
+        const testAcross = new AcrossProvider({
+            apiKey: 'test_key',
+            integratorId: '0x0001',
+            fetchFn: mockFetch as any
+        });
+        const quote = await testAcross.getQuote(quoteReq);
         assert.ok(quote);
         const plan = ExecutionPlanBuilder.buildPlan({
             route: {

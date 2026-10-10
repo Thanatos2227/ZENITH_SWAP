@@ -317,7 +317,8 @@ export class ZenithRouter {
                             gasEstimate: hop1Quote.gasEstimate + hop2Quote.gasEstimate,
                             gasCostUSD: hop1Quote.gasCostUSD + hop2Quote.gasCostUSD,
                             quoteTimestamp: Date.now(),
-                            expiration: Date.now() + 15000
+                            expiration: Date.now() + 15000,
+                            liquiditySource: (hop1Quote.liquiditySource === 'LIVE_RPC' && hop2Quote.liquiditySource === 'LIVE_RPC') ? 'LIVE_RPC' : (hop1Quote.liquiditySource || 'SIMULATION')
                         };
                         routes.push({
                             id: `route-multihop-${sourceChain.id}`,

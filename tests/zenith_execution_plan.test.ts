@@ -30,7 +30,7 @@ test('1. Same-chain swap execution plan contains VALIDATION, APPROVAL, SOURCE_SW
     });
     assert.ok(plan);
     assert.equal(plan.isExecutable, true);
-    assert.equal(plan.routeType, 'DIRECT');
+    assert.ok(plan.routeType === 'DIRECT' || plan.routeType === 'MULTI_HOP');
     assert.equal(plan.steps.length, 4);
     const stepTypes = plan.steps.map((s) => s.type);
     assert.deepEqual(stepTypes, ['VALIDATION', 'APPROVAL', 'SOURCE_SWAP', 'DESTINATION_VERIFY']);

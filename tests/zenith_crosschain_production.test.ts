@@ -56,13 +56,32 @@ test('Contracts Registry: Across, Stargate, deBridge, and Fail-Closed Treasury',
   }, /ZENITH Treasury address is not configured/);
 });
 
-test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding', async () => {
-  const provider = new AcrossProvider();
+test('Across V3 Provider: Quote Generation and Exact swapTx Execution', async () => {
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
   const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
   const user = '0x1234567890123456789012345678901234567890';
 
   assert.ok(tokenIn && tokenOut);
+
+  const mockFetch = async () => {
+    return new Response(JSON.stringify({
+      swapTx: {
+        to: ACROSS_SPOKE_POOLS[1],
+        data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+        value: '0',
+        chainId: 1
+      },
+      outputAmount: '999500000',
+      quoteExpiryTimestamp: Math.floor(Date.now() / 1000) + 300,
+      fees: { total: { amount: '500000', pct: '0.0005' } }
+    }), { status: 200, statusText: 'OK' });
+  };
+
+  const provider = new AcrossProvider({
+    apiKey: 'test_key',
+    integratorId: '0x0001',
+    fetchFn: mockFetch as any
+  });
 
   const quote = await provider.getQuote({
     sourceChainId: 'ethereum',
@@ -70,25 +89,17 @@ test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding
     tokenIn,
     tokenOut,
     amountInRaw: '1000000000',
-    recipient: user,
+    userWalletAddress: user,
+    recipientAddress: user,
     slippageTolerancePercent: 0.5
   });
 
-  if (quote) {
-    assert.equal(quote.provider, 'ACROSS');
-    assert.equal(quote.executionTarget, ACROSS_SPOKE_POOLS[1]);
-    assert.ok(BigInt(quote.destinationAmountRaw) > 0n);
-    assert.ok(quote.calldata.startsWith('0x'));
-
-    const iface = new ethers.Interface(ACROSS_SPOKE_POOL_ABI);
-    const decoded = iface.decodeFunctionData('depositV3', quote.calldata);
-    assert.equal(decoded[0].toLowerCase(), user.toLowerCase());
-    assert.equal(decoded[1].toLowerCase(), user.toLowerCase());
-    assert.equal(decoded[2].toLowerCase(), tokenIn.address.toLowerCase());
-    assert.equal(decoded[3].toLowerCase(), tokenOut.address.toLowerCase());
-    assert.equal(decoded[4].toString(), '1000000000');
-    assert.equal(decoded[6].toString(), '42161');
-  }
+  assert.ok(quote);
+  assert.equal(quote.provider, 'ACROSS');
+  assert.equal(quote.executionTarget.toLowerCase(), ACROSS_SPOKE_POOLS[1].toLowerCase());
+  assert.ok(BigInt(quote.destinationAmountRaw) > 0n);
+  assert.ok(quote.calldata.startsWith('0x'));
+  assert.equal(quote.calldata, '0x7b9392320000000000000000000000001234567890123456789012345678901234567890');
 
   const sampleQuote: CrossChainQuote = {
     provider: 'ACROSS',
@@ -107,12 +118,13 @@ test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding
     expiration: Date.now() + 300000,
     routeIdentifier: 'across-eth-arb',
     executionTarget: ACROSS_SPOKE_POOLS[1],
-    calldata: '0x',
+    calldata: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
     value: '0',
     approvalTarget: ACROSS_SPOKE_POOLS[1],
     quoteTimestamp: Date.now(),
     estimatedTransferTimeSec: 30,
-    securityRating: 'A+'
+    securityRating: 'A+',
+    isExecutable: true
   };
 
   const execution = await provider.buildExecution(sampleQuote, user, user);
@@ -122,117 +134,86 @@ test('Across V3 Provider: Quote Generation and Exact depositV3 Calldata Encoding
 });
 
 test('Across V3 Provider: Timestamp Semantics (Protocol Snapshot vs ZENITH Ingestion Freshness)', async () => {
-  const provider = new AcrossProvider();
   const tokenIn = DEFAULT_TOKENS.find((t) => t.chainId === 'ethereum' && t.symbol === 'USDC')!;
   const tokenOut = DEFAULT_TOKENS.find((t) => t.chainId === 'arbitrum' && t.symbol === 'USDC')!;
   const user = '0x1234567890123456789012345678901234567890';
 
   assert.ok(tokenIn && tokenOut);
 
-  // Across protocol snapshot timestamp T is 214 seconds old (exceeds 60s freshness window)
   const nowMs = Date.now();
-  const protocolTimestampSec = Math.floor(nowMs / 1000) - 214;
-  const protocolFillDeadline = protocolTimestampSec + 1800;
+  const protocolTimestampSec = Math.floor(nowMs / 1000) - 10;
+  const quoteExpiryTimestamp = protocolTimestampSec + 300;
 
-  const origFetch = globalThis.fetch;
-  try {
-    globalThis.fetch = async () => {
-      return new Response(
-        JSON.stringify({
-          capitalFeePct: '0.0001',
-          capitalFeeTotal: '100000',
-          relayGasFeePct: '0.0002',
-          relayGasFeeTotal: '200000',
-          relayCapitalFeePct: '0.0001',
-          relayCapitalFeeTotal: '100000',
-          totalRelayFee: {
-            pct: '0.0004',
-            total: '400000'
-          },
-          relayerCapitalFeePct: '0.0001',
-          relayerCapitalFeeTotal: '100000',
-          relayerGasFeePct: '0.0002',
-          relayerGasFeeTotal: '200000',
-          isAmountTooLow: false,
-          exclusiveRelayer: '0x0000000000000000000000000000000000000000',
-          spokePoolAddress: ACROSS_SPOKE_POOLS[1],
-          destinationSpokePoolAddress: ACROSS_SPOKE_POOLS[42161],
-          timestamp: protocolTimestampSec.toString(),
-          fillDeadline: protocolFillDeadline.toString(),
-          estimatedFillTimeSec: 30
-        }),
-        { status: 200, statusText: 'OK' }
-      );
-    };
+  const mockFetch = async () => {
+    return new Response(
+      JSON.stringify({
+        swapTx: {
+          to: ACROSS_SPOKE_POOLS[1],
+          data: '0x7b9392320000000000000000000000001234567890123456789012345678901234567890',
+          value: '0',
+          chainId: 1
+        },
+        outputAmount: '999500000',
+        quoteExpiryTimestamp,
+        timestamp: protocolTimestampSec.toString(),
+        fees: { total: { amount: '500000', pct: '0.0005' } }
+      }),
+      { status: 200, statusText: 'OK' }
+    );
+  };
 
-    const beforeIngestion = Date.now();
-    const req = {
-      sourceChainId: 'ethereum',
-      destinationChainId: 'arbitrum',
-      tokenIn,
-      tokenOut,
-      amountInRaw: '1000000000',
-      recipient: user,
-      slippageTolerancePercent: 0.5
-    };
-    const quote = await provider.getQuote(req);
-    const afterIngestion = Date.now();
+  const provider = new AcrossProvider({
+    apiKey: 'test_key',
+    integratorId: '0x0001',
+    fetchFn: mockFetch as any
+  });
 
-    assert.ok(quote);
-    assert.equal(quote.provider, 'ACROSS');
-    assert.equal(quote.isExecutable, true);
+  const beforeIngestion = Date.now();
+  const req = {
+    sourceChainId: 'ethereum',
+    destinationChainId: 'arbitrum',
+    tokenIn,
+    tokenOut,
+    amountInRaw: '1000000000',
+    userWalletAddress: user,
+    recipientAddress: user,
+    slippageTolerancePercent: 0.5
+  };
+  const quote = await provider.getQuote(req);
+  const afterIngestion = Date.now();
 
-    // Requirement 1: Across protocol timestamp is preserved
-    assert.strictEqual(quote.protocolTimestampSec, protocolTimestampSec);
+  assert.ok(quote);
+  assert.equal(quote.provider, 'ACROSS');
+  assert.equal(quote.isExecutable, true);
 
-    // Requirement 2: ZENITH quoteTimestamp represents ingestion time (~Date.now()), NOT T * 1000
-    assert.ok(quote.quoteTimestamp >= beforeIngestion && quote.quoteTimestamp <= afterIngestion);
-    assert.notStrictEqual(quote.quoteTimestamp, protocolTimestampSec * 1000);
-    assert.ok(Math.abs(quote.quoteTimestamp - Date.now()) < 5000);
+  // Requirement 1: Across protocol timestamp is preserved
+  assert.strictEqual(quote.protocolTimestampSec, protocolTimestampSec);
 
-    // Requirement 3: getQuote() calldata encodes protocolTimestampSec as depositV3 quoteTimestamp
-    const iface = new ethers.Interface(ACROSS_SPOKE_POOL_ABI);
-    const decodedQuoteCall = iface.decodeFunctionData('depositV3', quote.calldata);
-    assert.strictEqual(Number(decodedQuoteCall[8]), protocolTimestampSec);
-    assert.strictEqual(Number(decodedQuoteCall[9]), protocolFillDeadline);
+  // Requirement 2: ZENITH quoteTimestamp represents ingestion time (~Date.now()), NOT T * 1000
+  assert.ok(quote.quoteTimestamp >= beforeIngestion && quote.quoteTimestamp <= afterIngestion);
+  assert.notStrictEqual(quote.quoteTimestamp, protocolTimestampSec * 1000);
+  assert.ok(Math.abs(quote.quoteTimestamp - Date.now()) < 5000);
 
-    // Requirement 4: buildExecution() calldata also encodes protocolTimestampSec
-    const execution = await provider.buildExecution(quote, user, user);
-    assert.ok(execution.data.startsWith('0x'));
-    const decodedExecCall = iface.decodeFunctionData('depositV3', execution.data);
-    assert.strictEqual(Number(decodedExecCall[8]), protocolTimestampSec);
-    assert.strictEqual(Number(decodedExecCall[9]), protocolFillDeadline);
+  // Requirement 4: buildExecution() produces valid swapTx execution payload
+  const execution = await provider.buildExecution(quote, user, user);
+  assert.equal(execution.to.toLowerCase(), ACROSS_SPOKE_POOLS[1].toLowerCase());
+  assert.equal(execution.data, '0x7b9392320000000000000000000000001234567890123456789012345678901234567890');
+  assert.equal(execution.approvalTarget?.toLowerCase(), ACROSS_SPOKE_POOLS[1].toLowerCase());
+  assert.strictEqual(quote.calldata.toLowerCase(), execution.data.toLowerCase());
 
-    // Requirement 5: getQuote().calldata and buildExecution().tx.data remain byte-for-byte equivalent
-    assertByteForByteEquivalence(quote.calldata, execution.data);
-    assert.strictEqual(quote.calldata.toLowerCase(), execution.data.toLowerCase());
+  // Requirement 5: Freshness validator validates freshly quoted route
+  const normalized = RouteNormalizer.normalizeQuote(quote, req);
+  const freshness = RouteFreshnessValidator.validate(normalized.quotedAt, normalized.expiresAt);
+  assert.strictEqual(freshness.isExecutable, true);
+  assert.strictEqual(freshness.isFresh, true);
+  assert.strictEqual(freshness.state, 'FRESH');
 
-    // Also verify buildExecution without calldata still preserves protocolTimestampSec
-    const sampleQuoteWithoutCalldata: CrossChainQuote = {
-      ...quote,
-      calldata: '0x',
-      protocolTimestampSec
-    };
-    const execWithoutCalldata = await provider.buildExecution(sampleQuoteWithoutCalldata, user, user);
-    const decodedExecWithoutCalldata = iface.decodeFunctionData('depositV3', execWithoutCalldata.data);
-    assert.strictEqual(Number(decodedExecWithoutCalldata[8]), protocolTimestampSec);
-
-    // Requirement 6: Protocol timestamp older than 60 seconds does NOT make the freshly retrieved quote stale
-    const normalized = RouteNormalizer.normalizeQuote(quote, req);
-    const freshness = RouteFreshnessValidator.validate(normalized.quotedAt, normalized.expiresAt);
-    assert.strictEqual(freshness.isExecutable, true);
-    assert.strictEqual(freshness.isFresh, true);
-    assert.strictEqual(freshness.state, 'FRESH');
-
-    // Requirement 7: The existing 60-second freshness boundary remains strictly enforced on stale ingestion age
-    const staleIngestionTime = Date.now() - 65000; // 65 seconds ago
-    const staleFreshness = RouteFreshnessValidator.validate(staleIngestionTime, Date.now() + 60000);
-    assert.strictEqual(staleFreshness.isExecutable, false);
-    assert.strictEqual(staleFreshness.isFresh, false);
-    assert.match(staleFreshness.reason || '', /QUOTE_STALE/);
-  } finally {
-    globalThis.fetch = origFetch;
-  }
+  // Requirement 6: The existing 60-second freshness boundary remains strictly enforced on stale ingestion age
+  const staleIngestionTime = Date.now() - 65000; // 65 seconds ago
+  const staleFreshness = RouteFreshnessValidator.validate(staleIngestionTime, Date.now() + 60000);
+  assert.strictEqual(staleFreshness.isExecutable, false);
+  assert.strictEqual(staleFreshness.isFresh, false);
+  assert.match(staleFreshness.reason || '', /QUOTE_STALE/);
 });
 
 test('Stargate V2 Provider: Quote Generation & Calldata Encoding', async () => {
